@@ -1,0 +1,27 @@
+# 临时文件
+*.tmp
+*.bak
+*.swp
+*~
+
+# 编辑器
+.vscode/
+.idea/
+*.sublime-*
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 草稿文件
+*-draft*.md
+outline.md
+draft.md
+
+# 构建输出
+dist/
+build/
+public/
+
+# 依赖
+node_modules/
