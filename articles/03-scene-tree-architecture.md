@@ -1,4 +1,4 @@
-# 深入理解 Godot 引擎 #03 | Godot 场景树架构深度解析
+# 第 3 篇：Godot 场景树架构深度解析
 
 > **摘要**：场景树是 Godot 引擎的核心架构，所有游戏对象都组织在场景树中。本文将从源码层面深度解析 Node、SceneTree、PackedScene 三个核心类，揭示场景树的运作原理，并与 Unity Transform 层级进行对比。
 
@@ -957,7 +957,7 @@ Main (Node)
 
 - 使用有意义的名称：`Player` 而不是 `Node1`
 - 使用类型后缀：`Player/CharacterBody3D`
-- 使用组组织：`Enemies/Enemy1`、`Enemies/Enemy2`
+- 使用组来组织：`Enemies/Enemy1`、`Enemies/Enemy2`
 
 **场景拆分**：
 
@@ -1089,15 +1089,15 @@ SceneTree (管理)
 
 ---
 
-**作者**: 王飞书  
+**作者**: wangshucheng
 **首发平台**: 微信公众号  
 **写作时间**: 2026 年 3 月  
 **Godot 版本**: 4.3（最新稳定版）
 
 ---
 
-**上一篇**: [深入理解 Godot 引擎 #02 | Godot vs Unity：架构对比](#)  
-**下一篇**: [深入理解 Godot 引擎 #04 | Godot 内存管理机制深度解析](#)
+**上一篇**: [第 2 篇：Godot vs Unity：架构设计深度对比](#)  
+**下一篇**: [第 4 篇：Godot 内存管理机制深度解析](#)
 
 ---
 

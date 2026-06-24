@@ -1,4 +1,4 @@
-# 深入理解 Godot 引擎 #18 | 2D 渲染
+# 第 18 篇：2D 渲染
 
 > **摘要**：Godot 有原生 2D 渲染引擎。本文将深入分析 2D 渲染架构、CanvasItem、2D 合批。
 
@@ -120,15 +120,15 @@ material.light_mode = CanvasItemMaterial.LIGHT_MODE_UNSHADED
 
 ---
 
-**作者**: 王飞书  
+**作者**: wangshucheng
 **首发平台**: 微信公众号  
 **写作时间**: 2026 年 3 月  
 **Godot 版本**: 4.3（最新稳定版）
 
 ---
 
-**上一篇**: [深入理解 Godot 引擎 #17 | GDShader 语言](#)  
-**下一篇**: [深入理解 Godot 引擎 #19 | 后处理效果](#)
+**上一篇**: [第 17 篇：GDShader 语言](#)  
+**下一篇**: [第 19 篇：后处理效果](#)
 
 ---
 

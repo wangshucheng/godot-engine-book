@@ -1,4 +1,4 @@
-# 第 19 篇：流体模拟
+# 第 29 篇：流体模拟
 
 > **本卷定位**: 第三卷 物理系统（10 篇）  
 > **前置知识**: 第 28 章 车辆物理  
@@ -100,7 +100,7 @@ func apply_fluid_forces(delta: float):
     # 计算压力
     pressure = (density - 1000) * 10  # 简化压力公式
     
-    # 应用压力力
+    # 应用压力
     for neighbor in neighbors:
         var direction = (global_transform.origin - neighbor.global_transform.origin).normalized()
         var force = direction * pressure * delta

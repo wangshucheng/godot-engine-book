@@ -1,4 +1,4 @@
-# 深入理解 Godot 引擎 #12 | Vulkan 渲染后端深度解析
+# 第 12 篇：Vulkan 渲染后端深度解析
 
 > **摘要**：Godot 4.x 使用 Vulkan 作为主要渲染后端。本文将深入分析 Godot 的 Vulkan 实现、Forward+ 渲染器、Mobile 渲染器。
 
@@ -201,15 +201,15 @@ GraphicsSettings.defaultScriptableRenderPipelineType = typeof(UniversalRenderPip
 
 ---
 
-**作者**: 王飞书  
+**作者**: wangshucheng
 **首发平台**: 微信公众号  
 **写作时间**: 2026 年 3 月  
 **Godot 版本**: 4.3（最新稳定版）
 
 ---
 
-**上一篇**: [深入理解 Godot 引擎 #11 | Godot 渲染架构](#)  
-**下一篇**: [深入理解 Godot 引擎 #13 | Godot vs Unity 渲染对比](#)
+**上一篇**: [第 11 篇：Godot 渲染架构概述](#)  
+**下一篇**: [第 13 篇：Godot vs Unity 渲染对比](#)
 
 ---
 

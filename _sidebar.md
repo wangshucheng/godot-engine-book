@@ -56,17 +56,17 @@
 
 ## 第五卷：音频系统
 
-* [45. 音频系统基础](/articles/45-audio-system.md)
+* [45. 音频系统](/articles/45-audio-system.md)
 * [46. 音频播放器](/articles/46-audio-player.md)
-* [47. 音频混音器](/articles/47-audio-mixer.md)
-* [48. 音频效果](/articles/48-audio-effects.md)
-* [59. 3D 音频和动态音频](/articles/59-3d-audio-and-dynamic-audio.md)
-* [62. 音频分析和语音](/articles/62-audio-analysis-and-voice.md)
+* [47. 音频混合器](/articles/47-audio-mixer.md)
+* [48. 音频效果器](/articles/48-audio-effects.md)
+* [59. 3D 音频和动态音频系统](/articles/59-3d-audio-and-dynamic-audio.md)
+* [62. 音频分析和语音系统](/articles/62-audio-analysis-and-voice.md)
 
 ## 第六卷：网络系统
 
-* [49. 网络系统基础](/articles/49-network-system.md)
-* [50. 网络协议](/articles/50-network-protocols.md)
+* [49. 网络系统](/articles/49-network-system.md)
+* [50. 网络通信协议](/articles/50-network-protocols.md)
 * [51. 网络同步](/articles/51-network-synchronization.md)
 * [52. 网络优化](/articles/52-network-optimization.md)
 * [57. 权威服务器架构](/articles/57-authoritative-server.md)
@@ -74,7 +74,7 @@
 ## 第七卷：脚本系统
 
 * [53. 输入系统](/articles/53-input-system.md)
-* [54. 脚本系统基础](/articles/54-script-system.md)
+* [54. 脚本系统](/articles/54-script-system.md)
 * [55. GDScript 进阶](/articles/55-gdscript-advanced.md)
 * [56. 资源系统](/articles/56-resource-system.md)
 * [60. C# 集成和脚本优化](/articles/60-csharp-and-script-optimization.md)
@@ -83,15 +83,15 @@
 
 * [58. 插件开发](/articles/58-plugin-development.md)
 * [61. 高级编辑器扩展](/articles/61-advanced-editor-extensions.md)
-* [63. 编辑器高级特性](/articles/63-editor-advanced-features.md)
+* [63. 编辑器高级功能](/articles/63-editor-advanced-features.md)
 * [64. 编辑器性能调优](/articles/64-editor-performance-tuning.md)
 * [65. 编辑器自动化](/articles/65-editor-automation.md)
 * [66. 编辑器扩展模板](/articles/66-editor-extension-templates.md)
 * [67. 编辑器扩展最佳实践](/articles/67-editor-extension-best-practices.md)
+* [68. 项目总结](/articles/68-project-summary.md)
 
 ## 附录
 
 * [附录 B. GDScript 快速参考](/articles/appendix-b-gdscript-reference.md)
-* [附录 C. Unity 迁移指南](/articles/appendix-c-unity-migration.md)
+* [附录 C. Godot 与 Unity 对照表](/articles/appendix-c-unity-migration.md)
 * [附录 D. 性能优化清单](/articles/appendix-d-performance-checklist.md)
-* [68. 项目总结](/articles/68-project-summary.md)
