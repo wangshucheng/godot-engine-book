@@ -43,6 +43,13 @@
 * [31. 破坏系统](/articles/31-destruction-systems.md)
 * [32. 物理性能优化](/articles/32-physics-performance-optimization.md)
 
+## 引擎扩展开发
+
+* [33. GDExtension 架构与入门](/articles/33-gdextension-basics.md)
+* [34. GDExtension 进阶开发](/articles/34-gdextension-advanced.md)
+* [35. 引擎 C++ 自定义模块开发](/articles/35-custom-modules-cpp.md)
+* [36. 自定义模块 vs GDExtension 选型与实战](/articles/36-modules-vs-gdextension.md)
+
 ## 第四卷：动画系统
 
 * [37. 动画系统基础](/articles/37-animation-system-basics.md)
