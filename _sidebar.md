@@ -94,6 +94,13 @@
 * [67. 编辑器扩展最佳实践](/articles/67-editor-extension-best-practices.md)
 * [68. 项目总结](/articles/68-project-summary.md)
 
+## 引擎扩展开发
+
+* [69. GDExtension 架构与入门](/articles/69-gdextension-basics.md)
+* [70. GDExtension 进阶开发](/articles/70-gdextension-advanced.md)
+* [71. 引擎 C++ 自定义模块开发](/articles/71-custom-modules-cpp.md)
+* [72. 自定义模块 vs GDExtension 选型与实战](/articles/72-modules-vs-gdextension.md)
+
 ## 附录
 
 * [附录 A. 术语表](/articles/appendix-a-glossary.md)
