@@ -214,7 +214,7 @@ func play_sound(stream_path: String, volume: float = 1.0, pitch: float = 1.0):
     player.play()
     
     # 连接完成信号以自动清理
-    player.connect("finished", self, "_on_player_finished", [player])
+    player.finished.connect(_on_player_finished.bind(player))
 
 func _on_player_finished(player: AudioStreamPlayer):
     # 播放完成后的处理
@@ -227,7 +227,7 @@ func stop_all():
     for player in players:
         if player and is_instance_valid(player):
             player.stop()
-            player.disconnect("finished", self, "_on_player_finished")
+            player.finished.disconnect(_on_player_finished)
             player.queue_free()
     players.clear()
 
@@ -297,12 +297,12 @@ func play_sound(stream_path: String, volume: float = 1.0):
     player.play()
     
     # 连接完成信号以归还播放器
-    player.connect("finished", self, "_on_sound_finished", [player])
+    player.finished.connect(_on_sound_finished.bind(player))
 
 func _on_sound_finished(player: AudioStreamPlayer):
     # 音效播放完成
     if player.is_connected("finished", self, "_on_sound_finished"):
-        player.disconnect("finished", self, "_on_sound_finished")
+        player.finished.disconnect(_on_sound_finished)
     return_player(player)
 
 func get_pool_size() -> int:
@@ -572,12 +572,12 @@ func play_3d_sound(stream_path: String, position: Vector3, volume: float = 1.0):
     player.play()
     
     # 连接完成信号以归还播放器
-    player.connect("finished", self, "_on_3d_sound_finished", [player])
+    player.finished.connect(_on_3d_sound_finished.bind(player))
 
 func _on_3d_sound_finished(player: AudioStreamPlayer3D):
     # 3D 音效播放完成
     if player.is_connected("finished", self, "_on_3d_sound_finished"):
-        player.disconnect("finished", self, "_on_3d_sound_finished")
+        player.finished.disconnect(_on_3d_sound_finished)
     return_player(player)
 
 func get_pool_size() -> int:
@@ -602,7 +602,7 @@ func play_3d_sound_with_params(stream_path: String, position: Vector3,
     player.play()
     
     # 连接完成信号以归还播放器
-    player.connect("finished", self, "_on_3d_sound_finished", [player])
+    player.finished.connect(_on_3d_sound_finished.bind(player))
 ```
 
 ---

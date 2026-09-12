@@ -404,7 +404,7 @@ static func load(path: String) -> SaveData:
 ### 7.2 版本控制
 
 ```gdscript
-class_name SaveData
+class_name VersionedSaveData
 extends Resource
 
 @export var version: int = 1
@@ -465,12 +465,12 @@ func validate() -> bool:
 **作者**: wangshucheng
 **首发平台**: 微信公众号  
 **写作时间**: 2026 年 3 月  
-**Godot 版本**: 4.3（最新稳定版）
+**Godot 版本**: 4.x（基线 4.3，2026-09 最新稳定版为 4.7）
 
 ---
 
-**上一篇**: [第 8 篇：Godot 文件系统与跨平台架构](#)  
-**下一篇**: [第 10 篇：Godot 跨平台架构详解](#)
+**上一篇**: [第 8 篇：Godot 文件系统与跨平台架构](/articles/08-filesystem-platform.md)
+**下一篇**: [第 10 篇：Godot 跨平台架构详解](/articles/10-cross-platform-architecture.md)
 
 ---
 

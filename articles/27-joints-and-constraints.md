@@ -100,21 +100,19 @@ func create_hinge_joint():
     # 设置旋转轴（Y 轴）
     joint.transform.basis = Basis(Vector3.UP, 0)
     
-    # 设置角度限制
-    joint.set_param(HingeJoint3D.PARAM_ANGULAR_LIMIT_LOWER_ANGLE, deg_to_rad(-90))
-    joint.set_param(HingeJoint3D.PARAM_ANGULAR_LIMIT_UPPER_ANGLE, deg_to_rad(90))
+    # 启用并设置角度限制（开关属于 Flag，不是 Param）
+    joint.set_flag(HingeJoint3D.FLAG_USE_LIMIT, true)
+    joint.set_param(HingeJoint3D.PARAM_LIMIT_LOWER, deg_to_rad(-90))
+    joint.set_param(HingeJoint3D.PARAM_LIMIT_UPPER, deg_to_rad(90))
     
-    # 设置限制硬度
-    joint.set_param(HingeJoint3D.PARAM_ANGULAR_LIMIT_SOFTNESS, 0.9)
-    joint.set_param(HingeJoint3D.PARAM_ANGULAR_LIMIT_RESTITUTION, 0.5)
+    # 限制的柔化与松弛
+    joint.set_param(HingeJoint3D.PARAM_LIMIT_SOFTNESS, 0.9)
+    joint.set_param(HingeJoint3D.PARAM_LIMIT_RELAXATION, 0.5)
     
-    # 设置阻尼
-    joint.set_param(HingeJoint3D.PARAM_ANGULAR_DAMPING, 0.1)
-    
-    # 设置马达（可选）
-    joint.set_param(HingeJoint3D.PARAM_ANGULAR_MOTOR_TARGET_VELOCITY, 1.0)
-    joint.set_param(HingeJoint3D.PARAM_ANGULAR_MOTOR_FORCE_LIMIT, 10.0)
-    joint.set_param(HingeJoint3D.PARAM_ANGULAR_MOTOR_ENABLED, true)
+    # 马达（可选）
+    joint.set_flag(HingeJoint3D.FLAG_ENABLE_MOTOR, true)
+    joint.set_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY, 1.0)
+    joint.set_param(HingeJoint3D.PARAM_MOTOR_MAX_IMPULSE, 10.0)
     
     return joint
 ```
@@ -123,14 +121,12 @@ func create_hinge_joint():
 
 | 参数 | 说明 | 典型值 |
 |------|------|--------|
-| LIMIT_LOWER_ANGLE | 下限角度（弧度） | -PI/2 |
-| LIMIT_UPPER_ANGLE | 上限角度（弧度） | PI/2 |
-| LIMIT_SOFTNESS | 限制软度 | 0.9 |
-| LIMIT_RESTITUTION | 限制反弹 | 0.5 |
-| DAMPING | 阻尼 | 0.1 |
-| MOTOR_TARGET_VELOCITY | 马达目标速度 | 1.0 |
-| MOTOR_FORCE_LIMIT | 马达力限制 | 10.0 |
-| MOTOR_ENABLED | 马达启用 | true/false |
+| PARAM_LIMIT_LOWER / UPPER | 旋转角下限 / 上限（弧度） | -PI/2 / PI/2 |
+| PARAM_LIMIT_SOFTNESS | 限制柔化系数 | 0.9 |
+| PARAM_LIMIT_RELAXATION | 限制松弛程度，越小越严格 | 0.5 |
+| PARAM_MOTOR_TARGET_VELOCITY | 马达目标速度 | 1.0 |
+| PARAM_MOTOR_MAX_IMPULSE | 马达最大冲量 | 10.0 |
+| FLAG_USE_LIMIT / FLAG_ENABLE_MOTOR | 限制与马达开关（Flag 枚举） | true |
 
 ### 2.3 应用： swinging 门
 
@@ -167,8 +163,8 @@ func create_swinging_door():
     hinge.transform.origin = Vector3(0, 1.25, 0)
     
     # 设置限制（0-90 度）
-    hinge.set_param(HingeJoint3D.PARAM_ANGULAR_LIMIT_LOWER_ANGLE, 0)
-    hinge.set_param(HingeJoint3D.PARAM_ANGULAR_LIMIT_UPPER_ANGLE, deg_to_rad(90))
+    hinge.set_param(HingeJoint3D.PARAM_LIMIT_LOWER, 0)
+    hinge.set_param(HingeJoint3D.PARAM_LIMIT_UPPER, deg_to_rad(90))
     
     frame.add_child(door)
     frame.add_child(hinge)
@@ -622,60 +618,7 @@ func create_domino_chain(count: int, spacing: float):
 
 ---
 
-## 📝 本章总结
-
-### 核心要点
-
-1. **关节连接多个刚体**，限制或允许特定方向的运动
-2. **铰链关节用于旋转**，如门轴、钟摆
-3. **滑块关节用于线性运动**，如抽屉、升降机
-4. **锥形扭关节用于球窝连接**，如肩膀、髋部
-5. **6DOF 关节提供完全控制**，适合复杂机械
-
-### 关键术语
-
-| 术语 | 解释 |
-|------|------|
-| DOF | 自由度，独立运动的方向数量 |
-| Hinge Joint | 铰链关节，单轴旋转 |
-| Slider Joint | 滑块关节，线性滑动 |
-| Cone Twist Joint | 锥形扭关节，球窝连接 |
-| 6DOF Joint | 6 自由度关节，完全控制 |
-
----
-
-## 🔗 延伸阅读
-
-- **官方文档**: [Godot Joints](https://docs.godotengine.org/en/stable/tutorials/physics/joints.html)
-- **关节参考**: [HingeJoint3D](https://docs.godotengine.org/en/stable/classes/class_hingejoint3d.html)
-- **源码位置**: `servers/physics_3d/joints/`
-- **技术博客**: [Godot Physics Joints Guide](https://godotengine.org/article/physics-joints-guide/)
-
----
-
-## 📋 下一章预告
-
-**第 28 篇：车辆物理**
-
-- 车辆物理架构
-- 车轮碰撞
-- 悬挂系统
-- 引擎和传动
-- 车辆控制器
-
----
-
-*写作时间：2026-03-20*  
-*字数：约 7,000 字*  
-*状态：✅ 完成*
-
----
-
-*最后更新：2026-03-20 13:00*
-
----
-
-## 9. 关节马达和驱动（新增）
+## 9. 关节马达和驱动
 
 ### 9.1 马达基础
 
@@ -879,7 +822,7 @@ func stop():
 
 ---
 
-## 10. 关节断裂机制（新增）
+## 10. 关节断裂机制
 
 ### 10.1 断裂原理
 
@@ -1205,19 +1148,19 @@ func cut_rope(index: int):
 
 ---
 
-## 📝 本章总结（更新）
+## 📝 本章总结
 
-### 核心要点（更新）
+### 核心要点
 
 1. **关节连接多个刚体**，限制或允许特定方向的运动
 2. **铰链关节用于旋转**，如门轴、钟摆
 3. **滑块关节用于线性运动**，如抽屉、升降机
 4. **锥形扭关节用于球窝连接**，如肩膀、髋部
 5. **6DOF 关节提供完全控制**，适合复杂机械
-6. **关节马达提供动力**，实现速度/力矩控制（新增）
-7. **关节断裂模拟破坏**，增加真实感和游戏性（新增）
+6. **关节马达提供动力**，实现速度/力矩控制
+7. **关节断裂模拟破坏**，增加真实感和游戏性
 
-### 关键术语（更新）
+### 关键术语
 
 | 术语 | 解释 |
 |------|------|
@@ -1226,6 +1169,32 @@ func cut_rope(index: int):
 | Slider Joint | 滑块关节，线性滑动 |
 | Cone Twist Joint | 锥形扭关节，球窝连接 |
 | 6DOF Joint | 6 自由度关节，完全控制 |
-| Joint Motor | 关节马达，驱动关节运动（新增） |
-| Break Force | 断裂力，关节承受的最大力（新增） |
-| Stress Accumulation | 应力累积，疲劳损伤机制（新增） |
+| Joint Motor | 关节马达，驱动关节运动 |
+| Break Force | 断裂力，关节承受的最大力 |
+| Stress Accumulation | 应力累积，疲劳损伤机制 |
+
+---
+
+## 🔗 延伸阅读
+
+- **物理教程总览**: <https://docs.godotengine.org/en/stable/tutorials/physics/index.html>
+- **HingeJoint3D**: <https://docs.godotengine.org/en/stable/classes/class_hingejoint3d.html>
+- **Generic6DOFJoint3D**: <https://docs.godotengine.org/en/stable/classes/class_generic6dofjoint3d.html>
+- **源码位置**: `servers/physics_3d/joints/`
+
+---
+
+## 📋 下一章预告
+
+**第 28 篇：车辆物理**
+
+- 车辆物理架构
+- 车轮碰撞与悬挂
+- 引擎和传动系统
+- 车辆控制器
+
+---
+
+*写作时间：2026-03-20*  
+*最近一次技术勘误：2026-09-12*  
+*状态：✅ 完成*

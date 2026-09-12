@@ -26,38 +26,41 @@ GDScript 是 Godot 引擎的原生脚本语言，语法简洁、功能强大。�
 
 ## 1. 高级语法特性
 
-### 1.1 泛型和模板
+### 1.1 类型化容器与类型约束
+
+GDScript **没有泛型（generic）、模板和 `typedef`**，不存在 `func f<T>(x: T) -> T` 这类语法。
+类型安全依靠三样东西实现：类型化数组 `Array[T]`、引擎原生的 `Packed*Array`、以及 `Variant` + 运行时类型判断。
 
 ```gdscript
-# GDScript 泛型和模板
-class_name GDScriptGenerics
+# GDScript 不支持泛型/模板/typedef，请勿套用 C++ 或 C# 写法
+class_name TypedCollections
 
-# 泛型函数
-func generic_function<T>(value: T) -> T:
-    return value
+# 类型化数组：元素类型在写入与读取时都会被校验
+var names: Array[String] = []
+var scores: Array[int] = []
 
-# 泛型类
-class GenericClass:
-    var data: Array
-    
-    func add(item):
-        data.append(item)
-    
-    func get(index: int):
-        return data[index]
-    
-    func size() -> int:
-        return data.size()
+func add_name(name: String) -> void:
+    names.append(name)      # 传入非 String 会在运行时报错
 
-# 类型约束泛型
-func constrained_generic<T>(value: T) -> T:
-    # T 必须是 Object 的子类
-    if value is Object:
-        return value
-    return value
+func total_score() -> int:
+    var sum := 0
+    for score in scores:    # score 被推断为 int
+        sum += score
+    return sum
 
-# 多类型参数
-func multi_type_param(value: Variant) -> String:
+# Packed*Array 是引擎原生紧凑数组，内存连续、无装箱开销
+var ints := PackedInt32Array([1, 2, 3])
+var floats := PackedFloat32Array()
+
+# 需要表达“某类元素”时，用基类做元素类型
+class Animal:
+    func speak() -> String:
+        return "..."
+
+var animals: Array[Animal] = []
+
+# 真正的多类型入参只能用 Variant，并配合 is 做运行时判断
+func describe(value: Variant) -> String:
     if value is int:
         return "Integer: %d" % value
     elif value is String:
@@ -66,14 +69,6 @@ func multi_type_param(value: Variant) -> String:
         return "Array with %d items" % value.size()
     else:
         return "Unknown type"
-
-# 类型别名
-typedef IntArray = PackedInt32Array
-typedef FloatArray = PackedFloat32Array
-typedef Vector2Array = PackedVector2Array
-
-var my_ints: IntArray = IntArray()
-var my_floats: FloatArray = FloatArray()
 ```
 
 ### 1.2 异步编程
@@ -144,14 +139,20 @@ func call_dynamic_method(obj: Object, method_name: String, args: Array = []):
         return obj.callv(method_name, args)
     return null
 
-# 动态属性访问
-func get_dynamic_property(obj: Object, property_name: String):
-    if obj.has_property(property_name):
+# 动态属性访问：Object 没有 has_property()，用 get_property_list() 判断存在性
+func _has_property(obj: Object, property_name: String) -> bool:
+    for prop in obj.get_property_list():
+        if prop.name == property_name:
+            return true
+    return false
+
+func get_dynamic_property(obj: Object, property_name: String) -> Variant:
+    if _has_property(obj, property_name):
         return obj.get(property_name)
     return null
 
-func set_dynamic_property(obj: Object, property_name: String, value):
-    if obj.has_property(property_name):
+func set_dynamic_property(obj: Object, property_name: String, value: Variant) -> void:
+    if _has_property(obj, property_name):
         obj.set(property_name, value)
 
 # 检查方法存在
@@ -1042,7 +1043,7 @@ func has_save() -> bool:
 
 ### 核心要点
 
-1. **泛型和模板提升代码复用**，减少重复代码
+1. **类型化容器提升类型安全**，`Array[T]` 与 `Packed*Array` 各有适用场景
 2. **异步编程简化等待逻辑**，await 关键字强大
 3. **设计模式解决常见问题**，单例、工厂、观察者等
 4. **代码规范提升可维护性**，命名、注释、组织
@@ -1052,7 +1053,8 @@ func has_save() -> bool:
 
 | 术语 | 解释 |
 |------|------|
-| Generic | 泛型，参数化类型 |
+| Typed Array | 类型化数组 `Array[T]`，元素类型受校验 |
+| Variant | 变体类型，多类型入参的唯一选择 |
 | Async/Await | 异步编程，等待操作完成 |
 | Metaprogramming | 元编程，操作代码的代码 |
 | Design Pattern | 设计模式，解决常见问题的方案 |

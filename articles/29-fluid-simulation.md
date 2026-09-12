@@ -749,59 +749,7 @@ func create_river(length: float, width: float):
 
 ---
 
-## 📝 本章总结
-
-### 核心要点
-
-1. **流体模拟有多种方法**，粒子、网格、着色器各有优劣
-2. **SPH 方法适合小规模真实流体**，计算量大
-3. **水面模拟使用着色器**，性能好效果佳
-4. **浮力基于阿基米德原理**，排开液体重量
-5. **性能优化关键**：空间划分、LOD、时间步长
-
-### 关键术语
-
-| 术语 | 解释 |
-|------|------|
-| SPH | 平滑粒子流体动力学 |
-| Navier-Stokes | 流体动力学基本方程 |
-| Buoyancy | 浮力，物体在流体中受到的向上力 |
-| Viscosity | 黏度，流体内部摩擦力 |
-| Surface Tension | 表面张力，液体表面收缩力 |
-
----
-
-## 🔗 延伸阅读
-
-- **官方文档**: [Godot Particles](https://docs.godotengine.org/en/stable/tutorials/particles/particles.html)
-- **源码位置**: `servers/rendering/renderer_rd/storage_rd/particles.cpp`
-- **技术博客**: [Godot Fluid Simulation](https://godotengine.org/article/fluid-simulation/)
-
----
-
-## 📋 下一章预告
-
-**第 30 篇：布料模拟**
-
-- 布料物理基础
-- 质点弹簧系统
-- 碰撞检测
-- 风力影响
-- 性能优化
-
----
-
-*写作时间：2026-03-20*  
-*字数：约 8,500 字*  
-*状态：✅ 完成*
-
----
-
-*最后更新：2026-03-20 14:00*
-
----
-
-## 8. 流体粘度控制（新增）
+## 8. 流体粘度控制
 
 ### 8.1 粘度物理基础
 
@@ -1170,20 +1118,20 @@ func get_viscosity(shear_stress: float, shear_rate: float) -> float:
 
 ---
 
-## 📝 本章总结（更新）
+## 📝 本章总结
 
-### 核心要点（更新）
+### 核心要点
 
 1. **流体模拟有多种方法**，粒子、网格、着色器各有优劣
 2. **SPH 方法适合小规模真实流体**，计算量大
 3. **水面模拟使用着色器**，性能好效果佳
 4. **浮力基于阿基米德原理**，排开液体重量
 5. **性能优化关键**：空间划分、LOD、时间步长
-6. **粘度控制流体流动特性**，从水到蜂蜜（新增）
-7. **温度影响粘度变化**，热胀冷缩（新增）
-8. **密度分层实现多层流体**，油水分层（新增）
+6. **粘度控制流体流动特性**，从水到蜂蜜
+7. **温度影响粘度变化**，热胀冷缩
+8. **密度分层实现多层流体**，油水分层
 
-### 关键术语（更新）
+### 关键术语
 
 | 术语 | 解释 |
 |------|------|
@@ -1192,8 +1140,34 @@ func get_viscosity(shear_stress: float, shear_rate: float) -> float:
 | Buoyancy | 浮力，物体在流体中受到的向上力 |
 | Viscosity | 黏度，流体内部摩擦力 |
 | Surface Tension | 表面张力，液体表面收缩力 |
-| Dynamic Viscosity | 动力粘度，单位 Pa·s（新增） |
-| Kinematic Viscosity | 运动粘度，单位 m²/s（新增） |
-| Reynolds Number | 雷诺数，判断层流/湍流（新增） |
-| Density Stratification | 密度分层，不同密度流体分层（新增） |
-| Non-Newtonian | 非牛顿流体，粘度随剪切变化（新增） |
+| Dynamic Viscosity | 动力粘度，单位 Pa·s |
+| Kinematic Viscosity | 运动粘度，单位 m²/s |
+| Reynolds Number | 雷诺数，判断层流/湍流 |
+| Density Stratification | 密度分层，不同密度流体分层 |
+| Non-Newtonian | 非牛顿流体，粘度随剪切变化 |
+
+---
+
+## 🔗 延伸阅读
+
+- **GPUParticles3D**: <https://docs.godotengine.org/en/stable/classes/class_gpuparticles3d.html>
+- **ParticleProcessMaterial**: <https://docs.godotengine.org/en/stable/classes/class_particleprocessmaterial.html>
+- **说明**: Godot 没有内置流体求解器，SPH/网格法需自行实现或借助 GDExtension
+- **源码位置**: `servers/rendering/renderer_rd/storage_rd/particles.cpp`
+
+---
+
+## 📋 下一章预告
+
+**第 30 篇：布料模拟**
+
+- 布料物理基础
+- 质点弹簧系统
+- 碰撞检测与风力
+- 性能优化
+
+---
+
+*写作时间：2026-03-20*  
+*最近一次技术勘误：2026-09-12*  
+*状态：✅ 完成*

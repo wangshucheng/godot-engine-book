@@ -49,7 +49,7 @@
 
 ```gdscript
 # 网络性能监控器
-class_name NetworkPerformanceMonitor
+class_name NetworkBandwidthMonitor
 
 extends Node
 
@@ -82,7 +82,7 @@ func _ready():
     # 启动定时采样
     var timer = Timer.new()
     timer.wait_time = sample_rate
-    timer.connect("timeout", self, "_sample_stats")
+    timer.timeout.connect(_sample_stats)
     add_child(timer)
     timer.start()
 
@@ -850,7 +850,7 @@ class_name NetworkOptimizationManager
 
 extends Node
 
-var performance_monitor: NetworkPerformanceMonitor
+var performance_monitor: NetworkBandwidthMonitor
 var compression: BandwidthCompression
 var connection_optimizer: ConnectionOptimizer
 var prediction_optimizer: PredictionOptimizer
@@ -860,7 +860,7 @@ var zone_sync: ZoneSyncOptimizer
 var interest_manager: InterestManager
 
 func _ready():
-    performance_monitor = NetworkPerformanceMonitor.new()
+    performance_monitor = NetworkBandwidthMonitor.new()
     add_child(performance_monitor)
     
     compression = BandwidthCompression.new()

@@ -330,7 +330,7 @@ func _ready():
     some_node.connect("signal", _on_signal)
 
 func _exit_tree():
-    some_node.disconnect("signal", _on_signal)  # 断开连接
+    some_node.signal_name.disconnect(_on_signal)  # 断开连接
 ```
 
 ### 3.3 优化技巧

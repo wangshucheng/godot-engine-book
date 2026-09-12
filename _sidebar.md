@@ -42,6 +42,10 @@
 * [30. 布料模拟](/articles/30-cloth-simulation.md)
 * [31. 破坏系统](/articles/31-destruction-systems.md)
 * [32. 物理性能优化](/articles/32-physics-performance-optimization.md)
+* [33. 2D 物理系统](/articles/33-2d-physics.md)
+* [34. Jolt Physics](/articles/34-jolt-physics.md)
+* [35. 软体与可变形体](/articles/35-soft-bodies.md)
+* [36. 物理调试与问题排查](/articles/36-physics-debugging.md)
 
 ## 第四卷：动画系统
 
@@ -92,6 +96,7 @@
 
 ## 附录
 
+* [附录 A. 术语表](/articles/appendix-a-glossary.md)
 * [附录 B. GDScript 快速参考](/articles/appendix-b-gdscript-reference.md)
 * [附录 C. Godot 与 Unity 对照表](/articles/appendix-c-unity-migration.md)
 * [附录 D. 性能优化清单](/articles/appendix-d-performance-checklist.md)

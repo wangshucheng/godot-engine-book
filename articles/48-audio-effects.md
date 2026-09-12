@@ -367,7 +367,7 @@ func set_eq6_preset(eq: AudioEffectEQ6, preset: String):
 
 ```gdscript
 # 混响效果器
-class_name AudioEffectReverbController
+class_name ReverbEffectController
 
 extends Node
 
@@ -534,7 +534,7 @@ func adjust_reverb_wet(bus_name: String, wet_amount: float):
 
 ```gdscript
 # 压缩器效果器
-class_name AudioEffectCompressorController
+class_name CompressorEffectController
 
 extends Node
 
@@ -921,7 +921,7 @@ func _ready():
 func start_monitoring():
     var timer = Timer.new()
     timer.wait_time = 1.0
-    timer.connect("timeout", self, "_update_stats")
+    timer.timeout.connect(_update_stats)
     add_child(timer)
     timer.start()
 
@@ -1015,13 +1015,13 @@ func create_eq_with_preset(preset: String) -> AudioEffectEQ21:
 
 func create_reverb_with_preset(preset: String) -> AudioEffectReverb:
     var reverb = AudioEffectReverb.new()
-    var controller = AudioEffectReverbController.new()
+    var controller = ReverbEffectController.new()
     controller.set_reverb_preset(reverb, preset)
     return reverb
 
 func create_compressor_with_preset(preset: String) -> AudioEffectCompressor:
     var compressor = AudioEffectCompressor.new()
-    var controller = AudioEffectCompressorController.new()
+    var controller = CompressorEffectController.new()
     controller.set_compressor_preset(compressor, preset)
     return compressor
 
@@ -1076,7 +1076,7 @@ func apply_reverb_to_bus(bus_name: String, preset: String):
         return
     
     var reverb = AudioEffectReverb.new()
-    var controller = AudioEffectReverbController.new()
+    var controller = ReverbEffectController.new()
     controller.set_reverb_preset(reverb, preset)
     AudioServer.add_bus_effect(bus_idx, reverb)
 
@@ -1096,7 +1096,7 @@ func apply_compressor_to_bus(bus_name: String, preset: String):
         return
     
     var compressor = AudioEffectCompressor.new()
-    var controller = AudioEffectCompressorController.new()
+    var controller = CompressorEffectController.new()
     controller.set_compressor_preset(compressor, preset)
     AudioServer.add_bus_effect(bus_idx, compressor)
 ```

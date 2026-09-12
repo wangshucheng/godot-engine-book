@@ -410,61 +410,59 @@ func _handle_packet(packet: PackedByteArray):
             # 处理 Pong
             _handle_pong(parsed.data)
 
-func _send_data(data: PackedByteArray):
-    # 发送数据
-    if sequence > 65535:
-        sequence = 0
-    
-    var packet = UDPPacketFormat.pack_data(sequence, UDPPacketFormat.PacketType.DATA, data)
+signal data_received(seq: int, data: PackedByteArray)
+
+# seq 为 -1 时分配新序号；重传时必须传入原序号
+func _send_data(data: PackedByteArray, seq: int = -1) -> void:
+    var use_seq := seq
+    if use_seq < 0:
+        use_seq = sequence
+        sequence = (sequence + 1) & 0xFFFF   # 16 位序号回绕
+
+    var packet := UDPPacketFormat.pack_data(use_seq, UDPPacketFormat.PacketType.DATA, data)
     udp.put_packet(packet)
-    
+
     # 保存到待确认队列
-    pending_packets[sequence] = {
+    pending_packets[use_seq] = {
         "data": data,
         "time": Time.get_ticks_msec()
     }
-    
-    sequence += 1
 
-func _send_ack(seq: int):
-    # 发送确认
-    var packet = UDPPacketFormat.pack_ack(seq)
-    udp.put_packet(packet)
+func _send_ack(seq: int) -> void:
+    udp.put_packet(UDPPacketFormat.pack_ack(seq))
 
-func _handle_ack(seq: int):
-    # 处理确认
+func _on_data_received(seq: int, data: PackedByteArray) -> void:
+    # 可靠交付的最后一环：把数据交给上层业务
+    data_received.emit(seq, data)
+
+func _handle_ack(seq: int) -> void:
     if pending_packets.has(seq):
         pending_packets.erase(seq)
         packet_delivered.emit(seq)
 
-func _handle_nack(seq: int):
-    # 处理否认（重传）
+func _handle_nack(seq: int) -> void:
     if pending_packets.has(seq):
-        var pending = pending_packets[seq]
-        _send_data(pending.data)
-        pending_packets[seq]["time"] = Time.get_ticks_msec()
+        # 重传必须复用原序号。若换成新序号，对端 ACK 的序号与本端待确认队列对不上，
+        # 该包会被反复重传直到超时丢弃。
+        _send_data(pending_packets[seq].data, seq)
+        pending_packets[seq].time = Time.get_ticks_msec()
 
-func _check_timeouts():
-    # 检查超时
-    var current_time = Time.get_ticks_msec()
-    var to_remove = []
-    
+func _check_timeouts() -> void:
+    var current_time := Time.get_ticks_msec()
+
     for seq in pending_packets:
-        var pending = pending_packets[seq]
-        if current_time - pending.time > TIMEOUT_MS:
-            to_remove.append(seq)
-            # 重传
-            _send_data(pending.data)
-            pending_packets[seq]["time"] = current_time
-    
-    # 限制重传次数
+        if current_time - int(pending_packets[seq].time) > TIMEOUT_MS:
+            # 超时重传同样复用原序号
+            _send_data(pending_packets[seq].data, seq)
+            pending_packets[seq].time = current_time
+
+    # 待确认队列过长时丢弃最老的包，避免内存无限增长
     if pending_packets.size() > MAX_PENDING:
-        # 丢弃最老的包
-        var oldest_seq = -1
-        var oldest_time = current_time
+        var oldest_seq := -1
+        var oldest_time := current_time
         for seq in pending_packets:
-            if pending_packets[seq].time < oldest_time:
-                oldest_time = pending_packets[seq].time
+            if int(pending_packets[seq].time) < oldest_time:
+                oldest_time = int(pending_packets[seq].time)
                 oldest_seq = seq
         if oldest_seq >= 0:
             pending_packets.erase(oldest_seq)

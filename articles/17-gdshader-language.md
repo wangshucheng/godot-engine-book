@@ -4,9 +4,9 @@
 
 ---
 
-## 一、Shader 类型
+## 一、着色器类型
 
-### 1.1 Shader 类型
+### 1.1 着色器类型
 
 | 类型 | 说明 | 使用场景 |
 |------|------|---------|
@@ -36,7 +36,7 @@ void fragment() {
 
 ---
 
-## 二、Shader 语法
+## 二、着色器语法
 
 ### 2.1 变量类型
 
@@ -72,7 +72,7 @@ vec4 normal = texture(normal_texture, UV);
 
 ---
 
-## 三、Shader 示例
+## 三、着色器示例
 
 ### 3.1 水波效果
 
@@ -111,7 +111,7 @@ void fragment() {
 
 ---
 
-## 四、Shader 优化
+## 四、着色器优化
 
 ### 4.1 优化技巧
 
@@ -136,26 +136,26 @@ void fragment() {
 
 ### 核心要点
 
-1. **Shader 类型**：Spatial、CanvasItem、Particles
+1. **着色器类型**：spatial、canvas_item、particles
 2. **语法**：uniform、varying、内置函数
 3. **示例**：水波、溶解效果
 4. **优化**：减少采样、简化计算
 
 ### 下一篇
 
-**下一篇**: 2D 渲染
+**下一篇**: [第 18 篇：2D 渲染](/articles/18-2d-rendering.md)
 
 ---
 
 **作者**: wangshucheng
 **首发平台**: 微信公众号  
 **写作时间**: 2026 年 3 月  
-**Godot 版本**: 4.3（最新稳定版）
+**Godot 版本**: 4.x（基线 4.3，2026-09 最新稳定版为 4.7）
 
 ---
 
-**上一篇**: [第 16 篇：材质系统](#)  
-**下一篇**: [第 18 篇：2D 渲染](#)
+**上一篇**: [第 16 篇：材质系统](/articles/16-material-system.md)
+**下一篇**: [第 18 篇：2D 渲染](/articles/18-2d-rendering.md)
 
 ---
 

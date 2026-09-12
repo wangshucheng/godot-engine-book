@@ -58,7 +58,7 @@ Godot 提供了多种角色动画技术，包括基础角色动画、骨骼动�
 │  3. Skeleton3D：骨骼系统                                      │
 │  4. MeshInstance3D：网格实例                                 │
 │  5. CharacterBody3D：角色身体                                 │
-│  6. Bone3D：骨骼节点                                          │
+│  6. Skeleton3D：骨骼数据（索引访问）                           │
 │  7. AnimationMixer：动画混合器                                │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
@@ -223,7 +223,7 @@ func update_blending():
 ### 3.1 骨骼系统
 
 ```gdscript
-# 骨骼系统
+# 骨骼系统：脚本直接挂在 Skeleton3D 上，用索引访问骨骼
 class_name SkeletonController
 
 extends Skeleton3D
@@ -231,40 +231,34 @@ extends Skeleton3D
 @export var animation_player: AnimationPlayer
 @export var mesh: MeshInstance3D
 
-func _ready():
-    # 绑定骨骼到网格
+func _ready() -> void:
+    # 绑定网格到骨架
     if mesh:
-        mesh.skeleton = self
-    
-    # 设置动画播放器
-    if animation_player:
-        animation_player.skeleton = self
+        mesh.skeleton = mesh.get_path_to(self)
 
-func play_animation(anim_name: String):
-    if animation_player and has_animation(anim_name):
+    # AnimationPlayer 通过 NodePath 指明被驱动的骨架
+    if animation_player:
+        animation_player.root_node = animation_player.get_path_to(self)
+
+func play_animation(anim_name: StringName) -> void:
+    if animation_player and animation_player.has_animation(anim_name):
         animation_player.play(anim_name)
 
-func update_bones():
-    # 获取当前动画时间
-    var time = get_current_animation_position()
-    
-    # 获取动画帧数据
-    var frames = get_animation("walk").get_keyframes()
-    
-    # 更新每个骨骼
-    for bone_name in bones:
-        var bone = bones[bone_name]
-        
-        # 根据时间找到对应的帧
-        var frame = frames[bone_name]
-        
-        # 应用变换
-        bone.transform = frame.get_transform(time)
+func update_bones() -> void:
+    if animation_player == null:
+        return
 
-func get_bone_transform(bone_name: String) -> Transform3D:
-    if has_bone(bone_name):
-        return bones[bone_name].transform
-    return Transform3D()
+    # 曲线求值与骨骼写入由引擎完成，脚本侧只查询进度
+    var time := animation_player.get_current_animation_position()
+    var anim := animation_player.get_animation(&"walk")
+    if anim == null:
+        return
+    print("播放中：%.2fs / %d 根骨骼 / %d 条轨道" % [
+        time, get_bone_count(), anim.get_track_count()])
+
+func get_bone_transform(bone_name: StringName) -> Transform3D:
+    var idx := find_bone(bone_name)
+    return get_bone_pose(idx) if idx != -1 else Transform3D()
 ```
 
 ### 3.2 骨骼约束
@@ -282,26 +276,27 @@ extends Node3D
 func _ready():
     if skeleton and not bone_name.empty():
         # 连接更新信号
-        skeleton.connect("skeleton_updated", self, "_on_skeleton_updated")
+        skeleton.skeleton_updated.connect(_on_skeleton_updated)
 
 func _on_skeleton_updated():
     # 应用约束
     apply_constraint()
 
-func apply_constraint():
-    if skeleton and has_bone(bone_name):
-        var bone = skeleton.bones[bone_name]
-        
-        if target_node:
-            # 计算目标位置
-            var target_pos = target_node.global_transform.origin
-            var bone_pos = bone.global_transform.origin
-            
-            # 应用约束（例如：保持距离）
-            var direction = (target_pos - bone_pos).normalized()
-            var distance = 1.0  # 固定距离
-            
-            bone.transform.origin = bone_pos + direction * distance
+func apply_constraint() -> void:
+    var idx := skeleton.find_bone(bone_name)
+    if idx == -1 or target_node == null:
+        return
+
+    # 骨骼不是节点，没有 global_transform；全局姿势用 get_bone_global_pose() 读取
+    var bone_pose := skeleton.get_bone_global_pose(idx)
+    var direction := (target_node.global_transform.origin - bone_pose.origin).normalized()
+
+    # 计算约束后的姿势：沿方向推出固定距离
+    var constrained := bone_pose
+    constrained.origin = bone_pose.origin + direction * 1.0
+
+    # 用 override 写回：amount 是权重，persistent=true 表示每帧保持覆盖
+    skeleton.set_bone_global_pose_override(idx, constrained, 1.0, true)
 ```
 
 ### 3.3 骨骼跟随
@@ -319,23 +314,27 @@ extends Node3D
 
 func _ready():
     if skeleton and not bone_name.empty() and not target_bone.empty():
-        skeleton.connect("skeleton_updated", self, "_on_skeleton_updated")
+        skeleton.skeleton_updated.connect(_on_skeleton_updated)
 
 func _on_skeleton_updated():
     # 应用跟随
     apply_follow()
 
-func apply_follow():
-    if skeleton and has_bone(bone_name) and has_bone(target_bone):
-        var bone = skeleton.bones[bone_name]
-        var target = skeleton.bones[target_bone]
-        
-        # 计算目标变换
-        var target_transform = target.global_transform
-        
-        # 应用跟随
-        bone.transform.origin = bone.transform.origin.lerp(target_transform.origin, follow_amount)
-        bone.transform.basis = bone.transform.basis.slerp(target_transform.basis, follow_amount)
+func apply_follow() -> void:
+    var idx := skeleton.find_bone(bone_name)
+    var target_idx := skeleton.find_bone(target_bone)
+    if idx == -1 or target_idx == -1:
+        return
+
+    var current := skeleton.get_bone_global_pose(idx)
+    var target := skeleton.get_bone_global_pose(target_idx)
+
+    # 按权重插值位置与旋转（基向量用 slerp 保持正交性）
+    var blended := current
+    blended.origin = current.origin.lerp(target.origin, follow_amount)
+    blended.basis = current.basis.slerp(target.basis, follow_amount)
+
+    skeleton.set_bone_global_pose_override(idx, blended, 1.0, true)
 ```
 
 ---
@@ -509,24 +508,29 @@ func transition_to_expression(expression: String):
 ### 5.1 动画缓存
 
 ```gdscript
-# 动画缓存
-class_name AnimationCache
+# 动画缓存：运行时代码合成 Animation 资源
+class_name CharacterAnimationCache
 
-var cache = {}
+var cache: Dictionary = {}
 
-func get_animation(anim_name: String) -> Animation:
+func get_animation(anim_name: StringName) -> Animation:
     if cache.has(anim_name):
         return cache[anim_name]
-    
-    var anim = Animation.new()
-    anim.add_track(AnimationTrackType.TRANSFORM_3D, "Transform3D")
-    anim.add_track(AnimationTrackType.ROTATION, "Rotation")
-    anim.add_track(AnimationTrackType.SCALE, "Scale")
-    
+
+    var anim := Animation.new()
+    anim.length = 1.0
+
+    # 一条 TYPE_TRANSFORM_3D 轨道即可同时驱动位置 / 旋转 / 缩放；
+    # 不存在 TRANSFORM_3D、ROTATION、SCALE 三种并列的轨道类型。
+    var track_idx := anim.add_track(Animation.TYPE_TRANSFORM_3D)
+    anim.track_set_path(track_idx, NodePath("Skeleton3D:Root"))
+    anim.track_insert_key(track_idx, 0.0, [Vector3.ZERO, Quaternion.IDENTITY, Vector3.ONE])
+    anim.track_insert_key(track_idx, 1.0, [Vector3(0, 1, 0), Quaternion.IDENTITY, Vector3.ONE])
+
     cache[anim_name] = anim
     return anim
 
-func clear_cache():
+func clear_cache() -> void:
     cache.clear()
 ```
 
@@ -562,22 +566,20 @@ class_name SkeletonAnimationOptimizer
 
 @export var max_bones: int = 50
 
-func optimize_skeleton(skeleton: Skeleton3D):
-    if skeleton.bones.size() > max_bones:
-        # 移除不重要的骨骼
-        var bones_to_remove = []
-        
-        # 找到需要移除的骨骼
-        for bone_name in skeleton.bones:
-            if not is_important_bone(bone_name):
-                bones_to_remove.append(bone_name)
-        
-        # 移除骨骼
-        for bone_name in bones_to_remove:
-            skeleton.bones[bone_name].queue_free()
-            skeleton.bones.erase(bone_name)
-        
-        print("Skeleton optimized: removed ", bones_to_remove.size(), " bones")
+func optimize_skeleton(skeleton: Skeleton3D) -> void:
+    # 骨骼列表来自导入的模型，运行时不能增删；
+    # 正确做法是用 set_bone_enabled() 把不参与动画的骨骼排除在求值之外
+    var disabled := 0
+
+    for i in skeleton.get_bone_count():
+        var bone_name := skeleton.get_bone_name(i)
+        var keep := i < max_bones or is_important_bone(bone_name)
+        if skeleton.is_bone_enabled(i) != keep:
+            skeleton.set_bone_enabled(i, keep)
+            if not keep:
+                disabled += 1
+
+    print("Skeleton optimized: %d 根骨骼已停用" % disabled)
 
 func is_important_bone(bone_name: String) -> bool:
     # 判断骨骼是否重要
@@ -667,7 +669,7 @@ func update_animation():
 
 ```gdscript
 # 骨骼动画系统
-class_name SkeletonAnimationSystem
+class_name CharacterSkeletonAnimationSystem
 
 extends Skeleton3D
 
@@ -682,7 +684,7 @@ func _ready():
     
     # 设置动画播放器
     if animation_player:
-        animation_player.skeleton = self
+        animation_player.root_node = animation_player.get_path_to(self)
 
 func _process(delta):
     # 根据状态更新骨骼动画
@@ -811,58 +813,7 @@ func update_facial_animation(is_speaking: bool):
 
 ---
 
-## 📝 本章总结
-
-### 核心要点
-
-1. **基础动画播放是基础**，根据状态播放不同的动画
-2. **骨骼动画用于复杂角色**，通过骨骼系统控制角色
-3. **表情动画增加真实感**，通过面部动画表达情绪
-4. **动画优化必不可少**，包括缓存、LOD、骨骼优化等
-5. **完整角色动画系统**，整合所有动画技术
-
-### 关键术语
-
-| 术语 | 解释 |
-|------|------|
-| AnimationPlayer | 动画播放器，控制动画播放 |
-| Skeleton3D | 骨骼系统，控制骨骼动画 |
-| Expression | 表情，面部表情和情绪 |
-| LOD | 细节层次，根据距离调整动画 |
-| AnimationBlend | 动画混合，混合多个动画 |
-
----
-
-## 🔗 延伸阅读
-
-- **官方文档**: [Godot Animation](https://docs.godotengine.org/en/stable/tutorials/animation/animation.html)
-- **源码位置**: `servers/animation/`
-- **技术博客**: [Godot Character Animation](https://godotengine.org/article/character-animation/)
-
----
-
-## 📋 下一章预告
-
-**第 41 篇：动画曲线**
-
-- 动画曲线编辑器基础
-- 关键帧编辑
-- 曲线调整技术
-- 动画预览与优化
-
----
-
-*写作时间：2026-03-20*  
-*字数：约 10,000 字*  
-*状态：✅ 完成*
-
----
-
-*最后更新：2026-03-20 14:00*
-
----
-
-## 8. 高级角色动画技术（新增）
+## 8. 高级角色动画技术
 
 ### 8.1 运动匹配基础（Motion Matching）
 
@@ -1063,7 +1014,7 @@ func blend_gestures(gesture_a: String, gesture_b: String, weight: float):
 
 ```gdscript
 # 角色动画 LOD 系统
-class_name CharacterAnimationLOD
+class_name CharacterAnimationLODSystem
 
 extends Node
 
@@ -1144,24 +1095,50 @@ func _simplify_blend_tree():
 
 ---
 
-## 📝 本章总结（更新）
+## 📝 本章总结
 
-### 核心要点（更新）
+### 核心要点
 
 1. **角色动画需要多系统协作**，包括骨骼、混合、状态机
 2. **骨骼动画是核心**，IK 增强真实感
 3. **表情和手势增加细节**，提升角色表现力
-4. **运动匹配提供流畅移动**（新增）
-5. **程序化手势丰富交互**（新增）
-6. **LOD 优化提升性能**（新增）
+4. **运动匹配提供流畅移动**
+5. **程序化手势丰富交互**
+6. **LOD 优化提升性能**
 
-### 关键术语（更新）
+### 关键术语
 
 | 术语 | 解释 |
 |------|------|
 | Character Animation | 角色动画 |
 | Skeleton Animation | 骨骼动画 |
 | Facial Animation | 面部表情动画 |
-| Motion Matching | 运动匹配（新增） |
-| Procedural Gesture | 程序化手势（新增） |
-| Animation LOD | 动画细节层次（新增） |
+| Motion Matching | 运动匹配 |
+| Procedural Gesture | 程序化手势 |
+| Animation LOD | 动画细节层次 |
+
+---
+
+## 🔗 延伸阅读
+
+- **Skeleton3D**: <https://docs.godotengine.org/en/stable/classes/class_skeleton3d.html>
+- **AnimationPlayer**: <https://docs.godotengine.org/en/stable/classes/class_animationplayer.html>
+- **BoneAttachment3D**: <https://docs.godotengine.org/en/stable/classes/class_boneattachment3d.html>
+- **源码位置**: `scene/animation/`, `servers/animation/`
+
+---
+
+## 📋 下一章预告
+
+**第 41 篇：动画曲线**
+
+- 动画曲线编辑器基础
+- 关键帧编辑
+- 曲线调整技术
+- 动画预览与优化
+
+---
+
+*写作时间：2026-03-20*  
+*最近一次技术勘误：2026-09-12*  
+*状态：✅ 完成*

@@ -486,8 +486,8 @@ extends Node
 
 func _ready():
     # 连接信号
-    primary_animation.connect("animation_started", self, "_on_primary_started")
-    primary_animation.connect("animation_finished", self, "_on_primary_finished")
+    primary_animation.animation_started.connect(_on_primary_started)
+    primary_animation.animation_finished.connect(_on_primary_finished)
 
 func _on_primary_started(anim_name: String):
     # 同步开始次要动画
@@ -740,58 +740,7 @@ func update_blending():
 
 ---
 
-## 📝 本章总结
-
-### 核心要点
-
-1. **AnimationNodeBlend2 是基础**，用于两个动画的线性混合
-2. **AnimationNodeAdd2 用于加法混合**，适合叠加效果
-3. **AnimationNodeBlend3 用于三个动画的混合**，适合复杂场景
-4. **分层动画混合**，可以分别控制不同身体部位
-5. **动画混合优化**，包括缓存、LOD、压缩等
-
-### 关键术语
-
-| 术语 | 解释 |
-|------|------|
-| AnimationNodeBlend2 | 两个动画的线性混合 |
-| AnimationNodeAdd2 | 两个动画的加法混合 |
-| AnimationNodeBlend3 | 三个动画的混合 |
-| Layered Blending | 分层动画混合 |
-| LOD | 细节层次，根据距离调整动画 |
-
----
-
-## 🔗 延伸阅读
-
-- **官方文档**: [Godot Animation](https://docs.godotengine.org/en/stable/tutorials/animation/animation.html)
-- **源码位置**: `servers/animation/`
-- **技术博客**: [Godot Animation Blending](https://godotengine.org/article/animation-blending/)
-
----
-
-## 📋 下一章预告
-
-**第 40 篇：角色动画**
-
-- 角色动画基础
-- 角色动画控制器
-- 角色动画混合
-- 性能优化
-
----
-
-*写作时间：2026-03-20*  
-*字数：约 9,500 字*  
-*状态：✅ 完成*
-
----
-
-*最后更新：2026-03-20 14:00*
-
----
-
-## 8. 动画混合树详解（新增）
+## 8. 动画混合树详解
 
 ### 8.1 1D 混合树（1D Blend Tree）
 
@@ -1006,7 +955,7 @@ func setup_blend_space_2d():
 
 ---
 
-## 9. 动画遮罩和分层（新增）
+## 9. 动画遮罩和分层
 
 ### 9.1 动画遮罩（Animation Mask）
 
@@ -1223,20 +1172,20 @@ func update_aim_blend(target_distance: float):
 
 ---
 
-## 📝 本章总结（更新）
+## 📝 本章总结
 
-### 核心要点（更新）
+### 核心要点
 
 1. **AnimationNodeBlend2 是基础**，用于两个动画的线性混合
 2. **AnimationNodeAdd2 用于加法混合**，适合叠加效果
 3. **AnimationNodeBlend3 用于三个动画的混合**，适合复杂场景
 4. **分层动画混合**，可以分别控制不同身体部位
 5. **动画混合优化**，包括缓存、LOD、压缩等
-6. **1D/2D 混合树简化复杂混合**（新增）
-7. **动画遮罩实现身体部位独立控制**（新增）
-8. **加法混合用于表情和手势叠加**（新增）
+6. **1D/2D 混合树简化复杂混合**
+7. **动画遮罩实现身体部位独立控制**
+8. **加法混合用于表情和手势叠加**
 
-### 关键术语（更新）
+### 关键术语
 
 | 术语 | 解释 |
 |------|------|
@@ -1245,7 +1194,33 @@ func update_aim_blend(target_distance: float):
 | AnimationNodeBlend3 | 三个动画的混合 |
 | Layered Blending | 分层动画混合 |
 | LOD | 细节层次，根据距离调整动画 |
-| Blend Tree 1D | 一维混合树，单参数混合（新增） |
-| Blend Tree 2D | 二维混合树，双参数混合（新增） |
-| Animation Mask | 动画遮罩，控制混合部位（新增） |
-| Additive Blending | 加法混合，叠加动画效果（新增） |
+| Blend Tree 1D | 一维混合树，单参数混合 |
+| Blend Tree 2D | 二维混合树，双参数混合 |
+| Animation Mask | 动画遮罩，控制混合部位 |
+| Additive Blending | 加法混合，叠加动画效果 |
+
+---
+
+## 🔗 延伸阅读
+
+- **AnimationTree**: <https://docs.godotengine.org/en/stable/classes/class_animationtree.html>
+- **AnimationNodeBlendSpace1D**: <https://docs.godotengine.org/en/stable/classes/class_animationnodeblendspace1d.html>
+- **动画教程**: <https://docs.godotengine.org/en/stable/tutorials/animation/index.html>
+- **源码位置**: `scene/animation/`, `servers/animation/`
+
+---
+
+## 📋 下一章预告
+
+**第 40 篇：角色动画**
+
+- 角色动画基础与控制器
+- 骨骼动画
+- 表情与面部动画
+- 性能优化
+
+---
+
+*写作时间：2026-03-20*  
+*最近一次技术勘误：2026-09-12*  
+*状态：✅ 完成*

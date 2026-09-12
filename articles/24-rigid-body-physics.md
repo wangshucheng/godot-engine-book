@@ -76,10 +76,11 @@ func _process(delta):
 
 ```gdscript
 # 刚体模式
-body.mode = RigidBody3D.MODE_RIGID          # 正常刚体模式
-body.mode = RigidBody3D.MODE_STATIC         # 静态模式（不可移动）
-body.mode = RigidBody3D.MODE_KINEMATIC      # 运动学模式（脚本控制）
-body.mode = RigidBody3D.MODE_CHARACTER      # 角色模式（特殊碰撞）
+body.freeze = false                                    # 默认即为刚体模拟
+body.freeze = true
+body.freeze_mode = RigidBody3D.FREEZE_MODE_STATIC      # 冻结为静态体（不可移动）
+body.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC   # 冻结为运动学体（脚本可移动）
+# 4.x 已移除 MODE_CHARACTER；角色控制请改用 CharacterBody3D
 ```
 
 ---
@@ -157,7 +158,7 @@ func _ready():
 
 func _on_body_entered(body):
     if body is RigidBody3D:
-        body.add_central_force(gravity_direction * gravity_strength * body.mass)
+        body.apply_central_force(gravity_direction * gravity_strength * body.mass)
 
 func _on_body_exited(body):
     if body is RigidBody3D:
@@ -181,7 +182,7 @@ func _physics_process(delta):
                 randf_range(-noise, noise),
                 randf_range(-noise, noise)
             )
-            body.add_central_force(wind)
+            body.apply_central_force(wind)
 ```
 
 ---
@@ -430,12 +431,13 @@ var held_position: Vector3
 var held_rotation: Quaternion
 
 func _ready():
-    mode = MODE_KINEMATIC
+    freeze = true
+    freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
     contact_monitor = true
     max_contacts_reported = 4
 
 func throw(direction: Vector3):
-    mode = MODE_RIGID
+    freeze = false
     sleeping = false
     apply_central_impulse(direction.normalized() * throw_force)
     
@@ -450,11 +452,12 @@ func hold(position: Vector3, rotation: Quaternion):
     is_held = true
     held_position = position
     held_rotation = rotation
-    mode = MODE_KINEMATIC
+    freeze = true
+    freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
 
 func release():
     is_held = false
-    mode = MODE_RIGID
+    freeze = false
 
 func _physics_process(delta):
     if is_held:
@@ -586,7 +589,7 @@ func return_body(body: RigidBody3D):
 
 ---
 
-## 10. 刚体插值与平滑（新增）
+## 10. 刚体插值与平滑
 
 ### 10.1 插值模式
 
@@ -676,7 +679,8 @@ var interpolation_target: Transform3D
 func _ready():
     if not is_owner:
         # 远程物体：禁用物理模拟
-        mode = MODE_KINEMATIC
+        freeze = true
+    freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
         physics_material_override = PhysicsMaterial.new()
         physics_material_override.friction = 0.0
         physics_material_override.bounce = 0.0
@@ -729,7 +733,7 @@ func _interpolate_remote():
 
 ---
 
-## 11. _integrate_forces 深度解析（新增）
+## 11. _integrate_forces 深度解析
 
 ### 11.1 PhysicsDirectBodyState3D 详解
 
@@ -930,10 +934,6 @@ _integrate_forces 性能提示:
 
 ## 📝 本章总结
 
----
-
-## 📝 本章总结
-
 ### 核心要点
 
 1. **刚体完全由物理引擎控制**，通过力和冲量影响运动
@@ -956,10 +956,9 @@ _integrate_forces 性能提示:
 
 ## 🔗 延伸阅读
 
-- **官方文档**: [Godot RigidBody3D](https://docs.godotengine.org/en/stable/classes/class_rigidbody3d.html)
-- **物理教程**: [Godot Physics Tutorial](https://docs.godotengine.org/en/stable/tutorials/physics/using_kinematic_body_3d.html)
+- **官方文档**: <https://docs.godotengine.org/en/stable/classes/class_rigidbody3d.html>
+- **物理教程**: <https://docs.godotengine.org/en/stable/tutorials/physics/index.html>
 - **源码位置**: `servers/physics_3d/`, `scene/3d/physics_body_3d.cpp`
-- **技术博客**: [Godot Physics Deep Dive](https://godotengine.org/article/godot-physics-deep-dive/)
 
 ---
 

@@ -528,21 +528,22 @@ print(texture1 == texture2)  # true
 **手动卸载资源**：
 
 ```gdscript
-# 卸载未使用的资源
-ResourceLoader.load("res://large_texture.png")
+# Godot 4 没有 ResourceLoader.unload()，也没有 ResourceQueue
+# 资源是引用计数的：最后一个引用消失即自动回收
+var tex := ResourceLoader.load("res://large_texture.png")  # 默认 CACHE_MODE_REUSE
 # ... 使用资源
-ResourceLoader.unload("res://large_texture.png")  # 手动卸载
+tex = null  # 引用计数归零，资源被释放
 
-# 卸载所有未使用的资源
-ResourceQueue.unload_unused_resources()
+# 若不想被全局缓存长期占用内存，显式忽略缓存
+var temp := ResourceLoader.load(
+    "res://large_texture.png", "", ResourceLoader.CACHE_MODE_IGNORE)
 ```
 
 **资源预加载**：
 
 ```gdscript
-# 使用 @preload 在编译时加载
-@preload("res://player.png")
-var PlayerTexture: Texture2D
+# 用 preload() 在编译期加载，必须以常量接收
+const PlayerTexture: Texture2D = preload("res://player.png")
 
 # 优点：加载快，无运行时开销
 # 缺点：增加初始加载时间
@@ -757,12 +758,12 @@ print(get_tree().get_node_count())
 **作者**: wangshucheng
 **首发平台**: 微信公众号  
 **写作时间**: 2026 年 3 月  
-**Godot 版本**: 4.3（最新稳定版）
+**Godot 版本**: 4.x（基线 4.3，2026-09 最新稳定版为 4.7）
 
 ---
 
-**上一篇**: [第 3 篇：Godot 场景树架构深度解析](#)  
-**下一篇**: [第 5 篇：Godot 对象系统深度解析](#)
+**上一篇**: [第 3 篇：Godot 场景树架构深度解析](/articles/03-scene-tree-architecture.md)
+**下一篇**: [第 5 篇：Godot 对象系统深度解析](/articles/05-object-system.md)
 
 ---
 

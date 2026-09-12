@@ -52,11 +52,14 @@ lod.add_level(low_poly_mesh, 30.0)    # 30+ 米
 
 ### 2.3 LOD 效果
 
-| 距离 | 多边形数 | 性能提升 |
+> ⚠️ 下表为示意数据（未附测试环境），实际收益取决于材质数量、
+> Draw Call 与过度绘制占比，请在目标平台实测。
+
+| 距离 | 多边形数 | 预期收益 |
 |------|---------|---------|
 | 0-10m | 10000 | - |
-| 10-30m | 5000 | 50% |
-| 30+m | 1000 | 90% |
+| 10-30m | 5000 | 显著下降 |
+| 30+m | 1000 | 接近消除几何开销 |
 
 ---
 
@@ -73,12 +76,12 @@ lod.add_level(low_poly_mesh, 30.0)    # 30+ 米
 ### 3.2 遮挡剔除设置
 
 ```gdscript
-# 烘焙遮挡贴图
-var occ = OcclusionCulling.new()
-occ.bake(get_tree().root)
-
-# 启用遮挡剔除
-RenderingServer.set_use_occlusion_culling(true)
+# 遮挡剔除的正确做法（Godot 4 没有 OcclusionCulling 类，也没有全局开关）：
+# 1) 在场景中放置 OccluderInstance3D，把大块墙体/地板标记为遮挡体
+# 2) 编辑器自动烘焙遮挡网格，运行时相机自动使用
+var occluder := OccluderInstance3D.new()
+occluder.name = "RoomOccluders"
+add_child(occluder)
 ```
 
 ---
@@ -90,7 +93,7 @@ RenderingServer.set_use_occlusion_culling(true)
 | 技巧 | 说明 |
 |------|------|
 | **减少纹理大小** | 使用压缩纹理 |
-| **减少 Shader 复杂度** | 简化计算 |
+| **减少着色器复杂度** | 简化计算 |
 | **使用 Instancing** | GPU 实例化 |
 | **减少 Overdraw** | 排序优化 |
 
@@ -133,23 +136,23 @@ RenderingServer.set_use_occlusion_culling(true)
 1. **DrawCall 优化**：合批、Instancing
 2. **LOD**：多层次细节
 3. **遮挡剔除**：减少渲染对象
-4. **GPU 优化**：纹理压缩、Shader 简化
+4. **GPU 优化**：纹理压缩、着色器简化
 
 ### 下一篇
 
-**下一篇**: 渲染调试工具
+**下一篇**: [第 22 篇：渲染调试工具](/articles/22-rendering-debug-tools.md)
 
 ---
 
 **作者**: wangshucheng
 **首发平台**: 微信公众号  
 **写作时间**: 2026 年 3 月  
-**Godot 版本**: 4.3（最新稳定版）
+**Godot 版本**: 4.x（基线 4.3，2026-09 最新稳定版为 4.7）
 
 ---
 
-**上一篇**: [第 20 篇：粒子渲染](#)  
-**下一篇**: [第 22 篇：渲染调试工具](#)
+**上一篇**: [第 20 篇：粒子渲染](/articles/20-particle-rendering.md)
+**下一篇**: [第 22 篇：渲染调试工具](/articles/22-rendering-debug-tools.md)
 
 ---
 

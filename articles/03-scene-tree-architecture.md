@@ -868,8 +868,8 @@ var all_enemies = get_tree().get_nodes_in_group("enemies")
 
 3. **延迟加载大型场景**
    ```gdscript
-   # 使用 ResourceLoader.load_interactive()
-   # 分帧加载，避免卡顿
+   # 使用 ResourceLoader.load_threaded_request()
+   # 后台线程加载 + 分帧轮询进度，避免卡顿
    ```
 
 ---
@@ -997,16 +997,22 @@ func get_enemies():
 **3. 延迟加载大型场景**
 
 ```gdscript
-# 使用 ResourceLoader 分帧加载
-func load_level_async(path: String):
-    var loader = ResourceLoader.load_interactive(path)
-    
-    func _process(delta):
-        var err = loader.poll()
-        if err == ERR_FILE_EOF:
-            var level = loader.get_resource()
-            add_child(level)
-            set_process(false)
+# 使用 ResourceLoader 后台线程加载（4.x 取代 3.x 的 load_interactive）
+func load_level_async(path: String) -> void:
+    ResourceLoader.load_threaded_request(path)
+    var progress: Array = []
+    while true:
+        var status := ResourceLoader.load_threaded_get_status(path, progress)
+        match status:
+            ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+                await get_tree().process_frame
+            ResourceLoader.THREAD_LOAD_LOADED:
+                var level: PackedScene = ResourceLoader.load_threaded_get(path)
+                add_child(level.instantiate())
+                return
+            _:
+                push_error("场景加载失败：%s" % path)
+                return
 ```
 
 ### 7.3 常见陷阱
@@ -1034,11 +1040,11 @@ class B:
 ```gdscript
 # ❌ 不好：忘记断开信号
 func _ready():
-    some_node.connect("signal", self, "_on_signal")
+    some_node.signal_name.connect(_on_signal)
 
 # ✅ 好：在 _exit_tree 断开
 func _exit_tree():
-    some_node.disconnect("signal", self, "_on_signal")
+    some_node.signal_name.disconnect(_on_signal)
 ```
 
 **3. 路径错误**
@@ -1092,12 +1098,12 @@ SceneTree (管理)
 **作者**: wangshucheng
 **首发平台**: 微信公众号  
 **写作时间**: 2026 年 3 月  
-**Godot 版本**: 4.3（最新稳定版）
+**Godot 版本**: 4.x（基线 4.3，2026-09 最新稳定版为 4.7）
 
 ---
 
-**上一篇**: [第 2 篇：Godot vs Unity：架构设计深度对比](#)  
-**下一篇**: [第 4 篇：Godot 内存管理机制深度解析](#)
+**上一篇**: [第 2 篇：Godot vs Unity：架构设计深度对比](/articles/02-godot-vs-unity-architecture.md)
+**下一篇**: [第 4 篇：Godot 内存管理机制深度解析](/articles/04-memory-management.md)
 
 ---
 

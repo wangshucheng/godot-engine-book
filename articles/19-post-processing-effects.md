@@ -107,14 +107,15 @@ env.tonemap_mode = Environment.TONE_MAPPER_ACES  # 推荐
 ### 2.2 曝光控制
 
 ```gdscript
-# 曝光设置
-env.sdr_brightness = 1.0      # SDR 亮度
-env.sdr_color = Color(1, 1, 1) # SDR 颜色
+# 整体曝光倍率（4.x 的 Environment 只有 tonemap_exposure）
+env.tonemap_exposure = 1.0
 
-# 自动曝光
-env.adjustment_auto_exposure_enabled = true
-env.adjustment_auto_exposure_scale = 0.4
-env.adjustment_auto_exposure_speed = 0.5
+# 自动曝光属于相机属性，需挂到 Camera3D 的 attributes 上
+var attrs := CameraAttributesPractical.new()
+attrs.auto_exposure_enabled = true
+attrs.auto_exposure_scale = 0.4
+attrs.auto_exposure_speed = 0.5
+camera.attributes = attrs
 ```
 
 ---
@@ -252,21 +253,25 @@ env.ss_reflections_roughness_layers = 4 # 粗糙度层级
 ### 6.1 景深类型
 
 ```gdscript
-# 景深模式
-env.dof_blur_enabled = true
-env.dof_blur_quality = Environment.DOF_BLUR_QUALITY_HIGH
-env.dof_blur_focal_distance = 10.0  # 焦点距离
-env.dof_blur_focal_length = 50.0    # 焦距（mm）
-env.dof_blur_aperture = 2.8         # 光圈（f-stop）
+# 4.x 的景深由 CameraAttributesPractical 提供，不再挂在 Environment 上
+var attrs := CameraAttributesPractical.new()
+attrs.dof_blur_far_enabled = true
+attrs.dof_blur_far_distance = 10.0   # 远焦开始模糊的距离
+attrs.dof_blur_far_transition = 5.0  # 过渡带宽度
+attrs.dof_blur_near_enabled = true
+attrs.dof_blur_near_distance = 2.0   # 近焦开始模糊的距离
+attrs.dof_blur_amount = 0.05         # 模糊强度（0-0.1）
+camera.attributes = attrs
 ```
 
 ### 6.2 景深效果
 
 | 参数 | 影响 | 推荐值 |
 |------|------|--------|
-| Focal Distance | 焦点平面距离 | 根据场景调整 |
-| Focal Length | 镜头焦距 | 35-85mm |
-| Aperture | 光圈大小 | f/1.4-f/5.6 |
+| dof_blur_far_distance | 远景开始模糊的距离 | 根据场景调整 |
+| dof_blur_far_transition | 远景过渡带宽度 | 5-20 |
+| dof_blur_near_distance | 近景开始模糊的距离 | 1-3 |
+| dof_blur_amount | 模糊强度 | 0.03-0.08 |
 
 ### 6.3 动态景深
 
@@ -277,8 +282,8 @@ func _process(delta):
     var camera_pos = camera.global_transform.origin
     var distance = player_pos.distance_to(camera_pos)
     
-    # 更新焦点距离
-    env.dof_blur_focal_distance = distance
+    # 更新远焦距离
+    camera_attributes.dof_blur_far_distance = distance
 ```
 
 ---
@@ -386,14 +391,11 @@ void fragment() {
 # 项目设置中的抗锯齿
 # 渲染 → 抗锯齿 → 质量
 
-# FXAA（快速近似抗锯齿）
-ProjectSettings.set_setting("rendering/anti_aliasing/quality/fxaa_enabled", true)
-
-# SMAA（子像素形态抗锯齿）
-ProjectSettings.set_setting("rendering/anti_aliasing/quality/smaa_enabled", true)
+# 屏幕空间抗锯齿：0=关闭，1=FXAA，2=SMAA
+ProjectSettings.set_setting("rendering/anti_aliasing/quality/screen_space_aa", 1)
 
 # TAA（时间抗锯齿）
-ProjectSettings.set_setting("rendering/anti_aliasing/quality/taa_enabled", true)
+ProjectSettings.set_setting("rendering/anti_aliasing/quality/use_taa", true)
 
 # MSAA（多重采样抗锯齿）
 ProjectSettings.set_setting("rendering/anti_aliasing/quality/msaa_3d", 2)  # 2x, 4x, 8x
@@ -521,31 +523,31 @@ func _process(delta):
     if fps < 30:
         # 低帧率：降低质量
         env.ssao_enabled = false
-        env.ss_reflections_enabled = false
-        env.dof_blur_enabled = false
-        env.motion_blur_enabled = false
+        env.ssr_enabled = false
+        camera_attributes.dof_blur_far_enabled = false
+        camera_attributes.motion_blur_enabled = false
         env.glow_enabled = true
-        env.glow_levels = 3
+        env.set_glow_level(3, 1.0)
     elif fps < 60:
         # 中帧率：中等质量
         env.ssao_enabled = true
         env.ssao_quality = Environment.SSAO_QUALITY_MEDIUM
-        env.ss_reflections_enabled = false
-        env.dof_blur_enabled = true
-        env.dof_blur_quality = Environment.DOF_BLUR_QUALITY_MEDIUM
-        env.motion_blur_enabled = false
+        env.ssr_enabled = false
+        camera_attributes.dof_blur_far_enabled = true
+        camera_attributes.dof_blur_amount = 0.03
+        camera_attributes.motion_blur_enabled = false
         env.glow_enabled = true
-        env.glow_levels = 5
+        env.set_glow_level(5, 1.0)
     else:
         # 高帧率：高质量
         env.ssao_enabled = true
         env.ssao_quality = Environment.SSAO_QUALITY_HIGH
-        env.ss_reflections_enabled = true
-        env.dof_blur_enabled = true
-        env.dof_blur_quality = Environment.DOF_BLUR_QUALITY_HIGH
-        env.motion_blur_enabled = true
+        env.ssr_enabled = true
+        camera_attributes.dof_blur_far_enabled = true
+        camera_attributes.dof_blur_amount = 0.05
+        camera_attributes.motion_blur_enabled = true
         env.glow_enabled = true
-        env.glow_levels = 7
+        env.set_glow_level(7, 1.0)
 ```
 
 ---

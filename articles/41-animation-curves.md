@@ -108,7 +108,7 @@ func create_animation(anim_name: String):
     var animation = Animation.new()
     
     # 添加轨道
-    var track_idx = animation.add_track(AnimationTrackType.TRANSFORM_3D)
+    var track_idx = animation.add_track(Animation.TYPE_TRANSFORM_3D)
     animation.track_set_path(track_idx, "Transform3D")
     
     # 添加关键帧
@@ -223,7 +223,7 @@ func create_animation(anim_name: String):
     var animation = Animation.new()
     
     # 添加轨道
-    var track_idx = animation.add_track(AnimationTrackType.TRANSFORM_3D)
+    var track_idx = animation.add_track(Animation.TYPE_TRANSFORM_3D)
     animation.track_set_path(track_idx, "Transform3D")
     
     # 添加关键帧
@@ -466,7 +466,7 @@ extends Node3D
 func _ready():
     # 设置动画预览器
     if animation_player:
-        animation_player.connect("animation_finished", self, "_on_animation_finished")
+        animation_player.animation_finished.connect(_on_animation_finished)
 
 func _on_animation_finished(anim_name: String):
     print("Animation finished: ", anim_name)
@@ -512,10 +512,10 @@ extends Node3D
 func _ready():
     # 设置动画预览系统
     if animation_player:
-        animation_player.connect("animation_finished", self, "_on_animation_finished")
+        animation_player.animation_finished.connect(_on_animation_finished)
     
     if timeline:
-        timeline.connect("time_changed", self, "_on_timeline_changed")
+        timeline.time_changed.connect(_on_timeline_changed)
 
 func _on_animation_finished(anim_name: String):
     print("Animation finished: ", anim_name)
@@ -663,7 +663,7 @@ func create_animation(anim_name: String):
     var animation = Animation.new()
     
     # 添加轨道
-    var track_idx = animation.add_track(AnimationTrackType.TRANSFORM_3D)
+    var track_idx = animation.add_track(Animation.TYPE_TRANSFORM_3D)
     animation.track_set_path(track_idx, "Transform3D")
     
     # 添加关键帧
@@ -733,7 +733,7 @@ func create_animation(anim_name: String):
     var animation = Animation.new()
     
     # 添加轨道
-    var track_idx = animation.add_track(AnimationTrackType.TRANSFORM_3D)
+    var track_idx = animation.add_track(Animation.TYPE_TRANSFORM_3D)
     animation.track_set_path(track_idx, "Transform3D")
     
     # 添加关键帧

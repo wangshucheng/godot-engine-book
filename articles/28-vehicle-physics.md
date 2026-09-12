@@ -109,8 +109,8 @@ func create_wheel(position: Vector3, radius: float, width: float):
     var wheel_mesh = MeshInstance3D.new()
     wheel_mesh.mesh = CylinderMesh.new()
     wheel_mesh.mesh.height = width
-    wheel_mesh.mesh.radius_top = 0
-    wheel_mesh.mesh.radius_bottom = radius
+    wheel_mesh.mesh.top_radius = 0
+    wheel_mesh.mesh.bottom_radius = radius
     wheel_mesh.position = Vector3(0, 0, -width/2)
     wheel.add_child(wheel_mesh)
     
@@ -625,60 +625,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D):
 
 ---
 
-## 📝 本章总结
-
-### 核心要点
-
-1. **车辆物理由多个组件组成**，包括车身、车轮、悬挂和引擎
-2. **悬挂系统通过关节连接**，控制车轮的上下运动
-3. **引擎通过扭矩控制车轮旋转**，模拟动力
-4. **控制器处理用户输入**，实现驾驶体验
-5. **性能优化**包括减少车轮数量、调整参数等
-
-### 关键术语
-
-| 术语 | 解释 |
-|------|------|
-| Chassis | 车身，车辆的主刚体 |
-| Wheel | 车轮，独立的刚体 |
-| Suspension | 悬挂系统，连接车身和车轮的关节 |
-| Engine | 引擎，提供动力的组件 |
-| Transmission | 传动系统，控制齿轮和扭矩 |
-| Vehicle Controller | 车辆控制器，处理用户输入 |
-
----
-
-## 🔗 延伸阅读
-
-- **官方文档**: [Godot Vehicle Physics](https://docs.godotengine.org/en/stable/tutorials/physics/vehicle_physics.html)
-- **源码位置**: `servers/physics_3d/`, `scene/3d/vehicle_physics.cpp`
-- **技术博客**: [Godot Car Physics Implementation](https://godotengine.org/article/car-physics-implementation/)
-
----
-
-## 📋 下一章预告
-
-**第 29 篇：流体模拟**
-
-- 液体物理基础
-- 水体模拟
-- 流体动力学
-- 粒子系统模拟
-- 性能优化
-
----
-
-*写作时间：2026-03-20*  
-*字数：约 8,000 字*  
-*状态：✅ 完成*
-
----
-
-*最后更新：2026-03-20 13:00*
-
----
-
-## 8. 引擎和传动系统（新增）
+## 8. 引擎和传动系统
 
 ### 8.1 引擎扭矩曲线
 
@@ -906,7 +853,7 @@ func calculate_axle_torques(input_torque: float) -> Dictionary:
 
 ---
 
-## 9. 抓地力和漂移模型（新增）
+## 9. 抓地力和漂移模型
 
 ### 9.1 轮胎摩擦模型
 
@@ -1254,20 +1201,20 @@ func get_score_summary() -> Dictionary:
 
 ---
 
-## 📝 本章总结（更新）
+## 📝 本章总结
 
-### 核心要点（更新）
+### 核心要点
 
 1. **车辆物理由多个组件组成**，包括车身、车轮、悬挂和引擎
 2. **悬挂系统通过关节连接**，控制车轮的上下运动
 3. **引擎通过扭矩控制车轮旋转**，模拟动力
 4. **控制器处理用户输入**，实现驾驶体验
 5. **性能优化**包括减少车轮数量、调整参数等
-6. **引擎扭矩曲线模拟真实动力输出**（新增）
-7. **变速箱和差速器完善传动系统**（新增）
-8. **抓地力和漂移模型增强驾驶乐趣**（新增）
+6. **引擎扭矩曲线模拟真实动力输出**
+7. **变速箱和差速器完善传动系统**
+8. **抓地力和漂移模型增强驾驶乐趣**
 
-### 关键术语（更新）
+### 关键术语
 
 | 术语 | 解释 |
 |------|------|
@@ -1277,9 +1224,34 @@ func get_score_summary() -> Dictionary:
 | Engine | 引擎，提供动力的组件 |
 | Transmission | 传动系统，控制齿轮和扭矩 |
 | Vehicle Controller | 车辆控制器，处理用户输入 |
-| Torque Curve | 扭矩曲线，引擎输出随 RPM 变化（新增） |
-| Differential | 差速器，分配左右轮扭矩（新增） |
-| Grip | 抓地力，轮胎与路面的摩擦力（新增） |
-| Drift | 漂移，车辆侧滑状态（新增） |
-| Slip Ratio | 滑移率，车轮空转程度（新增） |
-| Slip Angle | 侧偏角，轮胎行进方向与指向的夹角（新增） |
+| Torque Curve | 扭矩曲线，引擎输出随 RPM 变化 |
+| Differential | 差速器，分配左右轮扭矩 |
+| Grip | 抓地力，轮胎与路面的摩擦力 |
+| Drift | 漂移，车辆侧滑状态 |
+| Slip Ratio | 滑移率，车轮空转程度 |
+| Slip Angle | 侧偏角，轮胎行进方向与指向的夹角 |
+
+---
+
+## 🔗 延伸阅读
+
+- **VehicleBody3D**: <https://docs.godotengine.org/en/stable/classes/class_vehiclebody3d.html>
+- **VehicleWheel3D**: <https://docs.godotengine.org/en/stable/classes/class_vehiclewheel3d.html>
+- **源码位置**: `scene/3d/vehicle_body_3d.cpp`
+
+---
+
+## 📋 下一章预告
+
+**第 29 篇：流体模拟**
+
+- 液体物理基础
+- 水体模拟与流体动力学
+- 粒子系统模拟
+- 性能优化
+
+---
+
+*写作时间：2026-03-20*  
+*最近一次技术勘误：2026-09-12*  
+*状态：✅ 完成*

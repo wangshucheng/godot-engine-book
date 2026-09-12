@@ -181,31 +181,29 @@ func get_output() -> AnimationNode:
 ### 2.3 AnimationTree 参数
 
 ```gdscript
-# AnimationTree 参数
+# AnimationTree 的参数没有专用方法，统一用属性路径读写
 class_name AnimationTreeParameters
 
 extends Node
 
 @export var tree: AnimationTree
-@export var parameter_name: String = "speed"
+@export var node_name: StringName = &"locomotion"
 
-func _ready():
-    if tree and not parameter_name.empty():
-        tree.set_parameter(parameter_name, 0.0)
+func _ready() -> void:
+    set_blend_position(0.0)
 
-func set_parameter(value: float):
-    if tree and not parameter_name.empty():
-        tree.set_parameter(parameter_name, value)
+# 路径规则：
+#   树根节点的参数 → parameters/<参数名>
+#   混合树内某节点的参数 → parameters/<节点名>/<参数名>
+func set_blend_position(value: float) -> void:
+    tree.set("parameters/%s/blend_position" % node_name, value)
 
-func get_parameter() -> float:
-    if tree and not parameter_name.empty():
-        return tree.get_parameter(parameter_name)
-    return 0.0
+func get_blend_position() -> float:
+    return float(tree.get("parameters/%s/blend_position" % node_name))
 
-func update_parameter():
-    if tree and not parameter_name.empty():
-        var value = $CharacterBody2D.velocity.length()
-        tree.set_parameter(parameter_name, value)
+func _process(_delta: float) -> void:
+    var body := $CharacterBody2D as CharacterBody2D
+    set_blend_position(body.velocity.length())
 ```
 
 ---
@@ -215,127 +213,112 @@ func update_parameter():
 ### 3.1 状态机基础
 
 ```gdscript
-# 状态机基础
-class_name AnimationStateMachine
+# 用代码构建动画状态机（等价于在 AnimationTree 编辑器中连线）
+class_name AnimTreeStateMachineBuilder
 
-extends AnimationNodeStateMachine
+extends Node3D
 
-func _ready():
-    # 创建状态
-    var idle = AnimationNodeStateMachineState.new()
-    idle.name = "Idle"
-    add_state(idle)
-    
-    var walk = AnimationNodeStateMachineState.new()
-    walk.name = "Walk"
-    add_state(walk)
-    
-    var run = AnimationNodeStateMachineState.new()
-    run.name = "Run"
-    add_state(run)
-    
-    var jump = AnimationNodeStateMachineState.new()
-    jump.name = "Jump"
-    add_state(jump)
-    
-    var attack = AnimationNodeStateMachineState.new()
-    attack.name = "Attack"
-    add_state(attack)
-    
-    # 设置初始状态
-    set_state("Idle")
-    
-    # 连接信号
-    connect("state_changed", self, "_on_state_changed")
+@export var tree: AnimationTree
 
-func _on_state_changed(state_name: String):
-    print("State changed to: ", state_name)
+var playback: AnimationNodeStateMachinePlayback
+var _current_state: StringName
 
-func _process(delta):
-    # 根据当前状态更新动画
-    var state = get_state()
-    if state:
-        state.process(delta)
+func _ready() -> void:
+    var state_machine := AnimationNodeStateMachine.new()
 
-func transition_to(state_name: String):
-    if has_state(state_name):
-        set_state(state_name)
+    # add_node(name, node)：状态本身是任意 AnimationNode
+    for anim_name in ["Idle", "Walk", "Run", "Jump", "Attack"]:
+        var anim := AnimationNodeAnimation.new()
+        anim.animation = anim_name
+        state_machine.add_node(anim_name, anim)
 
-func add_transition(from: String, to: String, condition: String = ""):
-    if has_state(from) and has_state(to):
-        add_transition(from, to, condition)
+    # add_transition(from, to, transition)：过渡规则独立描述
+    state_machine.add_transition("Idle", "Walk", _make_xfade(0.25))
+    state_machine.add_transition("Walk", "Run", _make_xfade(0.20))
+    state_machine.add_transition("Run", "Idle", _make_xfade(0.25))
+    state_machine.add_transition("Walk", "Jump", _make_xfade(0.10))
+    state_machine.add_transition("Jump", "Walk", _make_xfade(0.10))
+    state_machine.add_transition("Idle", "Attack", _make_xfade(0.15))
+    state_machine.add_transition("Attack", "Idle", _make_xfade(0.15))
+
+    tree.tree_root = state_machine
+    tree.active = true
+    playback = tree.get("parameters/playback") as AnimationNodeStateMachinePlayback
+    travel_to(&"Idle")
+
+func _make_xfade(seconds: float) -> AnimationNodeStateMachineTransition:
+    var t := AnimationNodeStateMachineTransition.new()
+    t.xfade_time = seconds
+    t.advance_mode = AnimationNodeStateMachineTransition.ADVANCE_MODE_AUTO
+    return t
+
+func travel_to(state_name: StringName) -> void:
+    playback.travel(state_name)
+
+# 状态切换没有信号，需要轮询 get_current_node()
+func _process(_delta: float) -> void:
+    var current := playback.get_current_node()
+    if current != _current_state:
+        _current_state = current
+        print("State changed to: ", current)
 ```
 
 ### 3.2 状态转换条件
 
 ```gdscript
-# 状态转换条件
-class_name StateTransitionCondition
+# 转换条件由 AnimationNodeStateMachineTransition.advance_condition 描述，
+# 条件值是挂在 AnimationTree 上的布尔开关，用 set_condition() 更新
+class_name AnimTreeTransitionCondition
 
 extends Node
 
-@export var from_state: String
-@export var to_state: String
-@export var condition: String = "velocity > 0.5"
+@export var tree: AnimationTree
+@export var transition_index: int = 0
+@export var condition_name: StringName = &"can_jump"
 
-func _ready():
-    # 连接状态机信号
-    $AnimationStateMachine.connect("state_changed", self, "_on_state_changed")
+@onready var _character: CharacterBody2D = $CharacterBody2D
 
-func _on_state_changed(state_name: String):
-    if state_name == from_state:
-        check_condition()
+func _ready() -> void:
+    var state_machine := tree.tree_root as AnimationNodeStateMachine
+    if state_machine == null:
+        push_error("tree_root 不是 AnimationNodeStateMachine")
+        return
 
-func check_condition():
-    var velocity = $CharacterBody2D.velocity.length()
-    
-    if condition == "velocity > 0.5":
-        if velocity > 0.5:
-            $AnimationStateMachine.transition_to(to_state)
-    elif condition == "velocity > 1.0":
-        if velocity > 1.0:
-            $AnimationStateMachine.transition_to(to_state)
-    elif condition == "button_pressed":
-        if Input.is_action_just_pressed("jump"):
-            $AnimationStateMachine.transition_to(to_state)
+    var transition := state_machine.get_transition(transition_index)
+    transition.advance_mode = AnimationNodeStateMachineTransition.ADVANCE_MODE_ENABLED
+    transition.advance_condition = condition_name
+
+func _physics_process(_delta: float) -> void:
+    # 每帧只更新条件开关，切换动作由状态机自己完成
+    tree.set_condition(condition_name, _character.velocity.length() > 0.5)
 ```
 
-### 3.3 状态机轨道
+### 3.3 过渡推进模式
 
 ```gdscript
-# 状态机轨道
-class_name StateMachineTrack
+# AnimationNodeStateMachineTransition 提供三种推进方式
+class_name AnimTreeAdvanceModes
 
-extends AnimationNodeStateMachineTrack
+extends Node
 
-func _ready():
-    # 添加状态
-    add_state("Idle", 0.0, 1.0)
-    add_state("Walk", 1.0, 2.0)
-    add_state("Run", 2.0, 3.0)
-    add_state("Jump", 3.0, 4.0)
-    add_state("Attack", 4.0, 5.0)
-    
-    # 设置初始状态
-    set_state("Idle")
+func configure_transitions(state_machine: AnimationNodeStateMachine) -> void:
+    # 1) AUTO：交叉淡入结束后自动切到目标状态
+    var auto_t := state_machine.get_transition(0)
+    auto_t.advance_mode = AnimationNodeStateMachineTransition.ADVANCE_MODE_AUTO
+    auto_t.xfade_time = 0.2
 
-func _process(delta):
-    # 更新当前状态
-    var state = get_state()
-    if state:
-        state.process(delta)
+    # 2) ENABLED：仅当条件为 true 时允许切换（配合 tree.set_condition）
+    var cond_t := state_machine.get_transition(1)
+    cond_t.advance_mode = AnimationNodeStateMachineTransition.ADVANCE_MODE_ENABLED
+    cond_t.advance_condition = &"can_jump"
 
-func add_state(state_name: String, start_time: float, end_time: float):
-    add_key(AnimationNodeStateMachineState.new(), start_time, end_time, state_name)
+    # 3) DISABLED：暂时禁用该过渡
+    var locked_t := state_machine.get_transition(2)
+    locked_t.advance_mode = AnimationNodeStateMachineTransition.ADVANCE_MODE_DISABLED
 
-func set_state(state_name: String):
-    if has_state(state_name):
-        set_current_key(state_name)
-
-func get_state() -> AnimationNodeStateMachineState:
-    if has_state(get_current_key()):
-        return get_state_key(get_current_key())
-    return null
+# 需要“硬切”时用 start()：跳过过渡，立即进入目标状态
+func teleport_to(playback: AnimationNodeStateMachinePlayback, state_name: StringName) -> void:
+    playback.start(state_name, true)
 ```
 
 ---
@@ -345,139 +328,100 @@ func get_state() -> AnimationNodeStateMachineState:
 ### 4.1 混合树基础
 
 ```gdscript
-# 混合树基础
-class_name BlendTree
+# 混合树基础：1D 混合空间用单个标量驱动多段动画
+class_name AnimTreeBlendSpace1DBuilder
 
-extends AnimationNodeBlendTree
+extends Node3D
 
-func _ready():
-    # 创建混合树节点
-    var root = AnimationNodeBlendTreeState.new()
-    add_state(root)
-    
-    # 创建混合树参数
-    var velocity = AnimationNodeBlendTreeParameter.new()
-    velocity.name = "Velocity"
-    velocity.min_value = 0.0
-    velocity.max_value = 5.0
-    add_parameter(velocity)
-    
-    var direction = AnimationNodeBlendTreeParameter.new()
-    direction.name = "Direction"
-    direction.min_value = -1.0
-    direction.max_value = 1.0
-    add_parameter(direction)
-    
-    # 创建混合树状态
-    var idle = AnimationNodeBlendTreeState.new()
-    idle.name = "Idle"
-    add_state(idle)
-    
-    var walk = AnimationNodeBlendTreeState.new()
-    walk.name = "Walk"
-    add_state(walk)
-    
-    var run = AnimationNodeBlendTreeState.new()
-    run.name = "Run"
-    add_state(run)
-    
-    # 设置初始状态
-    set_state("Idle")
+@export var tree: AnimationTree
 
-func _process(delta):
-    # 更新混合树参数
-    var velocity = get_parameter("Velocity")
-    velocity.value = $CharacterBody2D.velocity.length()
-    
-    var direction = get_parameter("Direction")
-    direction.value = $CharacterBody2D.velocity.x
-    
-    # 更新混合树
-    update()
+func _ready() -> void:
+    var space := AnimationNodeBlendSpace1D.new()
+    space.min_space = 0.0
+    space.max_space = 5.0
 
-func update():
-    # 根据参数值混合状态
-    var state = get_state()
-    if state:
-        state.process(delta)
+    # 位置即该动画在数轴上的取值点
+    space.add_blend_point(_anim_node(&"Idle"), 0.0)
+    space.add_blend_point(_anim_node(&"Walk"), 1.5)
+    space.add_blend_point(_anim_node(&"Run"), 4.0)
 
-func add_state(state_name: String):
-    add_state_key(AnimationNodeBlendTreeState.new(), state_name)
+    tree.tree_root = space
+    tree.active = true
 
-func add_parameter(name: String, min_val: float, max_val: float):
-    add_parameter_key(AnimationNodeBlendTreeParameter.new(), name, min_val, max_val)
+func _anim_node(anim_name: StringName) -> AnimationNodeAnimation:
+    var anim := AnimationNodeAnimation.new()
+    anim.animation = anim_name
+    return anim
 
-func set_state(state_name: String):
-    if has_state(state_name):
-        set_current_key(state_name)
-
-func get_state() -> AnimationNodeBlendTreeState:
-    if has_state(get_current_key()):
-        return get_state_key(get_current_key())
-    return null
+func _process(_delta: float) -> void:
+    var body := $CharacterBody2D as CharacterBody2D
+    # 写参数是唯一的驱动方式：混合树没有可读写的“状态对象”或“参数对象”
+    tree.set("parameters/blend_position", body.velocity.length())
 ```
 
 ### 4.2 参数混合
 
 ```gdscript
-# 参数混合示例
-class_name ParameterBlend
+# 混合参数没有信号，统一通过 AnimationTree 的参数路径写入
+class_name AnimTreeParameterBlend
 
 extends Node
 
-@export var blend_tree: AnimationNodeBlendTree
-@export var parameter_name: String = "Velocity"
+@export var tree: AnimationTree
 
-func _ready():
-    if blend_tree:
-        blend_tree.connect("state_changed", self, "_on_state_changed")
-        blend_tree.connect("parameter_changed", self, "_on_parameter_changed")
+# 参数路径规则：
+#   根节点（树根）的参数 → parameters/<参数名>
+#   混合树内某个节点的参数 → parameters/<节点名>/<参数名>
+func update_blend(velocity: float, direction: float) -> void:
+    tree.set("parameters/velocity/blend_position", velocity)
+    tree.set("parameters/direction/blend_position", direction)
 
-func _on_state_changed(state_name: String):
-    print("Blend tree state changed to: ", state_name)
-
-func _on_parameter_changed(parameter_name: String, value: float):
-    print("Parameter ", parameter_name, " changed to: ", value)
-
-func update_parameter(value: float):
-    if blend_tree and has_parameter(parameter_name):
-        set_parameter(parameter_name, value)
+# 需要调试时直接读回当前值
+func read_velocity() -> float:
+    return float(tree.get("parameters/velocity/blend_position"))
 ```
 
-### 4.3 混合树轨道
+### 4.3 混合空间与节点图
 
 ```gdscript
-# 混合树轨道
-class_name BlendTreeTrack
+# 实际项目里更常用的是「混合空间 + 节点图」的组合：
+# 用 BlendSpace 做参数化插值，用 BlendTree 串联时间缩放、叠加层等处理
+class_name AnimTreeBlendSpace2D
 
-extends AnimationNodeBlendTreeTrack
+extends Node
 
-func _ready():
-    # 添加状态
-    add_state("Idle", 0.0, 1.0)
-    add_state("Walk", 1.0, 2.0)
-    add_state("Run", 2.0, 3.0)
-    
-    # 设置初始状态
-    set_state("Idle")
+@export var tree: AnimationTree
 
-func _process(delta):
-    # 更新当前状态
-    var state = get_state()
-    if state:
-        state.process(delta)
+func build(tree_root_name: StringName = &"locomotion") -> void:
+    # 1) 2D 混合空间：用「速度 + 方向」两个参数驱动移动动画
+    var space := AnimationNodeBlendSpace2D.new()
+    space.add_blend_point(_anim_node(&"Idle"), Vector2(0, 0))          # 0
+    space.add_blend_point(_anim_node(&"WalkForward"), Vector2(0, 1.5)) # 1
+    space.add_blend_point(_anim_node(&"WalkLeft"), Vector2(-1.5, 0))   # 2
+    space.add_blend_point(_anim_node(&"WalkRight"), Vector2(1.5, 0))   # 3
+    space.add_triangle(0, 1, 2)
+    space.add_triangle(0, 2, 3)
 
-func add_state(state_name: String, start_time: float, end_time: float):
-    add_key(AnimationNodeBlendTreeState.new(), start_time, end_time, state_name)
+    # 2) 把混合空间挂进混合树，再串一个时间缩放节点
+    var blend_tree := AnimationNodeBlendTree.new()
+    blend_tree.add_node(tree_root_name, space)
+    var time_scale := AnimationNodeTimeScale.new()
+    blend_tree.add_node("time_scale", time_scale)
+    blend_tree.connect_node(tree_root_name, 0, "time_scale")
+    blend_tree.connect_node("time_scale", 0, "output")
 
-func set_state(state_name: String):
-    if has_state(state_name):
-        set_current_key(state_name)
+    tree.tree_root = blend_tree
+    tree.active = true
 
-func get_state() -> AnimationNodeBlendTreeState:
-    if has_state(get_current_key()):
-        return get_state_key(get_current_key())
-    return null
+func _anim_node(anim_name: StringName) -> AnimationNodeAnimation:
+    var anim := AnimationNodeAnimation.new()
+    anim.animation = anim_name
+    return anim
+
+# 参数路径随节点位置变化，写参数时务必用编辑器里显示的完整路径
+func update_blend(velocity: Vector2, speed_scale: float) -> void:
+    tree.set("parameters/locomotion/blend_position", velocity)
+    tree.set("parameters/time_scale/scale", clampf(speed_scale, 0.2, 2.0))
 ```
 
 ---
@@ -487,25 +431,29 @@ func get_state() -> AnimationNodeBlendTreeState:
 ### 5.1 基础动画混合器
 
 ```gdscript
-# 基础动画混合器
-class_name BasicAnimationMixer
+# AnimationMixer 是 AnimationPlayer 与 AnimationTree 的共同基类，
+# 它是引擎内部的混合实现，不要为了“混合”去继承它。
+class_name AnimMixerNotes
 
-extends AnimationMixer
+extends Node
 
-@export var animation_player: AnimationPlayer
+@export var player: AnimationPlayer
+@export var tree: AnimationTree
 
-func _ready():
-    # 设置动画播放器
-    if animation_player:
-        set_animation_player(animation_player)
+# 直接播放单个动画：走 AnimationPlayer，名字可以是 "库名/动画名"
+func play_direct(anim_name: StringName) -> void:
+    if player and player.has_animation(anim_name):
+        player.play(anim_name)
 
-func _process(delta):
-    # 处理动画混合
-    process(delta)
+# 需要真正混合时改用 AnimationTree
+func travel(state_name: StringName) -> void:
+    var playback := tree.get("parameters/playback") as AnimationNodeStateMachinePlayback
+    if playback:
+        playback.travel(state_name)
 
-func play_animation(anim_name: String):
-    if has_animation(anim_name):
-        get_node("AnimationPlayer").play(anim_name)
+# current_animation 由 AnimationMixer 提供，两者通用
+func current_animation() -> StringName:
+    return player.current_animation if player else &""
 
 func stop_animation():
     get_node("AnimationPlayer").stop()
@@ -514,67 +462,45 @@ func stop_animation():
 ### 5.2 动画混合器参数
 
 ```gdscript
-# 动画混合器参数
+# 参数是 AnimationTree 的特性（AnimationTree 继承自 AnimationMixer），
+# 裸 AnimationMixer 没有参数概念，也没有 set_parameter/get_parameter。
 class_name AnimationMixerParameters
 
 extends Node
 
-@export var mixer: AnimationMixer
-@export var parameter_name: String = "speed"
+@export var tree: AnimationTree
 
-func _ready():
-    if mixer and not parameter_name.empty():
-        mixer.set_parameter(parameter_name, 0.0)
+func update_parameter(speed: float) -> void:
+    tree.set("parameters/locomotion/blend_position", speed)
 
-func set_parameter(value: float):
-    if mixer and not parameter_name.empty():
-        mixer.set_parameter(parameter_name, value)
-
-func get_parameter() -> float:
-    if mixer and not parameter_name.empty():
-        return mixer.get_parameter(parameter_name)
-    return 0.0
-
-func update_parameter():
-    if mixer and not parameter_name.empty():
-        var value = $CharacterBody2D.velocity.length()
-        mixer.set_parameter(parameter_name, value)
+func read_parameter() -> float:
+    return float(tree.get("parameters/locomotion/blend_position"))
 ```
 
-### 5.3 动画混合器轨道
+### 5.3 根节点与动画库
 
 ```gdscript
-# 动画混合器轨道
-class_name AnimationMixerTrack
+# AnimationMixer 提供的两项通用能力：root_node 与动画库
+class_name AnimMixerBasics
 
-extends AnimationMixerTrack
+extends Node
 
-func _ready():
-    # 添加状态
-    add_state("Idle", 0.0, 1.0)
-    add_state("Walk", 1.0, 2.0)
-    add_state("Run", 2.0, 3.0)
-    
-    # 设置初始状态
-    set_state("Idle")
+@export var mixer: AnimationMixer
 
-func _process(delta):
-    # 更新当前状态
-    var state = get_state()
-    if state:
-        state.process(delta)
+func _ready() -> void:
+    # 1) root_node 是轨道路径的解析起点，轨道路径形如 "Skeleton3D:Root"
+    if mixer.root_node.is_empty():
+        mixer.root_node = mixer.get_path_to(mixer.get_parent())
 
-func add_state(state_name: String, start_time: float, end_time: float):
-    add_key(AnimationMixerState.new(), start_time, end_time, state_name)
+    # 2) 动画按「库」组织（Godot 4 起取代了 3.x 的扁平动画列表），
+    #    库名为空字符串时是默认库，播放时可直接用 "idle"
+    var lib := AnimationLibrary.new()
+    var anim := Animation.new()
+    anim.length = 1.0
+    lib.add_animation(&"idle", anim)
+    mixer.add_animation_library(&"", lib)
 
-func set_state(state_name: String):
-    if has_state(state_name):
-        set_current_key(state_name)
-
-func get_state() -> AnimationMixerState:
-    if has_state(get_current_key()):
-        return get_state_key(get_current_key())
-    return null
+    print("当前动画：%s" % mixer.current_animation)
 ```
 
 ---
@@ -584,21 +510,32 @@ func get_state() -> AnimationMixerState:
 ### 6.1 动画控制器缓存
 
 ```gdscript
-# 动画控制器缓存
+# 动画缓存：缓存的是资源（Animation / AnimationLibrary），
+# Godot 中并不存在名为 AnimationController 的类
 class_name AnimationControllerCache
 
-var cache = {}
+var _libraries: Dictionary = {}
 
-func get_controller(controller_name: String) -> AnimationController:
-    if cache.has(controller_name):
-        return cache[controller_name]
-    
-    var controller = AnimationController.new()
-    cache[controller_name] = controller
-    return controller
+func get_library(key: StringName) -> AnimationLibrary:
+    if _libraries.has(key):
+        return _libraries[key]
 
-func clear_cache():
-    cache.clear()
+    var lib := AnimationLibrary.new()
+    var anim := Animation.new()
+    anim.length = 1.0
+
+    # 用 TYPE_VALUE 轨道做一个最简单的淡入淡出示例
+    var track := anim.add_track(Animation.TYPE_VALUE)
+    anim.track_set_path(track, NodePath("Sprite2D:modulate:a"))
+    anim.track_insert_key(track, 0.0, 1.0)
+    anim.track_insert_key(track, 1.0, 0.0)
+    lib.add_animation(key, anim)
+
+    _libraries[key] = lib
+    return lib
+
+func clear_cache() -> void:
+    _libraries.clear()
 ```
 
 ### 6.2 动画控制器LOD
@@ -655,136 +592,111 @@ func compress_controller(controller: AnimationController):
 ### 7.1 基础角色动画控制器
 
 ```gdscript
-# 基础角色动画控制器
+# 基础角色动画控制器：AnimationTree 负责播放与混合，脚本只驱动参数并查询状态
 class_name CharacterAnimationController
 
 extends Node2D
 
-@export var animation_player: AnimationPlayer
-@export var state_machine: AnimationNodeStateMachine
-@export var blend_tree: AnimationNodeBlendTree
+@export var player: AnimationPlayer
+@export var tree: AnimationTree
 
-func _ready():
-    # 设置动画播放器
-    animation_player.play("idle")
-    
-    # 连接状态机信号
-    state_machine.connect("state_changed", self, "_on_state_changed")
-    
-    # 连接混合树信号
-    blend_tree.connect("state_changed", self, "_on_blend_state_changed")
-    blend_tree.connect("parameter_changed", self, "_on_parameter_changed")
+var playback: AnimationNodeStateMachinePlayback
+var _last_state: StringName
 
-func _on_state_changed(state_name: String):
-    print("State changed to: ", state_name)
-    update_animation(state_name)
+func _ready() -> void:
+    # AnimationTree 挂载后会接管同一个 AnimationPlayer，
+    # 不要再直接调用 player.play()，否则两套驱动会互相覆盖。
+    tree.active = true
+    playback = tree.get("parameters/playback") as AnimationNodeStateMachinePlayback
+    travel_to(&"Idle")
 
-func _on_blend_state_changed(state_name: String):
-    print("Blend state changed to: ", state_name)
+func _process(_delta: float) -> void:
+    # 状态切换没有信号，靠轮询当前状态
+    var current := playback.get_current_node()
+    if current != _last_state:
+        _last_state = current
+        print("State changed to: ", current)
 
-func _on_parameter_changed(parameter_name: String, value: float):
-    print("Parameter ", parameter_name, " changed to: ", value)
+func travel_to(state_name: StringName) -> void:
+    playback.travel(state_name)
 
-func update_animation(state_name: String):
-    if state_name == "Idle":
-        animation_player.play("idle")
-    elif state_name == "Walk":
-        animation_player.play("walk")
-    elif state_name == "Run":
-        animation_player.play("run")
-    elif state_name == "Jump":
-        animation_player.play("jump")
-    elif state_name == "Attack":
-        animation_player.play("attack")
+# 需要一次性播放（例如受击）时，临时把控制权交还给 AnimationPlayer
+func play_animation(anim_name: StringName) -> void:
+    if player and player.has_animation(anim_name):
+        tree.active = false
+        player.play(anim_name)
 
-func play_animation(anim_name: String):
-    if animation_player and has_animation(anim_name):
-        animation_player.play(anim_name)
-
-func set_animation_state(state: String):
-    if state_machine:
-        state_machine.set_state(state)
-
-func set_blend_parameter(name: String, value: float):
-    if blend_tree and has_parameter(name):
-        blend_tree.set_parameter(name, value)
+# 混合参数通过参数路径写入
+func set_blend_parameter(node_name: StringName, value: float) -> void:
+    tree.set("parameters/%s/blend_position" % node_name, value)
 ```
 
 ### 7.2 骨骼动画控制器
 
 ```gdscript
-# 骨骼动画控制器
+# 骨骼动画控制器：状态机负责切换，Skeleton3D 负责姿势，脚本只做编排
 class_name SkeletonAnimationController
 
 extends Node3D
 
 @export var skeleton: Skeleton3D
 @export var animation_player: AnimationPlayer
-@export var state_machine: AnimationNodeStateMachine
+@export var tree: AnimationTree
 
-func _ready():
+func _ready() -> void:
+    # AnimationPlayer 通过 NodePath 指明被驱动的骨架
     if skeleton and animation_player:
-        animation_player.skeleton = skeleton
+        animation_player.root_node = animation_player.get_path_to(skeleton)
 
-func play_animation(anim_name: String):
-    if animation_player and has_animation(anim_name):
+func play_animation(anim_name: StringName) -> void:
+    if animation_player and animation_player.has_animation(anim_name):
         animation_player.play(anim_name)
 
-func update_animation():
-    if is_playing():
-        update_bones()
+func update_animation() -> void:
+    if animation_player == null or not animation_player.is_playing():
+        return
 
-func update_bones():
-    # 获取当前动画时间
-    var time = get_current_animation_position()
-    
-    # 获取动画帧数据
-    var frames = get_animation("walk").get_keyframes()
-    
-    # 更新每个骨骼
-    for bone_name in skeleton.bones:
-        var bone = skeleton.bones[bone_name]
-        
-        # 根据时间找到对应的帧
-        var frame = frames[bone_name]
-        
-        # 应用变换
-        bone.transform = frame.get_transform(time)
+    # 曲线求值与骨骼写入由引擎完成，这里只读取进度和骨骼数量做监控
+    var time := animation_player.get_current_animation_position()
+    print("播放中：%.2fs / %d 根骨骼" % [time, skeleton.get_bone_count()])
+
+# 需要读取单根骨骼姿势时，走 Skeleton3D 的索引接口
+func get_bone_transform(bone_name: StringName) -> Transform3D:
+    var idx := skeleton.find_bone(bone_name)
+    return skeleton.get_bone_pose(idx) if idx != -1 else Transform3D()
 ```
 
 ### 7.3 2D 动画控制器
 
 ```gdscript
-# 2D 动画控制器
+# 2D 动画控制器：帧序列动画走 AnimatedSprite2D + SpriteFrames
 class_name SpriteAnimationController
 
 extends Node2D
 
 @export var sprite_frames: SpriteFrames
-@export var animation_player: AnimationPlayer
-@export var state_machine: AnimationNodeStateMachine
+@export var animated_sprite: AnimatedSprite2D
 
-func _ready():
-    if sprite_frames and animation_player:
-        animation_player.sprite_frames = sprite_frames
+func _ready() -> void:
+    # AnimationPlayer 没有 sprite_frames 属性；
+    # 帧序列属于 AnimatedSprite2D，属性轨道才是 AnimationPlayer 的领域。
+    if sprite_frames and animated_sprite:
+        animated_sprite.sprite_frames = sprite_frames
 
-func play_animation(anim_name: String):
-    if animation_player and has_animation(anim_name):
-        animation_player.play(anim_name)
+func play_animation(anim_name: StringName) -> void:
+    if animated_sprite and animated_sprite.sprite_frames.has_animation(anim_name):
+        animated_sprite.play(anim_name)
 
-func update_animation():
-    if is_playing():
+func update_animation() -> void:
+    if animated_sprite and animated_sprite.is_playing():
         update_sprite()
 
-func update_sprite():
-    # 获取当前动画帧
-    var frame = get_frame()
-    
-    # 更新精灵
-    sprite.texture = frame.texture
-    sprite.position = frame.position
-    sprite.rotation = frame.rotation
-    sprite.scale = frame.scale
+func update_sprite() -> void:
+    # 帧索引由引擎推进，脚本只需读取
+    var frame_idx := animated_sprite.frame
+    var frame_texture := animated_sprite.sprite_frames.get_frame_texture(
+        animated_sprite.animation, frame_idx)
+    print("当前帧：%d / %s" % [frame_idx, frame_texture])
 ```
 
 ---

@@ -443,12 +443,10 @@ func unload_resource(path: String):
 ### 4.1 创建自定义资源
 
 ```gdscript
-# 自定义资源
-class_name CustomResource
+# 自定义资源（一个脚本只能有一个 class_name）
+class_name ResourceItemData
 
 extends Resource
-
-class_name ItemData
 
 @export var item_name: String
 @export var item_id: int
@@ -478,31 +476,29 @@ func get_max_stack() -> int:
 ### 4.2 资源数组
 
 ```gdscript
-# 资源数组
-class_name ResourceArray
+# 资源数组（同样只保留一个 class_name）
+class_name ItemDatabase
 
 extends Resource
 
-class_name ItemDatabase
+@export var items: Array[ResourceItemData] = []
 
-@export var items: Array[ItemData] = []
-
-func get_item_by_id(id: int) -> ItemData:
+func get_item_by_id(id: int) -> ResourceItemData:
     for item in items:
         if item.item_id == id:
             return item
     return null
 
-func get_item_by_name(name: String) -> ItemData:
+func get_item_by_name(name: String) -> ResourceItemData:
     for item in items:
         if item.item_name == name:
             return item
     return null
 
-func add_item(item: ItemData):
+func add_item(item: ResourceItemData):
     items.append(item)
 
-func remove_item(item: ItemData):
+func remove_item(item: ResourceItemData):
     items.erase(item)
 
 func get_item_count() -> int:
@@ -703,6 +699,7 @@ func _ready():
     preloader = ResourcePreloader.new()
     add_child(preloader)
     
+    # 复用本篇 2.2 节自定义的 ResourceCache 节点做缓存（引擎没有内建缓存类）
     cache = ResourceCache.new()
     add_child(cache)
 

@@ -197,19 +197,19 @@ GraphicsSettings.defaultScriptableRenderPipelineType = typeof(UniversalRenderPip
 
 ### 下一篇
 
-**下一篇**: Godot vs Unity 渲染对比
+**下一篇**: [第 13 篇：Godot vs Unity 渲染对比](/articles/13-godot-vs-unity-rendering.md)
 
 ---
 
 **作者**: wangshucheng
 **首发平台**: 微信公众号  
 **写作时间**: 2026 年 3 月  
-**Godot 版本**: 4.3（最新稳定版）
+**Godot 版本**: 4.x（基线 4.3，2026-09 最新稳定版为 4.7）
 
 ---
 
-**上一篇**: [第 11 篇：Godot 渲染架构概述](#)  
-**下一篇**: [第 13 篇：Godot vs Unity 渲染对比](#)
+**上一篇**: [第 11 篇：Godot 渲染架构概述](/articles/11-godot-rendering-architecture.md)
+**下一篇**: [第 13 篇：Godot vs Unity 渲染对比](/articles/13-godot-vs-unity-rendering.md)
 
 ---
 

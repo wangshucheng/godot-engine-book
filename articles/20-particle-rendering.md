@@ -143,19 +143,19 @@ emitter.v_frames = 4
 
 ### 下一篇
 
-**下一篇**: 性能优化
+**下一篇**: [第 21 篇：渲染性能优化](/articles/21-performance-optimization.md)
 
 ---
 
 **作者**: wangshucheng
 **首发平台**: 微信公众号  
 **写作时间**: 2026 年 3 月  
-**Godot 版本**: 4.3（最新稳定版）
+**Godot 版本**: 4.x（基线 4.3，2026-09 最新稳定版为 4.7）
 
 ---
 
-**上一篇**: [第 19 篇：后处理效果](#)  
-**下一篇**: [第 21 篇：渲染性能优化](#)
+**上一篇**: [第 19 篇：后处理效果](/articles/19-post-processing-effects.md)
+**下一篇**: [第 21 篇：渲染性能优化](/articles/21-performance-optimization.md)
 
 ---
 

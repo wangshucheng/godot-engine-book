@@ -53,129 +53,104 @@ extends Node3D
 
 @export var show_debug: bool = false
 
-func _ready():
-    # 初始化性能计数器
-    initialize_performance_counters()
-    
-    # 启用物理统计
+func _ready() -> void:
+    # 让碰撞形状在运行时可见，等价于编辑器 Debug → Visible Collision Shapes
+    # 仅用于开发期排查，导出模板中该提示不生效
     if show_debug:
-        enable_debug_stats()
+        get_tree().debug_collisions_hint = true
 
-func initialize_performance_counters():
-    # 创建性能计数器
-    var counters = {
-        "collision_checks": 0,
-        "collision_resolves": 0,
-        "rigid_body_updates": 0,
-        "joint_updates": 0,
-        "memory_usage": 0
-    }
-    
-    # 添加到全局
-    get_tree().physics_server.set_performance_counters(counters)
-
-func enable_debug_stats():
-    # 启用碰撞统计
-    get_tree().physics_server.set_debug_collision(true)
-    
-    # 启用关节统计
-    get_tree().physics_server.set_debug_joints(true)
-    
-    # 启用刚体统计
-    get_tree().physics_server.set_debug_rigid_bodies(true)
-
-func _physics_process(delta):
-    # 获取性能数据
-    var counters = get_tree().physics_server.get_performance_counters()
-    
+func _physics_process(_delta: float) -> void:
     if show_debug:
-        # 显示关键数据
-        var text = "Physics Performance:\n"
-        text += "Collision Checks: " + str(counters["collision_checks"]) + "\n"
-        text += "Collision Resolves: " + str(counters["collision_resolves"]) + "\n"
-        text += "Rigid Bodies: " + str(counters["rigid_body_updates"]) + "\n"
-        text += "Joints: " + str(counters["joint_updates"]) + "\n"
-        
-        # 更新 UI
-        $DebugText.text = text
+        $DebugText.text = build_report()
 
-func analyze_performance():
-    # 分析当前性能
-    var counters = get_tree().physics_server.get_performance_counters()
-    
-    # 检查关键指标
-    if counters["collision_checks"] > 10000:
-        print("Collision checks too high - consider optimization")
-    
-    if counters["rigid_body_updates"] > 2000:
-        print("Rigid body updates too high - reduce number of bodies")
+func build_report() -> String:
+    # Performance 监视器是引擎内建的真实数据源，读取开销极低
+    var text := "Physics Performance:\n"
+    text += "Active Bodies: %d\n" % active_body_count()
+    text += "Collision Pairs: %d\n" % collision_pair_count()
+    text += "Islands: %d\n" % island_count()
+    text += "Physics Frame: %.2f ms\n" % physics_frame_ms()
+    return text
+
+# 高层写法：Performance 监视器与具体物理引擎实现无关
+func active_body_count() -> int:
+    return int(Performance.get_monitor(Performance.PHYSICS_3D_ACTIVE_OBJECTS))
+
+func collision_pair_count() -> int:
+    return int(Performance.get_monitor(Performance.PHYSICS_3D_COLLISION_PAIRS))
+
+func island_count() -> int:
+    return int(Performance.get_monitor(Performance.PHYSICS_3D_ISLAND_COUNT))
+
+func physics_frame_ms() -> float:
+    return Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
+
+# 低层写法：PhysicsServer3D 本身就是全局单例，可直接调用
+func active_body_count_low_level() -> int:
+    return PhysicsServer3D.get_process_info(PhysicsServer3D.INFO_ACTIVE_OBJECTS)
+
+func analyze_performance() -> void:
+    # 阈值应结合目标机型实测确定，下面是经验起点
+    if collision_pair_count() > 10000:
+        print("碰撞对过多：优先收紧碰撞层与掩码，而不是继续加宽掩码")
+    if active_body_count() > 2000:
+        print("活跃刚体过多：让远离玩家的刚体进入休眠")
 ```
 
 ### 1.3 性能测试
 
 ```gdscript
-# 性能测试框架
+# 性能采样器：在若干物理帧内周期性记录监视器数据
 class_name PerformanceTest
 
 extends Node3D
 
-@export var test_duration: float = 10.0
-@export var test_interval: float = 1.0
+@export var sample_interval: float = 1.0   # 采样间隔（秒）
+@export var test_duration: float = 10.0    # 总时长（秒）
 
-var test_results = []
-var test_start_time = 0.0
+var samples: Array[Dictionary] = []
+var _elapsed: float = 0.0
+var _next_sample: float = 0.0
 
-func _ready():
-    test_start_time = Time.get_ticks_msec() / 1000.0
+func _ready() -> void:
+    # 用物理帧的 delta 累加，不阻塞主线程，也不会让编辑器卡死
+    set_physics_process(true)
 
-func run_test():
-    # 运行测试一段时间
-    var elapsed = 0.0
-    var interval_start = test_start_time
-    
-    while elapsed < test_duration:
-        # 模拟物理更新
-        get_tree().physics_process(1.0 / 60.0)
-        
-        # 记录性能数据
-        if elapsed >= interval_start:
-            record_performance()
-            interval_start += test_interval
-        
-        elapsed = (Time.get_ticks_msec() / 1000.0) - test_start_time
-    
-    # 生成报告
-    generate_report()
+func _physics_process(delta: float) -> void:
+    _elapsed += delta
 
-func record_performance():
-    var counters = get_tree().physics_server.get_performance_counters()
-    test_results.append({
-        "time": (Time.get_ticks_msec() / 1000.0) - test_start_time,
-        "collision_checks": counters["collision_checks"],
-        "collision_resolves": counters["collision_resolves"],
-        "rigid_body_updates": counters["rigid_body_updates"],
-        "joint_updates": counters["joint_updates"]
+    if _elapsed >= _next_sample:
+        _next_sample += sample_interval
+        record_performance()
+
+    if _elapsed >= test_duration:
+        set_physics_process(false)
+        var report := generate_report()
+        print(report)
+        save_report(report)
+
+func record_performance() -> void:
+    samples.append({
+        "time": _elapsed,
+        "active_bodies": int(Performance.get_monitor(Performance.PHYSICS_3D_ACTIVE_OBJECTS)),
+        "collision_pairs": int(Performance.get_monitor(Performance.PHYSICS_3D_COLLISION_PAIRS)),
+        "islands": int(Performance.get_monitor(Performance.PHYSICS_3D_ISLAND_COUNT)),
+        "physics_ms": Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
     })
 
-func generate_report():
-    # 分析测试结果
-    var report = "Performance Test Results:\n"
-    
-    for result in test_results:
-        report += "Time: " + str(result["time"]) + "s, "
-        report += "Checks: " + str(result["collision_checks"]) + ", "
-        report += "Resolves: " + str(result["collision_resolves"]) + ", "
-        report += "Bodies: " + str(result["rigid_body_updates"]) + ", "
-        report += "Joints: " + str(result["joint_updates"]) + "\n"
-    
-    print(report)
-    
-    # 保存报告
-    save_report(report)
+func generate_report() -> String:
+    var report := "Performance Test Results:\n"
+    for s in samples:
+        report += "%.1fs  活跃刚体=%d  碰撞对=%d  岛=%d  物理帧=%.2fms\n" % [
+            s["time"], s["active_bodies"], s["collision_pairs"], s["islands"], s["physics_ms"]]
+    return report
 
-func save_report(text: String):
-    var file = File.new()
-    file.open("user://physics_performance_report.txt", File.WRITE)
+func save_report(text: String) -> void:
+    # 4.x 用 FileAccess.open() 一次性打开并返回句柄，失败时返回 null
+    var file := FileAccess.open("user://physics_performance_report.txt", FileAccess.WRITE)
+    if file == null:
+        push_error("报告写入失败：%s" % error_string(FileAccess.get_open_error()))
+        return
     file.store_string(text)
     file.close()
 ```
@@ -187,55 +162,45 @@ func save_report(text: String):
 ### 2.1 碰撞层和掩码优化
 
 ```gdscript
-# 碰撞层优化
+# 碰撞层分析
 class_name CollisionLayerOptimizer
 
-@export var max_active_layers: int = 32
+# Godot 4 没有“全局碰撞层表”：层（layer）与掩码（mask）是每个碰撞体上的 32 位掩码。
+# 位所代表的含义在项目设置中命名：layer_names/3d_physics/layer_1 … layer_32
 
-func optimize_layers():
-    # 获取所有碰撞层
-    var layers = get_tree().physics_server.get_collision_layers()
-    
-    # 合并不常用的层
-    var merged_layers = {}
-    var layer_counts = {}
-    
-    for layer in layers:
-        if not merged_layers.has(layer):
-            merged_layers[layer] = []
-            layer_counts[layer] = 0
-        
-        merged_layers[layer].append(layer)
-        layer_counts[layer] += 1
-    
-    # 检查是否可以合并
-    for layer in merged_layers:
-        if layer_counts[layer] < 2:
-            continue
-        
-        # 合并最常用的层
-        var main_layer = merged_layers[layer][0]
-        for other_layer in merged_layers[layer][1:]:
-            # 合并掩码
-            get_tree().physics_server.set_collision_mask(other_layer, main_layer)
-            
-            # 移除旧层
-            get_tree().physics_server.set_collision_layer(other_layer, 0)
-    
-    print("Collision layers optimized")
-
-func check_layer_usage():
-    # 检查每个层的活跃度
-    var layer_usage = {}
-    
+# 统计每个层位被多少刚体使用
+func check_layer_usage() -> Dictionary:
+    var usage := {}
     for body in get_tree().get_nodes_in_group("rigid_bodies"):
-        if body is RigidBody3D:
-            var layer = body.collision_layer
-            layer_usage[layer] = layer_usage.get(layer, 0) + 1
-    
-    # 输出使用统计
-    for layer in layer_usage:
-        print("Layer ", layer, " usage: ", layer_usage[layer])
+        if body is CollisionObject3D:
+            for bit in range(1, 33):
+                if body.collision_layer & (1 << (bit - 1)):
+                    usage[bit] = int(usage.get(bit, 0)) + 1
+
+    for bit in usage:
+        print("Layer %d（%s）使用数：%d" % [bit, layer_name(bit), usage[bit]])
+    return usage
+
+# 读取项目设置里为该层位配置的名称，输出可读日志
+func layer_name(bit: int) -> String:
+    return str(ProjectSettings.get_setting("layer_names/3d_physics/layer_%d" % bit, "未命名"))
+
+# 清理：把没有任何刚体使用的层位从所有碰撞体上摘掉
+func prune_unused_layers() -> void:
+    var usage := check_layer_usage()
+
+    var unused_mask := 0
+    for bit in range(1, 33):
+        if int(usage.get(bit, 0)) == 0:
+            unused_mask |= 1 << (bit - 1)
+    if unused_mask == 0:
+        return
+
+    for body in get_tree().get_nodes_in_group("rigid_bodies"):
+        if body is CollisionObject3D:
+            # 只清理 layer；mask 关系到玩法逻辑，需要人工确认后再收窄
+            body.collision_layer &= ~unused_mask
+    print("已从刚体上移除未使用的层位")
 ```
 
 ### 2.2 碰撞形状优化
@@ -244,94 +209,90 @@ func check_layer_usage():
 # 碰撞形状优化
 class_name CollisionShapeOptimizer
 
-@export var max_vertices: int = 8
+@export var max_convex_points: int = 32
 
-func optimize_shapes():
+# 动态刚体应优先使用图元或凸形状；凹多边形只适合静态物体。
+# 形状资源默认在多个节点间共享，直接改 shape.radius 会波及所有使用者，
+# 因此必须先 duplicate() 再修改。
+func shrink_shapes_safely(ratio: float = 0.95) -> void:
     for body in get_tree().get_nodes_in_group("rigid_bodies"):
-        if body is RigidBody3D:
-            var shapes = body.get_children().filter(func(child): return child is CollisionShape3D)
-            
-            for shape in shapes:
-                if shape.shape is ConcavePolygonShape3D:
-                    if shape.shape.get_faces().size() > max_vertices:
-                        # 简化多边形
-                        simplify_polygon(shape.shape, max_vertices)
-                elif shape.shape is ConcavePolygonShape3D:
-                    if shape.shape.get_faces().size() > max_vertices:
-                        simplify_polygon(shape.shape, max_vertices)
+        if body is not RigidBody3D:
+            continue
+        for child in body.get_children():
+            if child is not CollisionShape3D or child.shape == null:
+                continue
 
-func simplify_polygon(polygon: ConcavePolygonShape3D, max_vertices: int):
-    # 简化多边形（简化版）
-    var vertices = polygon.get_faces()
-    var simplified = []
-    
-    # 简化算法（如 Douglas-Peucker）
-    if vertices.size() > max_vertices:
-        # 简化逻辑
-        pass
-    
-    polygon.set_faces(simplified)
+            var shape := child.shape.duplicate() as Shape3D
+            if shape is BoxShape3D:
+                shape.size *= ratio
+            elif shape is SphereShape3D:
+                shape.radius *= ratio
+            elif shape is CapsuleShape3D:
+                shape.radius *= ratio
+                shape.height *= ratio
+            else:
+                continue
+            child.shape = shape
 
-func reduce_collision_precision():
-    # 减少碰撞精度（如果性能允许）
+# 扫描出算力开销过大的碰撞形状，返回可执行的整改清单
+func audit_shapes() -> Array[String]:
+    var report: Array[String] = []
     for body in get_tree().get_nodes_in_group("rigid_bodies"):
-        if body is RigidBody3D:
-            for shape in body.get_children().filter(func(child): return child is CollisionShape3D):
-                if shape.shape is BoxShape3D:
-                    shape.shape.size *= 0.95  # 缩小碰撞盒
-                elif shape.shape is SphereShape3D:
-                    shape.shape.radius *= 0.95  # 缩小球体半径
+        if body is not RigidBody3D:
+            continue
+        for child in body.get_children():
+            if child is not CollisionShape3D or child.shape == null:
+                continue
+
+            var shape := child.shape
+            if shape is ConcavePolygonShape3D:
+                # 凹多边形与动态刚体不兼容，窄相位开销也最高
+                report.append("%s：动态刚体使用了 ConcavePolygonShape3D，应改为凸分解或图元" % body.name)
+            elif shape is ConvexPolygonShape3D:
+                var points := shape.get_points()
+                if points.size() > max_convex_points:
+                    report.append("%s：凸包顶点 %d 个，建议简化到 %d 以内" % [
+                        body.name, points.size(), max_convex_points])
+    return report
 ```
 
 ### 2.3 碰撞过滤优化
 
 ```gdscript
-# 碰撞过滤优化
+# 碰撞过滤收窄
 class_name CollisionFilterOptimizer
 
-@export var max_groups: int = 8
+# Godot 只提供 layer / mask 两个 32 位掩码，不存在独立的“碰撞组”概念。
+# 场景树里的 add_to_group() 只是逻辑分组，不参与物理过滤。
+# 想让 A 不检测 B：把 B 所在的 layer 位从 A 的 mask 中清掉即可。
 
-func optimize_filters():
-    # 获取所有碰撞组
-    var groups = get_tree().physics_server.get_collision_groups()
-    
-    # 合并不常用的组
-    var merged_groups = {}
-    var group_counts = {}
-    
-    for group in groups:
-        if not merged_groups.has(group):
-            merged_groups[group] = []
-            group_counts[group] = 0
-        
-        merged_groups[group].append(group)
-        group_counts[group] += 1
-    
-    # 合并最常用的组
-    for group in merged_groups:
-        if group_counts[group] < 2:
-            continue
-        
-        var main_group = merged_groups[group][0]
-        for other_group in merged_groups[group][1:]:
-            get_tree().physics_server.set_collision_group(other_group, main_group)
-            get_tree().physics_server.set_collision_layer(other_group, 0)
-    
-    print("Collision groups optimized")
+# 编辑器里的推荐做法是用导出标志声明层位，避免手写魔数
+@export_flags_3d_physics var layer_bits: int = 1
 
-func check_group_usage():
-    # 检查每个组的活跃度
-    var group_usage = {}
-    
+# 审计“掩码过宽”：mask 命中的层位里，有多少实际上没有任何碰撞体
+func audit_masks() -> void:
+    var occupied := _collect_occupied_layers()
     for body in get_tree().get_nodes_in_group("rigid_bodies"):
-        if body is RigidBody3D:
-            var groups = body.collision_groups
-            for group in groups:
-                group_usage[group] = group_usage.get(group, 0) + 1
-    
-    # 输出使用统计
-    for group in group_usage:
-        print("Group ", group, " usage: ", group_usage[group])
+        if body is not CollisionObject3D:
+            continue
+        var overly_broad := body.collision_mask & ~occupied
+        if overly_broad != 0:
+            print("%s 的 mask 命中了 %d 个空层位，可安全移除" % [
+                body.name, _count_bits(overly_broad)])
+
+func _collect_occupied_layers() -> int:
+    var mask := 0
+    for body in get_tree().get_nodes_in_group("rigid_bodies"):
+        if body is CollisionObject3D:
+            mask |= body.collision_layer
+    return mask
+
+func _count_bits(value: int) -> int:
+    var count := 0
+    while value:
+        value &= value - 1
+        count += 1
+    return count
 ```
 
 ---
@@ -346,33 +307,33 @@ class_name RigidBodyOptimizer
 
 @export var max_active_bodies: int = 1000
 
-func optimize_bodies():
-    # 获取所有刚体
-    var bodies = get_tree().get_nodes_in_group("rigid_bodies")
-    
-    # 检查每个刚体的活跃度
-    for body in bodies:
-        if body is RigidBody3D:
-            var is_active = body.linear_velocity.length() > 0.1 or \
-                           body.angular_velocity.length() > 0.1 or \
-                           body.sleeping == false
-    
-    # 休眠不活跃的刚体
-    for body in bodies:
-        if body is RigidBody3D and not is_active:
+func optimize_bodies() -> void:
+    # 速度低于阈值的刚体交给引擎休眠，省掉无谓的积分与窄相位检测
+    for body in get_tree().get_nodes_in_group("rigid_bodies"):
+        if body is RigidBody3D and _is_idle(body):
             body.sleeping = true
-    
+
     print("Rigid bodies optimized")
 
-func remove_inactive_bodies():
-    # 移除休眠时间超过阈值的刚体
-    var inactive_threshold = 5.0  # 秒
-    
+func _is_idle(body: RigidBody3D) -> bool:
+    return body.linear_velocity.length() < 0.1 and body.angular_velocity.length() < 0.1
+
+func remove_inactive_bodies() -> void:
+    # RigidBody3D 没有“已休眠多久”的查询接口，
+    # 需要在节点上自行累计休眠时长（这里用 meta 存，避免额外的字典）。
+    var inactive_threshold := 5.0  # 秒
+    var dt := 1.0 / float(Engine.physics_ticks_per_second)
+
     for body in get_tree().get_nodes_in_group("rigid_bodies"):
-        if body is RigidBody3D and body.sleeping:
-            if body.get_process_time() > inactive_threshold:
+        if body is not RigidBody3D:
+            continue
+        if body.sleeping:
+            body.set_meta("idle_time", float(body.get_meta("idle_time", 0.0)) + dt)
+            if float(body.get_meta("idle_time")) > inactive_threshold:
                 body.queue_free()
-    
+        else:
+            body.set_meta("idle_time", 0.0)
+
     print("Inactive rigid bodies removed")
 
 func reduce_rigid_body_mass():
@@ -396,7 +357,7 @@ func reduce_rigid_body_size():
 
 ```gdscript
 # 刚体对象池
-class_name RigidBodyPool
+class_name PhysicsRigidBodyPool
 
 var pool = []
 var body_scene: PackedScene
@@ -452,49 +413,53 @@ class_name JointOptimizer
 
 @export var max_active_joints: int = 50
 
-func optimize_joints():
-    # 获取所有关节
-    var joints = get_tree().get_nodes_in_group("joints")
-    
-    # 检查每个关节的活跃度
-    for joint in joints:
-        if joint is HingeJoint3D or joint is SliderJoint3D:
-            var is_active = joint.get_param(joint.PARAM_ANGULAR_MOTOR_ENABLED) or \
-                           joint.get_param(joint.PARAM_LINEAR_MOTOR_ENABLED)
-    
-    # 休眠不活跃的关节
-    for joint in joints:
-        if joint is RigidBody3D and not is_active:
-            joint.set_param(joint.PARAM_ANGULAR_MOTOR_ENABLED, false)
-            joint.set_param(joint.PARAM_LINEAR_MOTOR_ENABLED, false)
-    
+func optimize_joints() -> void:
+    # 关节本身没有“活跃度”概念，开销取决于两端刚体是否仍在模拟。
+    # 最有效的做法：关掉不需要的马达，并让两端刚体一起休眠。
+    for joint in get_tree().get_nodes_in_group("joints"):
+        if joint is HingeJoint3D:
+            _disable_idle_hinge_motor(joint)
+
     print("Joints optimized")
 
-func remove_inactive_joints():
-    # 移除休眠时间超过阈值的关节
-    var inactive_threshold = 5.0  # 秒
-    
+func _disable_idle_hinge_motor(joint: HingeJoint3D) -> void:
+    # 马达开关是 Flag，不是 Param
+    if not joint.get_flag(HingeJoint3D.FLAG_ENABLE_MOTOR):
+        return
+    var target := joint.get_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY)
+    if absf(target) < 0.01:
+        joint.set_flag(HingeJoint3D.FLAG_ENABLE_MOTOR, false)
+
+func remove_inactive_joints() -> void:
+    # 关节没有“已休眠多久”的查询接口，需要自行累计两端刚体的共同闲置时长
+    var inactive_threshold := 5.0  # 秒
+    var dt := 1.0 / float(Engine.physics_ticks_per_second)
+
     for joint in get_tree().get_nodes_in_group("joints"):
-        if joint is RigidBody3D and not joint.get_param(joint.PARAM_ANGULAR_MOTOR_ENABLED) and \
-           not joint.get_param(joint.PARAM_LINEAR_MOTOR_ENABLED):
-            if joint.get_process_time() > inactive_threshold:
+        if joint is not Joint3D:
+            continue
+
+        var a := joint.get_node_or_null(joint.node_a)
+        var b := joint.get_node_or_null(joint.node_b)
+        var both_idle := a is RigidBody3D and b is RigidBody3D and a.sleeping and b.sleeping
+
+        if both_idle:
+            joint.set_meta("idle_time", float(joint.get_meta("idle_time", 0.0)) + dt)
+            if float(joint.get_meta("idle_time")) > inactive_threshold:
                 joint.queue_free()
-    
+        else:
+            joint.set_meta("idle_time", 0.0)
+
     print("Inactive joints removed")
 
-func reduce_joint_damping():
-    # 减少关节阻尼（如果性能允许）
+func reduce_joint_stiffness() -> void:
+    # 约束越“硬”，求解器需要的迭代次数越多；适当降低柔化系数可省算力
+    # 不同关节的 Param 名称不一致，需要分别处理
     for joint in get_tree().get_nodes_in_group("joints"):
-        if joint is HingeJoint3D or joint is SliderJoint3D:
-            joint.set_param(joint.PARAM_ANGULAR_DAMPING, 0.7)
-            joint.set_param(joint.PARAM_LINEAR_DAMPING, 0.7)
-
-func reduce_joint_limit_softness():
-    # 减少关节限制软度（如果性能允许）
-    for joint in get_tree().get_nodes_in_group("joints"):
-        if joint is HingeJoint3D or joint is SliderJoint3D:
-            joint.set_param(joint.PARAM_ANGULAR_LIMIT_SOFTNESS, 0.7)
-            joint.set_param(joint.PARAM_LINEAR_LIMIT_SOFTNESS, 0.7)
+        if joint is HingeJoint3D:
+            joint.set_param(HingeJoint3D.PARAM_LIMIT_SOFTNESS, 0.7)
+        elif joint is SliderJoint3D:
+            joint.set_param(SliderJoint3D.PARAM_LINEAR_LIMIT_SOFTNESS, 0.7)
 ```
 
 ### 4.2 关节池
@@ -513,31 +478,35 @@ func _init(scene: PackedScene, initial_count: int):
         joint.set_process(false)
         pool.append(joint)
 
-func get_joint(node_a: Node3D, node_b: Node3D) -> RigidBody3D:
-    var joint: RigidBody3D
-    
+func get_joint(node_a: Node3D, node_b: Node3D) -> Joint3D:
+    var joint: Joint3D
+
     if pool.size() > 0:
         joint = pool.pop_back()
+        joint.set_meta("pooled_at", 0)
     else:
         joint = joint_scene.instantiate()
-    
+
     joint.node_a = node_a.get_path()
     joint.node_b = node_b.get_path()
     joint.set_process(true)
     return joint
 
-func return_joint(joint: RigidBody3D):
+func return_joint(joint: Joint3D) -> void:
     joint.set_process(false)
-    
+    joint.set_meta("pooled_at", Time.get_ticks_msec())
+
     if pool.size() < 50:  # 最大池大小
         pool.append(joint)
     else:
         joint.queue_free()
 
-func cleanup_pool():
-    # 清理过期的关节
-    for joint in pool:
-        if joint.get_process_time() > 10.0:  # 超过 10 秒未使用
+func cleanup_pool(max_idle_sec: float = 10.0) -> void:
+    # 用“入池时间戳”判断闲置时长；遍历副本，避免边遍历边删除
+    var now := Time.get_ticks_msec()
+    for joint in pool.duplicate():
+        var pooled_at := int(joint.get_meta("pooled_at", now))
+        if now - pooled_at > int(max_idle_sec * 1000.0):
             pool.erase(joint)
             joint.queue_free()
 ```
@@ -556,93 +525,84 @@ extends Node3D
 
 @export var show_stats: bool = true
 
-func _ready():
-    # 启用性能分析
-    get_tree().physics_server.set_debug_collision(true)
-    get_tree().physics_server.set_debug_joints(true)
-    get_tree().physics_server.set_debug_rigid_bodies(true)
-    
-    # 启用帧率统计
-    get_tree().set_debug_draw(DebugDraw3D.DEBUG_DRAW_FPS)
+func _ready() -> void:
+    # 运行时显示碰撞形状；Godot 没有“只显示关节/只显示刚体”的独立开关
+    get_tree().debug_collisions_hint = true
 
-func _process(delta):
+func _process(_delta: float) -> void:
     if show_stats:
-        # 显示关键性能数据
-        var text = "Physics Stats:\n"
-        text += "FPS: " + str(Engine.get_frames_per_second()) + "\n"
-        text += "Physics Updates: " + str(Engine.get_physics_updates_per_second()) + "\n"
-        text += "Memory: " + str(Engine.get_memory_usage()) + " MB\n"
-        
-        $StatsText.text = text
+        $StatsText.text = build_stats_text()
 
-func analyze_frame():
-    # 分析当前帧性能
-    var stats = Engine.get_performance_stats()
-    
-    # 检查关键指标
-    if stats["physics_time"] > 0.1:
-        print("Physics time too high: ", stats["physics_time"], "s")
-    
-    if stats["collision_time"] > 0.05:
-        print("Collision time too high: ", stats["collision_time"], "s")
-    
-    if stats["joint_time"] > 0.03:
-        print("Joint time too high: ", stats["joint_time"], "s")
+func build_stats_text() -> String:
+    var text := "Physics Stats:\n"
+    text += "FPS: %d\n" % int(Performance.get_monitor(Performance.TIME_FPS))
+    text += "物理帧耗时: %.2f ms\n" % (Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0)
+    text += "物理频率: %d Hz\n" % Engine.physics_ticks_per_second
+    text += "活跃刚体: %d\n" % int(Performance.get_monitor(Performance.PHYSICS_3D_ACTIVE_OBJECTS))
+    text += "静态内存: %.1f MB\n" % (Performance.get_monitor(Performance.MEMORY_STATIC) / 1048576.0)
+    return text
+
+func analyze_frame() -> void:
+    # 监视器返回的是秒；Godot 不提供“碰撞/关节”分项耗时，只能测到物理帧总耗时
+    var physics_time := Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)
+    var process_time := Performance.get_monitor(Performance.TIME_PROCESS)
+    if physics_time > 0.1:
+        print("物理帧耗时过高：%.1f ms" % (physics_time * 1000.0))
+    if process_time > 0.1:
+        print("主线程帧耗时过高：%.1f ms" % (process_time * 1000.0))
 ```
 
 ### 5.2 自定义性能分析器
 
 ```gdscript
-# 自定义性能分析器
+# 自定义性能分析器：按固定间隔把监视器数据落到日志文件
 class_name CustomProfiler
 
 extends Node3D
 
 @export var log_file: String = "user://physics_performance.log"
+@export var sample_interval: float = 1.0
 
-func _ready():
-    # 启用物理统计
-    get_tree().physics_server.set_performance_counters(true)
-    
-    # 启用帧率统计
-    get_tree().set_debug_draw(DebugDraw3D.DEBUG_DRAW_FPS)
+var _file: FileAccess
+var _accum: float = 0.0
 
-func _process(delta):
-    # 记录性能数据
-    var counters = get_tree().physics_server.get_performance_counters()
-    
-    var text = "Physics Performance:\n"
-    text += "Collision Checks: " + str(counters["collision_checks"]) + "\n"
-    text += "Collision Resolves: " + str(counters["collision_resolves"]) + "\n"
-    text += "Rigid Body Updates: " + str(counters["rigid_body_updates"]) + "\n"
-    text += "Joint Updates: " + str(counters["joint_updates"]) + "\n"
-    
-    # 写入文件
-    var file = File.new()
-    file.open(log_file, File.WRITE)
-    file.store_string(text + "\n")
-    file.close()
+func _ready() -> void:
+    get_tree().debug_collisions_hint = true
+    # 整个采样周期只开一次文件，避免每帧 Open/Close 造成 IO 压力
+    _file = FileAccess.open(log_file, FileAccess.WRITE)
+    if _file == null:
+        push_error("日志打开失败：%s" % error_string(FileAccess.get_open_error()))
 
-func generate_report():
-    # 生成性能报告
-    var file = File.new()
-    file.open(log_file, File.READ)
-    var content = file.get_as_text()
+func _process(delta: float) -> void:
+    if _file == null:
+        return
+
+    _accum += delta
+    if _accum < sample_interval:
+        return
+    _accum = 0.0
+
+    _file.store_line("活跃刚体=%d 碰撞对=%d 岛=%d 物理帧=%.2fms" % [
+        int(Performance.get_monitor(Performance.PHYSICS_3D_ACTIVE_OBJECTS)),
+        int(Performance.get_monitor(Performance.PHYSICS_3D_COLLISION_PAIRS)),
+        int(Performance.get_monitor(Performance.PHYSICS_3D_ISLAND_COUNT)),
+        Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0,
+    ])
+    _file.flush()  # 主动落盘，崩溃时也能保留数据
+
+func _exit_tree() -> void:
+    if _file != null:
+        _file.close()
+        _file = null
+
+func generate_report() -> void:
+    var file := FileAccess.open(log_file, FileAccess.READ)
+    if file == null:
+        push_error("日志读取失败：%s" % error_string(FileAccess.get_open_error()))
+        return
+    var content := file.get_as_text()
     file.close()
-    
-    # 分析报告
-    var lines = content.split("\n")
-    var report = "Performance Report:\n"
-    
-    for line in lines:
-        report += line + "\n"
-    
-    print(report)
-    
-    # 保存报告
-    file.open("user://physics_performance_report.txt", File.WRITE)
-    file.store_string(report)
-    file.close()
+    print("Performance Report:\n%s" % content)
 ```
 
 ---
@@ -655,12 +615,12 @@ func generate_report():
 # 物理对象池
 class_name PhysicsObjectPool
 
-var rigid_body_pool: RigidBodyPool
+var rigid_body_pool: PhysicsRigidBodyPool
 var joint_pool: JointPool
 
 func _ready():
     # 初始化池
-    rigid_body_pool = RigidBodyPool.new(RigidBody3D.new(), 100)
+    rigid_body_pool = PhysicsRigidBodyPool.new(RigidBody3D.new(), 100)
     joint_pool = JointPool.new(HingeJoint3D.new(), 50)
 
 func create_rigid_body(position: Vector3) -> RigidBody3D:
@@ -716,41 +676,37 @@ class_name PerformanceTestFramework
 
 var test_results = {}
 
-func run_tests():
-    # 运行所有测试场景
+func run_tests() -> void:
+    # run_scene_test 内部有 await，调用处也必须 await
     for scene in test_scenes:
-        var result = run_scene_test(scene)
-        test_results[scene] = result
-    
-    # 生成报告
+        test_results[scene] = await run_scene_test(scene)
+
     generate_report()
 
 func run_scene_test(scene_path: String) -> Dictionary:
     # 加载场景
-    var scene = load(scene_path)
-    var root = scene.instantiate()
+    var packed: PackedScene = load(scene_path)
+    var root := packed.instantiate()
     get_tree().current_scene.add_child(root)
-    
-    # 运行测试
-    var test = PerformanceTest.new()
+
+    # 挂上采样器，等待它跑满设定的时长
+    var test := PerformanceTest.new()
     test.test_duration = test_duration
     root.add_child(test)
-    
-    # 运行测试
-    get_tree().physics_process(1.0 / 60.0)  # 等待一帧
-    
-    # 获取结果
-    var result = {
+    await get_tree().create_timer(test_duration).timeout
+
+    # 读取真实监视器数据（单位：FPS 为帧、耗时已换算为毫秒）
+    var result := {
         "scene": scene_path,
-        "fps": test.get_tree().get_frames_per_second(),
-        "physics_time": test.get_tree().get_performance_stats()["physics_time"],
-        "collision_time": test.get_tree().get_performance_stats()["collision_time"],
-        "joint_time": test.get_tree().get_performance_stats()["joint_time"]
+        "fps": int(Performance.get_monitor(Performance.TIME_FPS)),
+        "physics_ms": Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0,
+        "active_bodies": int(Performance.get_monitor(Performance.PHYSICS_3D_ACTIVE_OBJECTS)),
+        "collision_pairs": int(Performance.get_monitor(Performance.PHYSICS_3D_COLLISION_PAIRS))
     }
-    
+
     # 清理
     root.queue_free()
-    
+
     return result
 
 func generate_report():
@@ -758,17 +714,20 @@ func generate_report():
     var report = "Performance Test Report:\n"
     
     for scene in test_results:
-        report += "Scene: " + scene + "\n"
-        report += "FPS: " + str(test_results[scene]["fps"]) + "\n"
-        report += "Physics Time: " + str(test_results[scene]["physics_time"]) + "s\n"
-        report += "Collision Time: " + str(test_results[scene]["collision_time"]) + "s\n"
-        report += "Joint Time: " + str(test_results[scene]["joint_time"]) + "s\n\n"
+        var r: Dictionary = test_results[scene]
+        report += "Scene: %s\n" % scene
+        report += "  FPS: %d\n" % r["fps"]
+        report += "  物理帧耗时: %.2f ms\n" % r["physics_ms"]
+        report += "  活跃刚体: %d\n" % r["active_bodies"]
+        report += "  碰撞对: %d\n\n" % r["collision_pairs"]
     
     print(report)
     
     # 保存报告
-    var file = File.new()
-    file.open("user://performance_test_report.txt", File.WRITE)
+    var file := FileAccess.open("user://performance_test_report.txt", FileAccess.WRITE)
+    if file == null:
+        push_error("报告写入失败：%s" % error_string(FileAccess.get_open_error()))
+        return
     file.store_string(report)
     file.close()
 ```
@@ -893,58 +852,7 @@ func create_optimized_scene():
 
 ---
 
-## 📝 本章总结
-
-### 核心要点
-
-1. **性能分析是优化的基础**，通过工具了解瓶颈
-2. **碰撞层和掩码优化**，减少不必要的碰撞检测
-3. **刚体和关节数量控制**，休眠不活跃对象
-4. **对象池技术**，复用物理对象提高性能
-5. **性能测试**，验证优化效果
-
-### 关键术语
-
-| 术语 | 解释 |
-|------|------|
-| Performance Profiling | 性能分析，识别性能瓶颈 |
-| Collision Layer | 碰撞层，物体所在的分类层 |
-| Object Pool | 对象池，复用对象提高性能 |
-| Rigid Body | 刚体，物理系统中的刚体对象 |
-| Joint | 关节，连接两个刚体的约束 |
-
----
-
-## 🔗 延伸阅读
-
-- **官方文档**: [Godot Performance](https://docs.godotengine.org/en/stable/tutorials/performance/performance.html)
-- **源码位置**: `servers/physics_3d/`
-- **技术博客**: [Godot Physics Optimization](https://godotengine.org/article/physics-optimization/)
-
----
-
-## 📋 下一章预告
-
-**第 37 篇：动画系统基础**
-
-- 动画系统架构
-- AnimationPlayer 与 AnimationTree
-- 关键帧动画
-- 动画导入与优化
-
----
-
-*写作时间：2026-03-20*  
-*字数：约 10,000 字*  
-*状态：✅ 完成*
-
----
-
-*最后更新：2026-03-20 14:00*
-
----
-
-## 8. 性能基准测试（新增）
+## 8. 性能基准测试
 
 ### 8.1 测试环境
 
@@ -1128,7 +1036,7 @@ Web 优化建议:
 
 ---
 
-## 9. 物理预算系统（新增）
+## 9. 物理预算系统
 
 ### 9.1 实现物理预算
 
@@ -1143,36 +1051,26 @@ extends Node
 @export var quality_levels: Array[String] = ["low", "medium", "high"]
 
 var current_quality: String = "high"
-var physics_server: PhysicsServer3D
-var frame_count: int = 0
+var physics_frame_count: int = 0
 var total_physics_time: float = 0.0
 
-func _ready():
-    physics_server = PhysicsServer3D.get_singleton()
-    set_process(true)
+func _physics_process(_delta: float) -> void:
+    # 不要在回调内自测首尾时间戳：那只能测到本行的执行时间。
+    # 物理帧的真实耗时由引擎统计，直接读监视器。
+    total_physics_time += Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
+    physics_frame_count += 1
 
-func _process(delta):
-    frame_count += 1
-    
-    if frame_count >= 60:
-        # 每 60 帧评估一次
-        var avg_physics_time = total_physics_time / frame_count
-        
+    if physics_frame_count >= 60:
+        # 每 60 个物理帧评估一次平均耗时
+        var avg_physics_time := total_physics_time / physics_frame_count
+
         if avg_physics_time > max_physics_time_ms:
             _reduce_quality()
         elif avg_physics_time < max_physics_time_ms * 0.5:
             _increase_quality()
-        
-        frame_count = 0
-        total_physics_time = 0.0
 
-func _physics_process(delta):
-    var start_time = Time.get_ticks_usec()
-    
-    # 物理更新由 Godot 自动处理
-    
-    var elapsed_ms = (Time.get_ticks_usec() - start_time) / 1000.0
-    total_physics_time += elapsed_ms
+        physics_frame_count = 0
+        total_physics_time = 0.0
 
 func _reduce_quality():
     match current_quality:
@@ -1213,40 +1111,69 @@ func _apply_low_quality():
     _disable_distant_physics(100.0)
     _simplify_collision_shapes()
 
-func _disable_distant_physics(distance: float):
-    # 禁用远处刚体
-    var bodies = get_tree().get_nodes_in_group("rigid_bodies")
-    for body in bodies:
-        if body is RigidBody3D:
-            var dist = body.global_position.distance_to(get_tree().get_first_node_in_group("player").global_position)
-            if dist > distance:
-                body.sleeping = true
+func _disable_distant_physics(distance: float) -> void:
+    # 让远离玩家的刚体休眠；注意“休眠”只是停止模拟，节点仍然留在物理空间中
+    var player := get_tree().get_first_node_in_group("player") as Node3D
+    if player == null:
+        push_warning("未找到 player 分组节点，跳过距离休眠")
+        return
 
-func _simplify_collision_shapes():
-    # 替换复杂碰撞形状为简单形状
-    # ... 实现略 ...
-    pass
+    for body in get_tree().get_nodes_in_group("rigid_bodies"):
+        if body is RigidBody3D and body.global_position.distance_to(player.global_position) > distance:
+            body.sleeping = true
+
+func _simplify_collision_shapes() -> void:
+    # 把凹多边形碰撞体换成与网格包围盒等大的盒体
+    for body in get_tree().get_nodes_in_group("rigid_bodies"):
+        if body is not RigidBody3D:
+            continue
+
+        var mesh_instance := _find_mesh_instance(body)
+        if mesh_instance == null:
+            continue
+        var aabb := mesh_instance.get_aabb()
+
+        for child in body.get_children():
+            if child is CollisionShape3D and child.shape is ConcavePolygonShape3D:
+                var box := BoxShape3D.new()
+                box.size = aabb.size
+                child.shape = box
+
+func _find_mesh_instance(node: Node) -> MeshInstance3D:
+    for child in node.get_children():
+        if child is MeshInstance3D:
+            return child
+    return null
 ```
 
 ---
 
-## 📝 本章总结（更新）
+## 📝 本章总结
 
-### 核心要点（更新）
+### 核心要点
 
-1. **性能分析是优化的基础**，通过工具了解瓶颈
-2. **碰撞层和掩码优化**，减少不必要的碰撞检测
-3. **刚体和关节数量控制**，休眠不活跃对象
-4. **对象池技术**，复用物理对象提高性能
-5. **性能测试**，验证优化效果
-6. **基准测试数据**，了解性能边界（新增）
-7. **物理预算系统**，动态调整质量（新增）
-8. **移动端优化**，针对移动设备特殊处理（新增）
+1. **性能分析是优化的基础**：先读 `Performance` 监视器定位瓶颈，再决定优化哪一环
+2. **碰撞层与掩码是第一道闸门**，收窄掩码比减少刚体数量更有效
+3. **刚体与关节数量控制**，让不活跃对象休眠
+4. **对象池技术**，复用物理对象，避免频繁创建与销毁
+5. **形状选择决定窄相位成本**，动态刚体应避免凹多边形
+6. **基准测试要有可复现的测试环境**，数据只在同一环境下横向比较
+7. **物理预算系统**，按实测帧耗时动态调整物理频率与处理范围
 
-### 性能基准总结（新增）
+### 关键术语
+
+| 术语 | 解释 |
+|------|------|
+| Performance Monitor | `Performance.get_monitor()` 提供的内建性能计数器 |
+| Collision Layer | 碰撞层，节点所属的分类位 |
+| Collision Mask | 碰撞掩码，节点要检测的层位集合 |
+| Object Pool | 对象池，复用对象以减少分配与销毁开销 |
+| Sleeping | 休眠，刚体停止模拟但节点仍保留在物理空间中 |
+
+### 性能基准参考
 
 ```
-关键性能指标:
+关键性能指标（在固定测试环境中测量，仅供横向比较）:
 ┌─────────────────────────────────────────────────────────────┐
 │ 场景类型          │ 推荐刚体数 │ 物理频率 │ 物理耗时  │
 ├─────────────────────────────────────────────────────────────┤
@@ -1254,6 +1181,33 @@ func _simplify_collision_shapes():
 │ 中型 3D 游戏       │ <500       │ 60 Hz     │ <5ms      │
 │ 大型 3D 游戏       │ <1000      │ 60-120 Hz │ <8ms      │
 │ 移动端游戏        │ <300       │ 30-60 Hz  │ <6ms      │
-│ Web/HTML5         │ <200       │ 30-60 Hz  │ <8ms      │
+│ Web/WebAssembly   │ <200       │ 30-60 Hz  │ <8ms      │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## 🔗 延伸阅读
+
+- **性能优化总览**: <https://docs.godotengine.org/en/stable/tutorials/performance/index.html>
+- **物理系统入门**: <https://docs.godotengine.org/en/stable/tutorials/physics/index.html>
+- **Performance 类参考**: <https://docs.godotengine.org/en/stable/classes/class_performance.html>
+- **源码位置**: `servers/physics_3d/`
+- **编辑器调试**: Debug → Visible Collision Shapes 的代码等价物是 `SceneTree.debug_collisions_hint`
+
+---
+
+## 📋 下一章预告
+
+**第 37 篇：动画系统基础**
+
+- 动画系统架构
+- AnimationPlayer 与 AnimationTree
+- 关键帧动画
+- 动画导入与优化
+
+---
+
+*写作时间：2026-03-20*  
+*最近一次技术勘误：2026-09-12*  
+*状态：✅ 完成*

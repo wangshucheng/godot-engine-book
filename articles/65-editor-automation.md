@@ -597,7 +597,7 @@ func _verify_deployment():
 
 ```gdscript
 # 批量导入工具
-class_name BatchImportTool
+class_name AutomatedBatchImporter
 
 func batch_importTextures(directory: String, options: Dictionary = {}):
     # 批量导入纹理
@@ -759,7 +759,7 @@ func _use_deferred_calls():
 
 func _implement_error_handling():
     # 实现错误处理
-    # 使用try-catch和错误报告
+    # GDScript 没有 try-catch：用错误码、空值检查与 push_error 上报
     pass
 
 func _add_progress_tracking():
@@ -878,7 +878,7 @@ func _load_workflows():
 func _load_tools():
     # 加载工具
     tools = {
-        "batch_import": BatchImportTool.new(),
+        "batch_import": AutomatedBatchImporter.new(),
         "batch_processing": BatchProcessingTool.new(),
         "batch_export": BatchExportTool.new()
     }
@@ -1054,7 +1054,7 @@ func generate_report() -> Dictionary:
 | BuildWorkflow | 构建工作流，自动化构建项目 |
 | TestWorkflow | 测试工作流，自动化测试 |
 | DeploymentWorkflow | 部署工作流，自动化部署 |
-| BatchImportTool | 批量导入工具，批量导入资源 |
+| AutomatedBatchImporter | 批量导入工具，批量导入资源 |
 | BatchProcessingTool | 批量处理工具，批量处理数据 |
 | BatchExportTool | 批量导出工具，批量导出数据 |
 | AutomationCoordinator | 自动化协调器，管理所有自动化脚本和工具 |

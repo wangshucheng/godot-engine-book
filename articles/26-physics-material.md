@@ -36,7 +36,7 @@ var material = PhysicsMaterial.new()
 material.friction = 0.8        # 摩擦力 (0-1)
 material.bounce = 0.3          # 弹性/反弹 (0-1)
 material.absorbent = 0.0       # 吸收性 (0-1)
-material.restitution = 0.5     # 恢复系数 (0-1)
+material.rough = false         # false 时取双方较小的摩擦值
 
 # 应用到刚体
 var body = RigidBody3D.new()
@@ -50,7 +50,7 @@ body.physics_material_override = material
 | friction | 0-1 | 0.8 | 摩擦力，0=无摩擦，1=最大摩擦 |
 | bounce | 0-1 | 0.0 | 弹性，0=无弹性，1=完全弹性 |
 | absorbent | 0-1 | 0.0 | 吸收性，影响声音和冲击吸收 |
-| restitution | 0-1 | 0.5 | 恢复系数，影响碰撞后速度 |
+| rough | bool | false | 为 true 时直接采用本方摩擦值，否则取双方较小值 |
 
 ---
 

@@ -101,9 +101,22 @@ func check_dependencies():
             return false
     return true
 
-func is_plugin_available(plugin_name: String) -> bool:
-    # 检查插件是否可用
-    return Engine.get_singleton("EditorInterface").get_plugin(plugin_name) != null
+func is_plugin_available(plugin_cfg_path: String) -> bool:
+    # 编辑器没有「按名字查插件实例」的 API；
+    # 判断插件是否已启用应读取项目设置里的 editor_plugins/enabled 列表
+    var enabled_plugins: PackedStringArray = ProjectSettings.get_setting(
+        "editor_plugins/enabled", PackedStringArray())
+    return enabled_plugins.has(plugin_cfg_path)
+
+# 启用插件的真实做法：写入 editor_plugins/enabled（元素是 plugin.cfg 的 res:// 路径）
+func _enable_plugin(plugin_cfg_path: String) -> void:
+    var enabled_plugins: PackedStringArray = ProjectSettings.get_setting(
+        "editor_plugins/enabled", PackedStringArray())
+    if enabled_plugins.has(plugin_cfg_path):
+        return
+    enabled_plugins.append(plugin_cfg_path)
+    ProjectSettings.set_setting("editor_plugins/enabled", enabled_plugins)
+    ProjectSettings.save()
 
 func add_dependency(plugin_name: String, version: String):
     # 添加依赖
@@ -179,21 +192,26 @@ class_name PluginRegistration
 
 extends EditorPlugin
 
-func _enter_tree():
-    # 注册插件
-    register_as_plugin()
+var _dock: Control
 
-func register_as_plugin():
-    # 注册为编辑器插件
-    Engine.get_singleton("EditorInterface").register_plugin(self)
+func _enter_tree() -> void:
+    # 插件被启用时编辑器会自动调用 _enter_tree()，无需也无法手动注册
+    _initialize_plugin()
 
-func _exit_tree():
-    # 注销插件
-    unregister_from_editor()
+func _exit_tree() -> void:
+    # 插件被禁用或编辑器退出时自动调用，在这里做对称清理
+    _cleanup_plugin()
 
-func unregister_from_editor():
-    # 从编辑器注销
-    Engine.get_singleton("EditorInterface").unregister_plugin(self)
+func _initialize_plugin() -> void:
+    # 例：注册一个右侧 Dock（这两个方法都属于 EditorPlugin）
+    _dock = VBoxContainer.new()
+    add_control_to_dock(EditorPlugin.DOCK_SLOT_RIGHT_UL, _dock)
+
+func _cleanup_plugin() -> void:
+    if _dock:
+        remove_control_from_docks(_dock)
+        _dock.queue_free()
+        _dock = null
 
 func _handles(object: Object) -> bool:
     # 检查是否处理对象
@@ -288,8 +306,8 @@ func _update(data: Variant):
     # 更新
     pass
 
-# 插件管理器
-class_name PluginManager
+# 插件注册表：用于插件间通信
+class_name PluginRegistry
 
 extends EditorPlugin
 
@@ -460,13 +478,13 @@ class_name PluginInstaller
 
 func install_plugin(plugin_data: Dictionary, plugin_path: String):
     # 安装插件
-    var plugin = EditorPlugin.new()
-    plugin.name = plugin_data["name"]
-    plugin.version = plugin_data["version"]
+    # 插件的启用状态记录在项目设置中，编辑器扫描 addons/ 后自行实例化 EditorPlugin，
+    # 不存在“new 一个 EditorPlugin 再注册”的流程
     
     var success = _install_files(plugin_data["files"], plugin_path)
     if success:
-        Engine.get_singleton("EditorInterface").register_plugin(plugin)
+        # 编辑器没有 register_plugin()；把插件加入启用列表，重启编辑器后自动加载
+        _enable_plugin(plugin_path)
         return true
     
     return false
@@ -502,7 +520,7 @@ func _install_metadata(plugin_data: Dictionary, plugin_path: String):
 
 ```gdscript
 # 插件更新
-class_name PluginUpdater
+class_name PluginUpdateChecker
 
 func check_for_updates(plugin_name: String) -> Dictionary:
     # 检查更新
@@ -512,7 +530,7 @@ func check_for_updates(plugin_name: String) -> Dictionary:
 func _make_api_request(url: String) -> Dictionary:
     # 发送 API 请求
     var http = HTTPClient.new()
-    http.connect("request_completed", self, "_on_request_completed")
+    http.request_completed.connect(_on_request_completed)
     
     var headers = ["Content-Type: application/json"]
     var body = JSON.stringify({
@@ -544,7 +562,7 @@ func download_and_install_update(plugin_name: String, new_version: String):
 func _download_file(url: String, save_path: String) -> Dictionary:
     # 下载文件
     var http = HTTPClient.new()
-    http.connect("request_completed", self, "_on_download_completed")
+    http.request_completed.connect(_on_download_completed)
     
     http.request("GET", url, [], true)
 
@@ -797,7 +815,7 @@ func _ready():
     add_child(update_check_timer)
     update_check_timer.wait_time = 86400  # 每天检查一次
     update_check_timer one_shot = true
-    update_check_timer.connect("timeout", self, "_check_for_updates")
+    update_check_timer.timeout.connect(_check_for_updates)
 
 func _check_for_updates():
     # 检查更新
@@ -814,7 +832,7 @@ func _get_update_info(plugin_name: String) -> Dictionary:
 func _make_api_request(url: String) -> Dictionary:
     # 发送 API 请求
     var http = HTTPClient.new()
-    http.connect("request_completed", self, "_on_update_request_completed")
+    http.request_completed.connect(_on_update_request_completed)
     
     var headers = ["Content-Type: application/json"]
     var body = JSON.stringify({
@@ -846,7 +864,7 @@ func _download_and_install_update(plugin_name: String, new_version: String):
 func _download_file(url: String, save_path: String) -> Dictionary:
     # 下载文件
     var http = HTTPClient.new()
-    http.connect("request_completed", self, "_on_download_completed")
+    http.request_completed.connect(_on_download_completed)
     
     http.request("GET", url, [], true)
 
@@ -863,21 +881,20 @@ func _on_download_completed(result, response_code, headers, body):
 
 func _install_plugin(plugin_path: String):
     # 安装插件
-    var plugin = EditorPlugin.new()
-    plugin.name = _get_plugin_name_from_path(plugin_path)
-    plugin.version = _get_plugin_version_from_path(plugin_path)
+    # 同上：插件由编辑器扫描 addons/ 后实例化，这里只负责写启用开关
     
     var success = _install_files(plugin_path)
     if success:
-        Engine.get_singleton("EditorInterface").register_plugin(plugin)
+        # 编辑器没有 register_plugin()；把插件加入启用列表，重启编辑器后自动加载
+        _enable_plugin(plugin_path)
         return true
     
     return false
 
 func _install_files(plugin_path: String) -> bool:
-    # 安装文件
-    var plugin_dir = Directory.new()
-    if not plugin_dir.open(plugin_path).OK():
+    # 安装文件（4.x 用 DirAccess.open() 静态方法，返回 null 表示失败）
+    var plugin_dir := DirAccess.open(plugin_path)
+    if plugin_dir == null:
         return false
     
     var files = plugin_dir.get_files()
@@ -940,7 +957,7 @@ func _fetch_repository() -> Dictionary:
 func _make_api_request(url: String) -> Dictionary:
     # 发送 API 请求
     var http = HTTPClient.new()
-    http.connect("request_completed", self, "_on_repository_request_completed")
+    http.request_completed.connect(_on_repository_request_completed)
     
     var headers = ["Content-Type: application/json"]
     http.request("GET", url, headers, true)
@@ -954,9 +971,13 @@ func _on_repository_request_completed(result, response_code, headers, body):
 
 func _add_repository_to_manager(repo: Dictionary):
     # 添加仓库到管理器
-    var manager = Engine.get_singleton("EditorInterface").get_plugin("PluginManager")
-    if manager:
-        manager.add_repository(repo)
+    # 编辑器不提供「按名字获取插件实例」的 API。
+    # 跨插件协作应改为：把管理插件注册成 autoload 单例（例如 PluginManagerBridge），
+    # 或让双方共同持有同一个节点引用，而不是靠名字查找。
+    if Engine.has_singleton("PluginManagerBridge"):
+        var manager: Object = Engine.get_singleton("PluginManagerBridge")
+        if manager.has_method("add_repository"):
+            manager.add_repository(repo)
 
 func _cleanup_repository():
     # 清理仓库
@@ -981,13 +1002,12 @@ func _download_plugin(plugin: Dictionary):
 
 func _install_plugin(plugin_path: String):
     # 安装插件
-    var plugin = EditorPlugin.new()
-    plugin.name = _get_plugin_name_from_path(plugin_path)
-    plugin.version = _get_plugin_version_from_path(plugin_path)
+    # 同上：插件由编辑器扫描 addons/ 后实例化，这里只负责写启用开关
     
     var success = _install_files(plugin_path)
     if success:
-        Engine.get_singleton("EditorInterface").register_plugin(plugin)
+        # 编辑器没有 register_plugin()；把插件加入启用列表，重启编辑器后自动加载
+        _enable_plugin(plugin_path)
         return true
     
     return false

@@ -875,7 +875,7 @@ func start_monitoring():
     # 连接定时器以定期更新
     var timer = Timer.new()
     timer.wait_time = 1.0
-    timer.connect("timeout", self, "_update_stats")
+    timer.timeout.connect(_update_stats)
     add_child(timer)
     timer.start()
 

@@ -449,8 +449,11 @@ func instantiate_with_params(script_path: String, params: Dictionary) -> Node:
     if script:
         var instance = script.new()
         for key in params:
-            if instance.has_property(key):
-                instance.set(key, params[key])
+            # Object 没有 has_property()：先查属性列表再 set，避免对不存在的属性报错
+            for prop in instance.get_property_list():
+                if prop.name == key:
+                    instance.set(key, params[key])
+                    break
         return instance
     return null
 
@@ -463,7 +466,7 @@ func clone_node(node: Node, parent: Node = null) -> Node:
 
 func deep_clone_node(node: Node) -> Node:
     # 深度克隆节点
-    return node.duplicate(DUPLICATE_USE_INSTANCING)
+    return node.duplicate(DUPLICATE_USE_INSTANTIATION)
 ```
 
 ---
@@ -490,7 +493,7 @@ func optimized_function():
 
 # 2. 缓存节点引用
 var cached_node: Node
-var cached_node_path: NodePath = @"NodePath"
+var cached_node_path: NodePath = ^"Player/Sprite2D"  # 4.x 用 ^ 前缀声明 NodePath 字面量
 
 func _ready():
     # 好：缓存引用

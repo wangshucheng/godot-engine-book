@@ -63,8 +63,8 @@ Godot 提供了完整的网络系统，包括 TCP、UDP、WebSocket、HTTP 等�
 │  6. HTTPRequest：HTTP 请求节点                              │
 │  7. TCPServer：TCP 服务器                                   │
 │  8. UDPServer：UDP 服务器                                   │
-│  9. NetworkedMultiplayerENet：ENet 多人网络                │
-│  10. NetworkedMultiplayerPeer：多人网络对等                │
+│  9. ENetMultiplayerPeer：基于 ENet 的多人网络               │
+│  10. MultiplayerPeer：多人网络对等基类                     │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -701,7 +701,7 @@ func _on_request_completed(result: int, response_code: int, headers: PackedStrin
 
 ## 6. 多人游戏网络
 
-### 6.1 NetworkedMultiplayerENet
+### 6.1 ENetMultiplayerPeer
 
 ```gdscript
 # ENet 多人网络
@@ -709,7 +709,7 @@ class_name ENetMultiplayer
 
 extends Node
 
-var peer: NetworkedMultiplayerENet
+var peer: ENetMultiplayerPeer
 var is_server: bool = false
 var port: int = 9999
 
@@ -729,7 +729,7 @@ func _ready():
 func create_server(server_port: int, max_clients: int = 32):
     # 创建服务器
     port = server_port
-    peer = NetworkedMultiplayerENet.new()
+    peer = ENetMultiplayerPeer.new()
     var error = peer.create_server(port, max_clients)
     if error == OK:
         is_server = true
@@ -742,7 +742,7 @@ func create_server(server_port: int, max_clients: int = 32):
 func join_server(ip: String, server_port: int):
     # 加入服务器
     port = server_port
-    peer = NetworkedMultiplayerENet.new()
+    peer = ENetMultiplayerPeer.new()
     var error = peer.create_client(ip, port)
     if error == OK:
         is_server = false
@@ -892,7 +892,7 @@ func _ready():
 func start_monitoring():
     var timer = Timer.new()
     timer.wait_time = 1.0
-    timer.connect("timeout", self, "_update_stats")
+    timer.timeout.connect(_update_stats)
     add_child(timer)
     timer.start()
 
@@ -981,7 +981,7 @@ func _ready():
 func start_monitoring():
     var timer = Timer.new()
     timer.wait_time = 0.1
-    timer.connect("timeout", self, "_update_bandwidth")
+    timer.timeout.connect(_update_bandwidth)
     add_child(timer)
     timer.start()
 
@@ -1022,7 +1022,7 @@ class_name BasicNetworkSystem
 
 extends Node
 
-var enet_peer: NetworkedMultiplayerENet
+var enet_peer: ENetMultiplayerPeer
 var is_server: bool = false
 var port: int = 9999
 
@@ -1035,7 +1035,7 @@ func _ready():
 func create_server(server_port: int, max_clients: int = 32):
     # 创建服务器
     port = server_port
-    enet_peer = NetworkedMultiplayerENet.new()
+    enet_peer = ENetMultiplayerPeer.new()
     var error = enet_peer.create_server(port, max_clients)
     if error == OK:
         is_server = true
@@ -1045,7 +1045,7 @@ func create_server(server_port: int, max_clients: int = 32):
 func join_server(ip: String, server_port: int):
     # 加入服务器
     port = server_port
-    enet_peer = NetworkedMultiplayerENet.new()
+    enet_peer = ENetMultiplayerPeer.new()
     var error = enet_peer.create_client(ip, port)
     if error == OK:
         is_server = false

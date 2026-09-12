@@ -503,39 +503,18 @@ static func calculate_contact_point(face: Dictionary,
 │ 算法    │ 时间复杂度  │ 适用场景          │ Godot 使用      │
 ├─────────────────────────────────────────────────────────────┤
 │ AABB    │ O(1)       │ 快速排除、宽相位  │ ✅ 宽相位       │
-│ GJK     │ O(log n)   │ 凸体碰撞检测      │ ✅ 窄相位       │
+│ GJK     │ O(n)/轮    │ 凸体碰撞检测      │ ✅ 窄相位       │
 │ SAT     │ O(n²)      │ AABB/OBB 碰撞     │ ✅ 特殊形状     │
-│ EPA     │ O(n)       │ 碰撞深度计算      │ ✅ 碰撞解决     │
+│ EPA     │ O(n)/轮    │ 碰撞深度计算      │ ✅ 碰撞解决     │
 │ V-Clip  │ O(n)       │ 连续碰撞检测      │ ❌ 未使用       │
 └─────────────────────────────────────────────────────────────┘
 
-实际性能（1000 对碰撞检测）:
+实际性能（1000 对碰撞检测）——示意数据，未附测试环境，
+务必在目标平台与目标 Godot 版本上实测：
 - AABB 粗测：~0.1ms
 - GJK 精测：~2.5ms
 - EPA 接触点：~1.0ms
 - 总计：~3.6ms（60 FPS 下可处理 16000+ 碰撞对）
-```
-
-```gdscript
-# AABB（轴对齐边界盒）检测
-func aabb_test(aabb1: AABB, aabb2: AABB) -> bool:
-    return aabb1.intersects(aabb2)
-
-# 使用示例
-func _process(delta):
-    var aabb1 = $Object1.get_global_aabb()
-    var aabb2 = $Object2.get_global_aabb()
-    
-    if aabb1.intersects(aabb2):
-        print("Objects are colliding!")
-    
-    # 合并 AABB
-    var combined = aabb1.merge(aabb2)
-    
-    # 检查点是否在 AABB 内
-    var point = Vector3(0, 0, 0)
-    if aabb1.has_point(point):
-        print("Point is inside AABB")
 ```
 
 ---

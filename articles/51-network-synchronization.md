@@ -121,8 +121,10 @@ func _broadcast_state():
     local_state = _get_game_state()
     _sync_state.rpc(local_state)
 
-@rpc("any_peer", "unreliable")
-func _sync_state(state: Dictionary):
+# 服务端权威状态必须用 authority 模式：
+# 用 any_peer 时任意客户端都能调用它，把伪造状态广播给其他人
+@rpc("authority", "call_remote", "unreliable")
+func _sync_state(state: Dictionary) -> void:
     # 同步状态
     remote_state = state
     state_synced.emit(state)
@@ -176,8 +178,9 @@ func _broadcast_delta():
         _sync_delta.rpc(delta)
         previous_state = current_state.duplicate(true)
 
-@rpc("any_peer", "unreliable")
-func _sync_delta(delta: Dictionary):
+# 同样是服务端下发的权威增量，用 authority 模式
+@rpc("authority", "call_remote", "unreliable")
+func _sync_delta(delta: Dictionary) -> void:
     # 同步增量
     current_state = _apply_delta(current_state, delta)
     delta_synced.emit(delta)
@@ -265,8 +268,9 @@ func _create_snapshot():
     # 发送快照
     _send_snapshot.rpc(snapshot)
 
-@rpc("any_peer", "unreliable")
-func _send_snapshot(snapshot: Dictionary):
+# 快照是权威状态，只能由服务端下发
+@rpc("authority", "call_remote", "unreliable")
+func _send_snapshot(snapshot: Dictionary) -> void:
     # 发送快照
     _store_snapshot(snapshot)
 
@@ -392,14 +396,11 @@ func _send_input_to_server():
         var input = local_inputs.pop_front()
         _sync_input_to_server.rpc_id(1, input)
 
-@rpc("any_peer", "reliable")
-func _sync_input(input: Dictionary):
-    # 同步输入
-    remote_inputs.append(input)
-    input_received.emit(input)
-
-@rpc("server", "reliable")
-func _sync_input_to_server(input: Dictionary):
+# 客户端 → 服务器：mode 只能取 any_peer 或 authority，
+# "server" 并不是合法取值。用 any_peer 让任意客户端都能上报输入，
+# 服务器再用 multiplayer.get_remote_sender_id() 归属到具体玩家。
+@rpc("any_peer", "call_remote", "reliable")
+func _sync_input_to_server(input: Dictionary) -> void:
     # 同步输入到服务器
     remote_inputs.append(input)
     input_received.emit(input)
@@ -592,49 +593,50 @@ var current_rtt: float = 0.0
 
 signal rtt_updated(rtt: float)
 
-func _ready():
-    # 定期发送 Ping
-    var timer = Timer.new()
+func _ready() -> void:
+    # 定期发送 Ping；定时回调不能与 @rpc 方法同名，否则会自我递归
+    var timer := Timer.new()
     timer.wait_time = 1.0
-    timer.connect("timeout", self, "_send_ping")
+    timer.timeout.connect(_request_ping)
     add_child(timer)
     timer.start()
 
-func _process(delta):
+func _process(_delta: float) -> void:
     # 清理超时的 Ping
     _cleanup_old_pings()
 
-func _send_ping():
-    # 发送 Ping
+func _request_ping() -> void:
+    if multiplayer.is_server():
+        return
     ping_sequence += 1
     ping_times[ping_sequence] = Time.get_ticks_msec()
-    _send_ping.rpc()
+    # 客户端 → 服务器：把「自己的序号」发上去
+    _receive_ping.rpc_id(1, ping_sequence)
 
-@rpc("any_peer", "reliable")
-func _send_ping():
-    # 服务器收到 Ping，回复 Pong
-    if multiplayer.is_server():
-        _send_pong.rpc_id(multiplayer.get_remote_sender_id(), ping_sequence)
-    else:
-        # 客户端收到 Pong
-        pass
+# 服务器收到 Ping：把「客户端发来的序号」原样回传。
+# 若回传服务器自己的计数器，客户端永远匹配不上记录，RTT 必然错误。
+@rpc("any_peer", "call_remote", "reliable")
+func _receive_ping(sequence: int) -> void:
+    if not multiplayer.is_server():
+        return
+    _receive_pong.rpc_id(multiplayer.get_remote_sender_id(), sequence)
 
-@rpc("any_peer", "reliable")
-func _send_pong(sequence: int):
-    # 收到 Pong，计算 RTT
-    if ping_times.has(sequence):
-        var send_time = ping_times[sequence]
-        ping_times.erase(sequence)
-        
-        var rtt = Time.get_ticks_msec() - send_time
-        current_rtt = rtt
-        rtt_history.append(rtt)
-        
-        # 限制历史记录
-        if rtt_history.size() > 60:
-            rtt_history.pop_front()
-        
-        rtt_updated.emit(rtt)
+# 客户端收到 Pong：用序号取回发送时刻再算 RTT
+@rpc("authority", "call_remote", "reliable")
+func _receive_pong(sequence: int) -> void:
+    if multiplayer.is_server() or not ping_times.has(sequence):
+        return
+
+    var rtt := Time.get_ticks_msec() - int(ping_times[sequence])
+    ping_times.erase(sequence)
+    current_rtt = rtt
+    rtt_history.append(rtt)
+
+    # 限制历史记录
+    if rtt_history.size() > 60:
+        rtt_history.pop_front()
+
+    rtt_updated.emit(rtt)
 
 func _cleanup_old_pings():
     # 清理超时的 Ping
@@ -1301,21 +1303,24 @@ func _process(delta):
     # 处理同步
     pass
 
-func submit_input(input: Dictionary):
-    # 提交输入
-    input_sync.submit_input(input)
+func submit_input(input: Dictionary) -> void:
+    # 输入先写入缓冲区，预测由 InputPredictionSynchronizer._process() 自动完成。
+    # 注意：InputPredictionSynchronizer 并没有 submit_input() 方法。
+    input_sync.input_buffer.append(input)
 
-func receive_server_state(state: Dictionary):
-    # 接收服务器状态
-    rollback_system.receive_server_state(state, -1)
+func receive_server_state(state: Dictionary) -> void:
+    # 已确认的输入序号由服务器随状态一起下发，不要硬编码为 -1
+    var last_confirmed := int(state.get("last_processed_input", -1))
+    rollback_system.receive_server_state(state, last_confirmed)
 
 func get_predicted_state() -> Dictionary:
-    # 获取预测状态
+    # 预测状态由 InputPredictionSynchronizer 维护
     return input_sync.predicted_state
 
 func get_confirmed_state() -> Dictionary:
-    # 获取确认状态
-    return rollback_system.server_position
+    # 确认状态同样在 InputPredictionSynchronizer 上；
+    # PredictionRollbackSystem 没有 server_position 字段
+    return input_sync.confirmed_state
 ```
 
 ### 7.2 FPS 游戏同步
@@ -1354,8 +1359,8 @@ func _send_shot_to_server(direction: Vector3):
     # 发送射击到服务器
     _send_shot.rpc_id(1, direction, Time.get_ticks_msec())
 
-@rpc("server", "reliable")
-func _send_shot(direction: Vector3, client_time: int):
+@rpc("any_peer", "call_remote", "reliable")
+func _send_shot(direction: Vector3, client_time: int) -> void:
     # 服务器收到射击
     # 使用延迟补偿
     var server_time = Time.get_ticks_msec()

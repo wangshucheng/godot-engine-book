@@ -10,9 +10,9 @@
 
 | 类型 | 说明 | 使用场景 |
 |------|------|---------|
-| **DirectionalLight** | 平行光 | 太阳光 |
-| **OmniLight** | 点光源 | 灯泡、火把 |
-| **SpotLight** | 聚光灯 | 手电筒、舞台灯 |
+| **DirectionalLight3D** | 平行光 | 太阳光 |
+| **OmniLight3D** | 点光源 | 灯泡、火把 |
+| **SpotLight3D** | 聚光灯 | 手电筒、舞台灯 |
 | **WorldEnvironment** | 环境光 | 天空光 |
 
 ### 1.2 光照属性
@@ -114,19 +114,19 @@ gi.bake(get_tree().root)
 
 ### 下一篇
 
-**下一篇**: 材质系统
+**下一篇**: [第 16 篇：材质系统](/articles/16-material-system.md)
 
 ---
 
 **作者**: wangshucheng
 **首发平台**: 微信公众号  
 **写作时间**: 2026 年 3 月  
-**Godot 版本**: 4.3（最新稳定版）
+**Godot 版本**: 4.x（基线 4.3，2026-09 最新稳定版为 4.7）
 
 ---
 
-**上一篇**: [第 14 篇：场景渲染流程](#)  
-**下一篇**: [第 16 篇：材质系统](#)
+**上一篇**: [第 14 篇：场景渲染流程](/articles/14-scene-rendering-flow.md)
+**下一篇**: [第 16 篇：材质系统](/articles/16-material-system.md)
 
 ---
 

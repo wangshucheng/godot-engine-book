@@ -258,7 +258,7 @@ func deferred_callback():
     var timer = Timer.new()
     timer.wait_time = 1.0
     timer.one_shot = true
-    timer.connect("timeout", self, "_on_timer_timeout")
+    timer.timeout.connect(_on_timer_timeout)
     add_child(timer)
     timer.start()
 
@@ -490,7 +490,7 @@ func dangerous_action():
     dialog.title_text = "Confirm Action"
     dialog.dialog_text = "Are you sure you want to perform this action?"
     
-    dialog.connect("confirmed", self, "_on_action_confirmed")
+    dialog.confirmed.connect(_on_action_confirmed)
     dialog.popup_centered()
 
 func _on_action_confirmed():
@@ -587,67 +587,64 @@ func _clear_status_bar(delay: float):
 # 键盘快捷键
 class_name KeyboardShortcuts
 
-# 1. 注册快捷键
-func _enter_tree():
-    # 添加快捷键
-    add_tool_menu_item("My Plugin/Action", self, "_on_action")
+var _registered_shortcuts: Dictionary = {}
 
-func _exit_tree():
-    # 移除快捷键
-    remove_tool_menu_items()
+# 1. 工具菜单项（EditorPlugin 提供；4.x 的第二个参数是 Callable）
+func _enter_tree() -> void:
+    add_tool_menu_item("My Plugin/Action", _on_action)
 
-# 2. 使用快捷键助手
-var shortcut_helper: ShortcutHelper
+func _exit_tree() -> void:
+    remove_tool_menu_item("My Plugin/Action")
 
-func _enter_tree():
-    shortcut_helper = ShortcutHelper.new()
-    shortcut_helper.add_shortcut("Ctrl+Shift+A", "My Plugin/Action", self, "_on_action")
+# 2. 注册编辑器快捷键：写入 EditorSettings，
+#    用户可在「编辑器设置 → 快捷键」中查看与改键
+func register_editor_shortcut() -> void:
+    var shortcut := Shortcut.new()
+    var ev := InputEventKey.new()
+    ev.keycode = KEY_A
+    ev.ctrl_pressed = true
+    ev.shift_pressed = true
+    shortcut.events = [ev]
 
-# 3. 上下文敏感快捷键
-func _process(delta):
-    # 检查快捷键
-    if Input.is_action_just_pressed("my_plugin_action"):
-        if _is_action_enabled():
-            _on_action()
+    # 该路径是快捷键在编辑器设置中的唯一标识
+    EditorSettings.add_shortcut("my_plugin/action", shortcut)
+    _registered_shortcuts["my_plugin/action"] = shortcut
+
+# 3. 游戏内快捷键沿用 InputMap
+func ensure_input_action() -> void:
+    if not InputMap.has_action("my_plugin_action"):
+        InputMap.add_action("my_plugin_action")
+
+# 4. 上下文敏感触发
+func _process(_delta: float) -> void:
+    if Input.is_action_just_pressed("my_plugin_action") and _is_action_enabled():
+        _on_action()
 
 func _is_action_enabled() -> bool:
-    # 检查动作是否可用
     return get_editor_interface().get_edited_scene_root() != null
 
-# 4. 快捷键自定义
-@export var custom_shortcut: String = "Ctrl+Shift+A"
-
-func _ready():
-    # 设置自定义快捷键
-    shortcut_helper.add_shortcut(custom_shortcut, "My Plugin/Action", self, "_on_action")
-
-# 5. 快捷键冲突解决
-func check_shortcut_conflict(shortcut: String) -> bool:
-    # 检查快捷键冲突
-    var editors = get_editor_interface().get_editor_plugins()
-    for editor in editors:
-        if editor.has_shortcut(shortcut):
-            return true
-    return false
+# 5. 快捷键冲突：编辑器不提供 get_editor_plugins()/has_shortcut() 这类查询接口，
+#    需要自己维护已注册列表做比对，最终冲突由编辑器的快捷键面板统一裁决
+func check_shortcut_conflict(shortcut_path: String) -> bool:
+    return _registered_shortcuts.has(shortcut_path)
 ```
 
 ---
 
 ## 4. 错误处理最佳实践
 
-### 4.1 异常处理
+### 4.1 错误处理
 
 ```gdscript
-# 异常处理
-class_name ExceptionHandling
+# GDScript 没有 try-catch，失败必须靠错误码、null 检查或布尔返回值传递
+class_name ErrorHandling
 
-# 1. 使用try-catch
-func safe_operation():
-    try:
-        # 可能出错的操作
-        dangerous_operation()
-    except:
-        push_error("Operation failed: " + str(error_message))
+# 1. 用错误码 + push_error 报告失败
+func safe_operation() -> Error:
+    var error := _dangerous_operation()
+    if error != OK:
+        push_error("Operation failed: %s" % error_string(error))
+    return error
 
 # 2. 使用错误返回
 func potentially_failing_operation() -> Variant:
@@ -739,20 +736,18 @@ func validate_url(url: String) -> bool:
 # 错误恢复
 class_name ErrorRecovery
 
-# 1. 自动重试
-func operation_with_retry(max_retries: int = 3):
-    var retries = 0
+# 1. 自动重试（GDScript 无异常，用返回值判断成败）
+func operation_with_retry(max_retries: int = 3) -> bool:
+    var retries := 0
     while retries < max_retries:
-        try:
-            # 执行操作
-            risky_operation()
-            return true  # 成功
-        except:
-            retries += 1
-            if retries >= max_retries:
-                push_error("Operation failed after %d retries" % max_retries)
-                return false
-            await get_tree().create_timer(1.0 * retries).timeout  # 指数backoff
+        if risky_operation():   # 约定返回 bool
+            return true
+        retries += 1
+        if retries >= max_retries:
+            push_error("Operation failed after %d retries" % max_retries)
+            return false
+        await get_tree().create_timer(1.0 * retries).timeout  # 退避等待
+    return false
 
 # 2. 优雅降级
 func operation_with_fallback():
@@ -1094,13 +1089,13 @@ func _setup_dock():
     # 按钮1
     var btn1 = Button.new()
     btn1.text = "Action 1"
-    btn1.connect("pressed", self, "_on_action_1_pressed")
+    btn1.pressed.connect(_on_action_1_pressed)
     controls.add_child(btn1)
     
     # 按钮2
     var btn2 = Button.new()
     btn2.text = "Action 2"
-    btn2.connect("pressed", self, "_on_action_2_pressed")
+    btn2.pressed.connect(_on_action_2_pressed)
     controls.add_child(btn2)
     
     add_control_to_dock(DOCK_SLOT_RIGHT_UL, dock)
@@ -1115,7 +1110,7 @@ func _setup_button():
     # 设置工具栏按钮
     button = Button.new()
     button.text = "High Quality Plugin"
-    button.connect("pressed", self, "_on_toolbar_button_pressed")
+    button.pressed.connect(_on_toolbar_button_pressed)
     add_control_to_container(CONTAINER_TOOLBAR, button)
 
 func _cleanup_button():
@@ -1154,36 +1149,25 @@ func _on_action_2_pressed():
     call_deferred("_do_action_2")
 
 func _do_action_1():
-    # 执行动作1
-    try:
-        # 模拟处理
-        for i in range(10):
-            # 更新状态
-            status_label.text = "Processing Action 1... %d%%" % ((i + 1) * 10)
-            
-            # 短暂延迟
-            await get_tree().create_timer(0.1).timeout
-        
-        status_label.text = "Action 1 completed"
-    except:
+    # GDScript 没有异常，用返回值判断执行结果
+    var success := await _run_action(1)
+    if not success:
         status_label.text = "Action 1 failed"
         error_occurred.emit("Action 1 failed")
 
 func _do_action_2():
-    # 执行动作2
-    try:
-        # 模拟处理
-        for i in range(10):
-            # 更新状态
-            status_label.text = "Processing Action 2... %d%%" % ((i + 1) * 10)
-            
-            # 短暂延迟
-            await get_tree().create_timer(0.1).timeout
-        
-        status_label.text = "Action 2 completed"
-    except:
+    var success := await _run_action(2)
+    if not success:
         status_label.text = "Action 2 failed"
         error_occurred.emit("Action 2 failed")
+
+func _run_action(index: int) -> bool:
+    # 真正的执行逻辑，失败时返回 false
+    for i in range(10):
+        status_label.text = "Processing Action %d... %d%%" % [index, (i + 1) * 10]
+        await get_tree().create_timer(0.1).timeout
+    status_label.text = "Action %d completed" % index
+    return true
 
 func _is_action_enabled(action: String) -> bool:
     # 检查动作是否可用

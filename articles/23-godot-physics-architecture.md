@@ -53,19 +53,18 @@ Godot 物理架构层次:
 ### 1.2 物理服务器
 
 ```gdscript
-# 访问物理服务器
-var physics_server = PhysicsServer3D.get_singleton()
-
+# 访问物理服务器：PhysicsServer3D 本身就是全局单例，直接调用即可
 # 创建物理空间
-var space = physics_server.space_create()
+var space := PhysicsServer3D.space_create()
+PhysicsServer3D.space_set_active(space, true)
 
-# 创建刚体
-var body = physics_server.body_create()
-physics_server.body_set_space(body, space)
+# 创建刚体并放入空间
+var body := PhysicsServer3D.body_create()
+PhysicsServer3D.body_set_space(body, space)
 
 # 设置物理属性
-physics_server.body_set_mode(body, PhysicsServer3D.BODY_MODE_RIGID)
-physics_server.body_set_state(body, PhysicsServer3D.BODY_STATE_TRANSFORM, Transform3D())
+PhysicsServer3D.body_set_mode(body, PhysicsServer3D.BODY_MODE_RIGID)
+PhysicsServer3D.body_set_state(body, PhysicsServer3D.BODY_STATE_TRANSFORM, Transform3D())
 ```
 
 ### 1.3 物理进程
@@ -109,7 +108,7 @@ physics_server.body_set_state(body, PhysicsServer3D.BODY_STATE_TRANSFORM, Transf
 
 ### 2.1 Godot Physics（内置）
 
-Godot 4.x 使用自研的 Godot Physics 引擎（基于 Godot Jolt 的分支）：
+Godot 4.x 默认使用自研的 Godot Physics 引擎；自 4.4 起，官方还把 Jolt Physics 作为内置模块一同分发，两者是相互独立的实现：
 
 ```
 Godot Physics 特点:
@@ -121,34 +120,32 @@ Godot Physics 特点:
 └── 性能不断提升
 ```
 
-### 2.2 第三方物理引擎
+### 2.2 可选的物理实现
 
 | 引擎 | 类型 | 特点 | 适用场景 |
 |------|------|------|----------|
-| Godot Physics | 内置 | 深度集成、免费 | 通用游戏 |
-| Jolt Physics | 外部 | 高性能、多线程 | 大型 3D 游戏 |
-| Bullet | 外部 | 成熟稳定、功能全 | 复杂物理模拟 |
-| PhysX | 外部 | NVIDIA 支持、GPU 加速 | AAA 级游戏 |
+| Godot Physics | 内置（默认） | 与引擎深度集成、可控性强 | 通用游戏、2D |
+| Jolt Physics | 内置模块（4.4+） | 多线程、刚体密集场景更稳定 | 大型 3D、物理模拟为主 |
+| Bullet | 已于 Godot 4.0 移除 | Godot 3.x 曾以模块形式提供 | 仅作历史参考 |
+| PhysX | 从未获官方支持 | NVIDIA 物理引擎，需自行通过 GDExtension 接入 | 不推荐 |
+
+> 需要澄清一个常见误解：Godot Physics 与 Jolt 是两套独立实现，不存在“Godot Physics 基于 Jolt 分支”的关系。
+> 切换方式为「项目设置 → 物理 → 3D → 物理引擎」。
 
 ### 2.3 配置物理引擎
 
 ```gdscript
-# 项目设置中配置物理引擎
-# 项目设置 → 物理 → 3D 物理引擎
+# 项目设置中配置物理引擎：项目设置 → 物理 → 3D
 
-# 通过代码检查当前引擎
+# 读取当前配置：返回 "DEFAULT"、"GodotPhysics3D" 或 "JoltPhysics3D"
 func get_physics_engine_name() -> String:
-    var physics_server = PhysicsServer3D.get_singleton()
-    return physics_server.get_name()
+    return str(ProjectSettings.get_setting("physics/3d/physics_engine", "DEFAULT"))
 
-# 物理引擎特性检查
-func check_physics_features():
-    var physics_server = PhysicsServer3D.get_singleton()
-    
-    if physics_server.has_method("body_set_ray_pickable"):
+# 低层能力探测：确认真实存在的 PhysicsServer3D 接口
+func check_physics_features() -> void:
+    if PhysicsServer3D.has_method("body_set_ray_pickable"):
         print("支持射线拾取")
-    
-    if physics_server.has_method("body_set_ccd_motion_threshold"):
+    if PhysicsServer3D.has_method("body_set_continuous_collision_detection_mode"):
         print("支持 CCD 连续碰撞检测")
 ```
 
@@ -317,7 +314,7 @@ var physics_material = PhysicsMaterial.new()
 physics_material.friction = 0.8      # 摩擦力 (0-1)
 physics_material.bounce = 0.3        # 弹性 (0-1)
 physics_material.absorbent = 0.0     # 吸收性
-physics_material.restitution = 0.5   # 恢复系数
+physics_material.bounce = 0.5   # 弹性（4.x 用 bounce 表达恢复系数）
 
 # 应用到刚体
 var body = RigidBody3D.new()
@@ -505,14 +502,15 @@ body.sleep_threshold_angular = 0.1
 
 ---
 
-## 9. 物理引擎性能对比（新增）
+## 9. 物理引擎性能对比
 
 ### 9.1 Godot Physics vs Jolt Physics
 
-Godot 4.x 默认使用 Godot Physics 引擎，但也支持第三方 Jolt Physics 引擎。以下是详细对比：
+Godot 4.4 起把 Jolt Physics 作为内置模块随引擎分发（由第三方扩展 godot-jolt 合并而来），可在项目设置中切换。
+需要注意的是，4.4 的官方文档仍将内置 Jolt 模块标注为实验性、功能尚未完全对齐，选型前应先在自己的项目上实测。
 
 ```
-性能对比基准测试（测试场景：1000 个活动刚体）:
+性能对比（示意数据，测试场景：1000 个活动刚体；请在目标平台自行复测）:
 ┌─────────────────────────────────────────────────────────────┐
 │ 引擎             │ FPS    │ 物理耗时 (ms) │ 内存 (MB) │ 线程 │
 ├─────────────────────────────────────────────────────────────┤
@@ -562,7 +560,7 @@ Godot 4.x 默认使用 Godot Physics 引擎，但也支持第三方 Jolt Physics
 │ 大型 3D 游戏       │ Jolt Physics    │ 高性能、多线程       │
 │ 物理模拟为主      │ Jolt Physics    │ 专业物理引擎         │
 │ 多平台发布        │ Godot Physics   │ 兼容性更好           │
-│ Web/HTML5         │ Godot Physics   │ Jolt 不支持 Web      │
+│ Web/WebAssembly   │ Godot Physics   │ 默认引擎，平台兼容性最稳妥 │
 │ 移动端            │ Godot Physics   │ 功耗更低             │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -570,42 +568,31 @@ Godot 4.x 默认使用 Godot Physics 引擎，但也支持第三方 Jolt Physics
 ### 9.4 配置 Jolt Physics
 
 ```gdscript
-# 安装 Jolt Physics 插件
-# 1. 打开 AssetLib
-# 2. 搜索 "Jolt Physics"
-# 3. 安装并启用
+# 启用方式（按 Godot 版本区分）：
+# 4.4 及以上：Jolt 已作为内置模块随引擎分发，无需安装插件
+#   项目设置 → 物理 → 3D → 物理引擎 → Jolt Physics
+# 4.0 ~ 4.3：需从 AssetLib 安装第三方扩展 godot-jolt 后，再到项目设置中切换
 
-# 项目设置中切换物理引擎
-# 项目设置 → 物理 → 3D 物理引擎 → Jolt
-
-# 通过代码检查当前引擎
+# 通过代码确认当前引擎
 func get_physics_engine_info() -> Dictionary:
-    var physics_server = PhysicsServer3D.get_singleton()
-    var engine_name = physics_server.get_name()
-    
+    # 取值可能是 "DEFAULT"、"GodotPhysics3D" 或 "JoltPhysics3D"
+    var engine_name := str(ProjectSettings.get_setting("physics/3d/physics_engine", "DEFAULT"))
     return {
         "engine": engine_name,
-        "is_jolt": engine_name == "Jolt",
-        "is_godot": engine_name == "Godot",
-        "features": physics_server.get_supported_features()
+        "is_jolt": engine_name == "JoltPhysics3D",
+        "physics_ticks_per_second": Engine.physics_ticks_per_second,
     }
 
-# Jolt 特有配置（通过 Jolt 插件）
-func setup_jolt_optimizations():
-    # 启用多线程物理
-    # 项目设置 → Jolt Physics → Worker Count → 4
-    
-    # 启用层宽相位优化
-    # 项目设置 → Jolt Physics → Use Broadphase Layer
-    
-    # 配置接触点数量
-    # 项目设置 → Jolt Physics → Max Contact Points → 128
-    pass
+# Jolt 的调优项都是项目级配置，没有对应的运行时 API：
+#   项目设置 → Physics → Jolt Physics
+#   - Simulation / Worker Count：物理工作线程数
+#   - Simulation / Use Enhanced Internal Edge Removal：内部边消除
+#   - Contacts / Max Contact Points：单对接触点上限
 ```
 
 ---
 
-## 10. 物理更新频率配置（新增）
+## 10. 物理更新频率配置
 
 ### 10.1 physics_ticks_per_second
 
@@ -659,11 +646,10 @@ func _process(delta):
     # 获取插值后的变换（视觉平滑）
     var interpolated_transform = $RigidBody3D.global_transform
     
-    # 或者使用物理服务器直接查询
-    var physics_server = PhysicsServer3D.get_singleton()
-    var body_rid = $RigidBody3D.get_rid()
-    var direct_transform = physics_server.body_get_state(
-        body_rid, 
+    # 或者直接查询物理服务器（PhysicsServer3D 本身就是全局单例）
+    var body_rid := $RigidBody3D.get_rid()
+    var direct_transform: Transform3D = PhysicsServer3D.body_get_state(
+        body_rid,
         PhysicsServer3D.BODY_STATE_TRANSFORM
     )
 
@@ -692,49 +678,40 @@ func _physics_process(delta):
 └─────────────────────────────────────────────────────────────┘
 
 性能影响:
-- 60 Hz → 120 Hz: 物理计算量翻倍，CPU 负载 +15-25%
-- 60 Hz → 30 Hz: 物理计算量减半，CPU 负载 -10-15%
+- 物理频率翻倍 → 物理计算量近似翻倍，但实际 CPU 增量取决于活跃刚体数量与休眠比例
+- 物理频率减半 → 计算量同步下降，代价是高速物体更容易穿透
+- 百分比强依赖场景与硬件，必须在目标平台实测，不能套用他人数据
 ```
 
 ### 10.5 物理预算系统
 
 ```gdscript
-# 高级：实现物理预算系统（限制每帧物理计算时间）
+# 物理预算：按引擎实测的物理帧耗时决定是否降级
 class_name PhysicsBudget
 
 var max_physics_time_ms: float = 8.0  # 每帧最多 8ms 用于物理
-var physics_server: PhysicsServer3D
+var idle_physics_ticks: int = 60      # 降级前的物理频率
 
-func _ready():
-    physics_server = PhysicsServer3D.get_singleton()
+func _physics_process(_delta: float) -> void:
+    # 不要自测首尾时间戳：那只能测到本行的执行时间。
+    # 物理帧真实耗时由引擎统计，单位是秒。
+    var elapsed_ms := Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0
 
-func _physics_process(delta):
-    var start_time = Time.get_ticks_usec()
-    
-    # 更新物理
-    # ... 物理更新代码 ...
-    
-    var elapsed_ms = (Time.get_ticks_usec() - start_time) / 1000.0
-    
     if elapsed_ms > max_physics_time_ms:
-        print("Warning: Physics exceeded budget: ", elapsed_ms, "ms")
-        # 可以触发 LOD 降级、减少活动刚体等
+        print("警告：物理帧耗时超出预算 %.1f ms" % elapsed_ms)
+        adjust_physics_quality(elapsed_ms)
 
 # 动态调整物理质量
-func adjust_physics_quality(elapsed_ms: float):
+func adjust_physics_quality(elapsed_ms: float) -> void:
     if elapsed_ms > max_physics_time_ms:
-        # 降低质量
-        Engine.physics_ticks_per_second = 30
-        print("Reduced physics quality to maintain FPS")
-    elif elapsed_ms < max_physics_time_ms * 0.5:
-        # 提高质量
-        Engine.physics_ticks_per_second = 60
-        print("Increased physics quality")
+        if Engine.physics_ticks_per_second != 30:
+            idle_physics_ticks = Engine.physics_ticks_per_second
+            Engine.physics_ticks_per_second = 30
+            print("已降低物理频率以维持帧率")
+    elif elapsed_ms < max_physics_time_ms * 0.5 and Engine.physics_ticks_per_second == 30:
+        Engine.physics_ticks_per_second = idle_physics_ticks
+        print("已恢复物理频率")
 ```
-
----
-
-## 📝 本章总结
 
 ---
 

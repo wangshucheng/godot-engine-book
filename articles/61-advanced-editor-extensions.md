@@ -352,10 +352,14 @@ func _on_dir_selected(path):
     
     print("批量导入完成：%d 个文件" % count)
 
-func _import_file(path):
-    # 调用 Godot 导入系统
-    var importer = EditorResourceImporter.new()
-    importer.import(path)
+func _import_file(path: String) -> void:
+    # Godot 4 的导入器是 EditorImportPlugin：由编辑器按扩展名自动匹配并调用其 _import()，
+    # 不存在 EditorResourceImporter.new() 再 import() 的用法。
+    # 想让文件重新走导入流程，应通过 EditorFileSystem 触发：
+    var fs := EditorInterface.get_resource_filesystem()
+    if fs:
+        fs.update_file(path)   # 标记该文件需要重新导入
+        fs.scan()              # 重新扫描文件系统
 ```
 
 ---
@@ -407,22 +411,24 @@ func _build_scenes():
         # 验证场景
         _validate_scene(scene)
 
-func _export_project():
-    print("导出项目...")
-    
-    var export_preset = "Windows Desktop"
-    var output_path = "build/game.exe"
-    
-    var err = EditorExportPlatform.export_project(
-        output_path,
-        false,  # debug
-        export_preset
-    )
-    
-    if err == OK:
+func _export_project() -> void:
+    # EditorExportPlatform 是抽象基类：既不能实例化，也没有静态 export_project()。
+    # 编辑器内想做导出定制，应实现 EditorExportPlugin 的回调；
+    # 完全脚本化的导出则通过命令行完成（CI 场景推荐）。
+    var preset := "Windows Desktop"
+    var output_path := "res://build/game.exe"
+
+    var args := PackedStringArray([
+        "--headless",
+        "--export-release", preset, output_path,
+    ])
+    var output: Array = []
+    var exit_code := OS.execute(OS.get_executable_path(), args, output, true)
+
+    if exit_code == 0:
         print("导出成功：%s" % output_path)
     else:
-        print("导出失败：%d" % err)
+        push_error("导出失败（退出码 %d）：%s" % [exit_code, "\n".join(output)])
 
 func _create_version():
     # 生成版本号

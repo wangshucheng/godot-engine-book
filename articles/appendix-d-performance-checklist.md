@@ -87,7 +87,7 @@ func _exit_tree():
 
 #### 场景切换
 
-- [ ] 使用 ResourceLoader.load_interactive()
+- [ ] 使用 ResourceLoader.load_threaded_request() 做后台加载
 - [ ] 显示进度条
 - [ ] 后台加载资源
 - [ ] 预加载下一场景

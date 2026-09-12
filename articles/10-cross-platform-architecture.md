@@ -265,7 +265,7 @@ if OS.get_name() == "Web":
 | Linux | ✅ | ✅ |
 | Android | ✅ | ✅ |
 | iOS | ✅ | ✅ |
-| Web | ✅ (HTML5) | ✅ (WebGL) |
+| Web | ✅ (WebAssembly) | ✅ (WebGL) |
 | 主机 | ⚠️ (第三方) | ✅ (官方支持) |
 | AR/VR | ✅ | ✅ |
 
@@ -385,12 +385,12 @@ Unity -batchmode -quit -projectPath . \
 **作者**: wangshucheng
 **首发平台**: 微信公众号  
 **写作时间**: 2026 年 3 月  
-**Godot 版本**: 4.3（最新稳定版）
+**Godot 版本**: 4.x（基线 4.3，2026-09 最新稳定版为 4.7）
 
 ---
 
-**上一篇**: [第 9 篇：Godot 序列化系统深度解析](#)  
-**下一篇**: [第 11 篇：Godot 渲染架构概述](#)
+**上一篇**: [第 9 篇：Godot 序列化系统深度解析](/articles/09-serialization-system.md)
+**下一篇**: [第 11 篇：Godot 渲染架构概述](/articles/11-godot-rendering-architecture.md)
 
 ---
 

@@ -81,11 +81,11 @@ func _process(delta):
         _server_tick(tick_delta)
         delta_accumulator -= tick_delta
 
-func _server_tick(delta):
+func _server_tick(delta: float) -> void:
     tick_counter += 1
-    
+
     # 1. 处理客户端输入
-    _process_client_inputs()
+    _process_client_inputs(delta)
     
     # 2. 更新游戏逻辑
     _update_game_logic(delta)
@@ -96,30 +96,64 @@ func _server_tick(delta):
     # 4. 广播状态给客户端
     _broadcast_state()
 
-func _process_client_inputs():
-    # 从所有客户端收集输入
-    for peer_id in get_multiplayer_api().get_connected_peers():
-        var input = _receive_input(peer_id)
-        if input:
-            _apply_input(peer_id, input)
+var client_inputs: Dictionary = {}
 
-func _validate_actions():
+@export var max_speed: float = 12.0   # 反作弊速度上限
+@export var arena_bounds: AABB = AABB(Vector3(-100, -10, -100), Vector3(200, 100, 200))
+
+# 输入由客户端主动推上来，必须在本节点定义同名的 @rpc 方法。
+# 传输模式选 unreliable_ordered：输入丢一帧无所谓，但顺序不能乱
+@rpc("any_peer", "call_remote", "unreliable_ordered")
+func _server_receive_input(input: Dictionary) -> void:
+    client_inputs[multiplayer.get_remote_sender_id()] = input
+
+func _process_client_inputs(delta: float) -> void:
+    # 不要主动"拉取"输入；遍历客户端推送并缓存的输入即可
+    for peer_id in client_inputs:
+        _apply_input(peer_id, client_inputs[peer_id], delta)
+
+func _apply_input(peer_id: int, input: Dictionary, delta: float) -> void:
+    if not player_states.has(peer_id):
+        return
+
+    var state: Dictionary = player_states[peer_id]
+    var direction := Vector3(input.right, 0.0, input.forward).normalized()
+    state.velocity = direction * max_speed * 0.5
+    state.position += state.velocity * delta
+    player_states[peer_id] = state
+
+func _validate_actions() -> void:
     # 验证玩家动作是否合法
     for player_id in player_states:
-        var state = player_states[player_id]
-        
+        var state: Dictionary = player_states[player_id]
+
         # 速度检查
-        if state.velocity.length() > MAX_SPEED:
+        if Vector3(state.velocity).length() > max_speed:
             _correct_player(player_id, "speed_hack")
-        
-        # 位置检查
-        if _is_position_invalid(state.position):
+
+        # 位置检查：跑出场地边界即判定异常
+        if not arena_bounds.has_point(Vector3(state.position)):
             _correct_player(player_id, "position_hack")
 
-func _broadcast_state():
-    # 发送游戏状态给所有客户端
-    var state_data = _serialize_game_state()
-    rpc("_receive_server_state", state_data)
+func _correct_player(player_id: int, reason: String) -> void:
+    push_warning("已拒绝 %d 号玩家：%s" % [player_id, reason])
+    var state: Dictionary = player_states[player_id]
+    state.velocity = Vector3.ZERO
+    player_states[player_id] = state
+
+func _broadcast_state() -> void:
+    # 发送游戏状态给所有客户端。
+    # RPC 只能调用"本节点上存在"的方法，因此服务端与客户端通常共用同一份玩家脚本，
+    # _receive_server_state 的客户端侧实现见 2.1 节。
+    _receive_server_state.rpc(_serialize_game_state())
+
+# 服务端侧的占位实现：call_remote 表示本端不会执行，但方法必须存在
+@rpc("authority", "call_remote", "reliable")
+func _receive_server_state(_state_data: Dictionary) -> void:
+    pass
+
+func _serialize_game_state() -> Dictionary:
+    return {"tick": tick_counter, "players": player_states}
 ```
 
 ---
@@ -518,30 +552,36 @@ func _find_closest_in_history(history: Array, target_time: int) -> Dictionary:
     
     return closest
 
-func _check_hits_at_positions(shooter_id: String, shot_data: Dictionary, 
+func _check_hits_at_positions(shooter_id: String, shot_data: Dictionary,
                                positions: Dictionary) -> Array:
-    var hits = []
-    var shooter_pos = positions.get(shooter_id, Vector3.ZERO)
-    
-    # 射线检测
-    var from = shooter_pos
-    var to = shot_data.direction * shot_data.range
-    
+    var hits: Array = []
+    var from: Vector3 = positions.get(shooter_id, Vector3.ZERO)
+
+    # direction 是方向向量，必须先归一化；射线段用「起点 + 方向 × 射程」表示
+    var direction: Vector3 = shot_data.direction.normalized()
+    var to: Vector3 = from + direction * float(shot_data.range)
+    var ray := to - from                       # 未归一化，其长度即射程
+
     for player_id in positions:
         if player_id == shooter_id:
             continue
-        
-        var target_pos = positions[player_id]
-        
-        # 简化的命中检测
-        var distance = from.distance_to(target_pos)
-        if distance < 1.0:  # 命中
+
+        var target_pos: Vector3 = positions[player_id]
+
+        # 把目标投影到射线上，投影参数 t 必须落在 [0, 1]，即目标在射程之内
+        var t := (target_pos - from).dot(ray) / ray.length_squared()
+        if t < 0.0 or t > 1.0:
+            continue
+
+        # 投影点到目标的垂直距离小于命中半径才算命中
+        var closest := from + ray * t
+        if closest.distance_to(target_pos) < float(shot_data.get("hit_radius", 1.0)):
             hits.append({
                 "player_id": player_id,
                 "damage": shot_data.damage,
                 "position": target_pos
             })
-    
+
     return hits
 ```
 

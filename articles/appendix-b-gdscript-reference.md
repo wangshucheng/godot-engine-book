@@ -58,7 +58,7 @@ for key in dict:
     print(key, dict[key])
 
 while is_playing:
-    yield(get_tree(), "physics_frame")
+    await get_tree().physics_frame  # 4.x 用 await 等待信号
 ```
 
 ### 函数

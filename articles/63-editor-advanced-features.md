@@ -81,30 +81,25 @@ func _optimize_mesh(mesh):
     # 这里可以添加具体的优化代码
     pass
 
-# 编辑器脚本高级功能
-func create_custom_editor_script():
-    # 创建自定义编辑器脚本
-    var script = EditorScript.new()
-    script.custom_script = true
-    script.name = "Custom Editor Script"
-    return script
+# EditorScript 的定位是「执行一次的编辑器脚本」：
+# 它继承自 Script（Resource）而不是 Node，也没有 _ready()/_process() 回调；
+# 唯一入口是 _run()，由编辑器触发（脚本编辑器右上角的“运行”），
+# 不能用 EditorScript.new() + run() 从代码里调用。
+func _run() -> void:
+    var root := get_scene()
+    if root == null:
+        push_warning("当前没有正在编辑的场景")
+        return
 
-func run_editor_script(script: EditorScript):
-    # 运行编辑器脚本
-    script.run()
+    var node := Node3D.new()
+    node.name = "SpawnedByEditorScript"
+    add_root_node(node)     # 与编辑器操作等效，可被撤销
+    print("已添加到场景：", root.name)
 
-func get_editor_script_history() -> Array:
-    # 获取编辑器脚本历史
-    return []
-
-func save_editor_script(script: EditorScript):
-    # 保存编辑器脚本
-    pass
-
-# 编辑器脚本事件
-func _ready():
-    # 脚本准备时
-    pass
+# 读取编辑器状态（EditorScript 自带的入口）
+func report_selection() -> void:
+    var selected := get_editor_interface().get_selection().get_selected_nodes()
+    print("当前选中 %d 个节点" % selected.size())
 
 func _process(delta):
     # 脚本处理时
@@ -145,7 +140,7 @@ func _setup_dock():
     
     var title = Label.new()
     title.text = "Custom Editor"
-    title.align = Label.ALIGN_CENTER
+    title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     vbox.add_child(title)
     
     # 添加自定义编辑器控件
@@ -198,7 +193,7 @@ func _setup_ui():
     
     button = Button.new()
     button.text = "Click Me"
-    button.connect("pressed", self, "_on_button_pressed")
+    button.pressed.connect(_on_button_pressed)
     vbox.add_child(button)
 
 func _on_button_pressed():
@@ -236,7 +231,7 @@ func _setup_dock():
     
     var title = Label.new()
     title.text = "Advanced Debug"
-    title.align = Label.ALIGN_CENTER
+    title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     vbox.add_child(title)
     
     # 添加调试控件
@@ -264,16 +259,16 @@ class DebugConsole:
 
 func _setup_ui():
     # 设置UI
-    setscriptlotext("Debug Console")
+    set_title("Debug Console")
 
 func _input(event):
     # 处理输入
     if event is InputEventKey:
-        if event.pressed and event.scancode == KEY_UP:
+        if event.pressed and event.keycode == KEY_UP:
             _navigate_history(-1)
-        elif event.pressed and event.scancode == KEY_DOWN:
+        elif event.pressed and event.keycode == KEY_DOWN:
             _navigate_history(1)
-        elif event.pressed and event.scancode == KEY_ENTER:
+        elif event.pressed and event.keycode == KEY_ENTER:
             _execute_command()
 
 func _navigate_history(direction: int):
@@ -329,79 +324,80 @@ func _inspect_selection():
 class_name EditorExtensions
 
 func get_extension_points() -> Dictionary:
-    # 获取扩展点
+    # 编辑器真实可用的事件源（没有统一的 "extension point" 机制）
     return {
-        "before_scene_save": "Called before saving a scene",
-        "after_scene_save": "Called after saving a scene",
-        "before_node_add": "Called before adding a node",
-        "after_node_add": "Called after adding a node",
-        "before_node_remove": "Called before removing a node",
-        "after_node_remove": "Called after removing a node",
-        "before_run_scene": "Called before running a scene",
-        "after_run_scene": "Called after running a scene",
-        "before_stop_scene": "Called before stopping a scene",
-        "after_stop_scene": "Called after stopping a scene",
-        "before_export": "Called before exporting",
-        "after_export": "Called after exporting"
+        "scene_changed": "编辑的场景切换（EditorPlugin 信号）",
+        "scene_closed": "场景被关闭（EditorPlugin 信号）",
+        "resource_saved": "资源保存后（EditorPlugin 信号）",
+        "main_screen_changed": "主屏幕切换（EditorPlugin 信号）",
+        "selection_changed": "编辑器选中项变化（EditorSelection 信号）",
+        "node_added": "节点加入场景树（SceneTree 信号）",
+        "node_removed": "节点离开场景树（SceneTree 信号）",
+        "_export_begin/_export_end": "导出前后（EditorExportPlugin 虚函数，不是信号）",
     }
 
 func connect_extension_point(extension_point: String, callback: Callable):
-    # 连接扩展点
-    var editor_interface = get_editor_interface()
+    # 编辑器没有统一的 extension point API：场景/资源信号在 EditorPlugin 上，
+    # 节点增删监听 SceneTree，导出阶段用 EditorExportPlugin 的虚函数回调
     match extension_point:
         "before_scene_save":
-            editor_interface.get_scene_changed().connect(callback)
+            scene_changed.connect(callback)
         "after_scene_save":
-            editor_interface.get_scene_saved().connect(callback)
+            resource_saved.connect(callback)
         "before_node_add":
-            editor_interface.get_node_added().connect(callback)
+            get_tree().node_added.connect(callback)
         "after_node_add":
-            editor_interface.get_node_added().connect(callback)
+            get_tree().node_added.connect(callback)
         "before_node_remove":
-            editor_interface.get_node_removed().connect(callback)
+            get_tree().node_removed.connect(callback)
         "after_node_remove":
-            editor_interface.get_node_removed().connect(callback)
+            get_tree().node_removed.connect(callback)
         "before_run_scene":
-            editor_interface.get_playing_scene().connect(callback)
+            # 编辑器没有“场景开始运行”信号，只能轮询 EditorInterface.is_playing_scene()
+            push_warning("场景运行状态请轮询 EditorInterface.is_playing_scene()")
         "after_run_scene":
-            editor_interface.get_playing_scene().connect(callback)
+            # 编辑器没有“场景开始运行”信号，只能轮询 EditorInterface.is_playing_scene()
+            push_warning("场景运行状态请轮询 EditorInterface.is_playing_scene()")
         "before_stop_scene":
-            editor_interface.get_stopped_scene().connect(callback)
+            # 同上：停止场景同样没有信号
+            push_warning("场景停止状态请轮询 EditorInterface.is_playing_scene()")
         "after_stop_scene":
-            editor_interface.get_stopped_scene().connect(callback)
+            # 同上：停止场景同样没有信号
+            push_warning("场景停止状态请轮询 EditorInterface.is_playing_scene()")
         "before_export":
-            editor_interface.get_exported().connect(callback)
+            # 导出阶段没有可连接的编辑器信号
+            push_warning("请在 EditorExportPlugin 中实现 _export_begin()/_export_end()")
         "after_export":
-            editor_interface.get_exported().connect(callback)
+            # 导出阶段没有可连接的编辑器信号
+            push_warning("请在 EditorExportPlugin 中实现 _export_begin()/_export_end()")
 
 func disconnect_extension_point(extension_point: String, callback: Callable):
-    # 断开扩展点
-    var editor_interface = get_editor_interface()
+    # 断开扩展点：与上面的连接一一对应
     match extension_point:
         "before_scene_save":
-            editor_interface.get_scene_changed().disconnect(callback)
+            scene_changed.disconnect(callback)
         "after_scene_save":
-            editor_interface.get_scene_saved().disconnect(callback)
+            resource_saved.disconnect(callback)
         "before_node_add":
-            editor_interface.get_node_added().disconnect(callback)
+            get_tree().node_added.disconnect(callback)
         "after_node_add":
-            editor_interface.get_node_added().disconnect(callback)
+            get_tree().node_added.disconnect(callback)
         "before_node_remove":
-            editor_interface.get_node_removed().disconnect(callback)
+            get_tree().node_removed.disconnect(callback)
         "after_node_remove":
-            editor_interface.get_node_removed().disconnect(callback)
+            get_tree().node_removed.disconnect(callback)
         "before_run_scene":
-            editor_interface.get_playing_scene().disconnect(callback)
+            pass  # 场景运行状态没有可断开的信号
         "after_run_scene":
-            editor_interface.get_playing_scene().disconnect(callback)
+            pass  # 场景运行状态没有可断开的信号
         "before_stop_scene":
-            editor_interface.get_stopped_scene().disconnect(callback)
+            pass  # 同上
         "after_stop_scene":
-            editor_interface.get_stopped_scene().disconnect(callback)
+            pass  # 同上
         "before_export":
-            editor_interface.get_exported().disconnect(callback)
+            pass  # 导出阶段无可断开的编辑器信号
         "after_export":
-            editor_interface.get_exported().disconnect(callback)
+            pass  # 导出阶段无可断开的编辑器信号
 ```
 
 ### 2.2 扩展开发
@@ -410,37 +406,38 @@ func disconnect_extension_point(extension_point: String, callback: Callable):
 # 扩展开发
 class_name ExtensionDevelopment
 
-func create_editor_extension(extension_type: String, name: String) -> EditorExtension:
-    # 创建编辑器扩展
-    var extension = EditorExtension.new()
-    extension.name = name
-    extension.extension_type = extension_type
-    return extension
+func create_editor_extension(plugin_cfg_path: String) -> Dictionary:
+    # Godot 没有独立的“编辑器扩展”注册表：编辑器扩展就是插件（EditorPlugin），
+    # 启用状态记录在项目设置的 editor_plugins/enabled 中
+    return {
+        "path": plugin_cfg_path,
+        "enabled": is_extension_enabled(plugin_cfg_path),
+    }
 
-func register_extension(extension: EditorExtension):
-    # 注册扩展
-    var editor_interface = get_editor_interface()
-    editor_interface.register_extension(extension)
+func register_extension(plugin_cfg_path: String) -> void:
+    _set_extension_enabled(plugin_cfg_path, true)
 
-func unregister_extension(extension: EditorExtension):
-    # 注销扩展
-    var editor_interface = get_editor_interface()
-    editor_interface.unregister_extension(extension)
+func unregister_extension(plugin_cfg_path: String) -> void:
+    _set_extension_enabled(plugin_cfg_path, false)
 
-func update_extension(extension: EditorExtension):
-    # 更新扩展
-    var editor_interface = get_editor_interface()
-    editor_interface.update_extension(extension)
+func is_extension_enabled(plugin_cfg_path: String) -> bool:
+    var enabled_plugins: PackedStringArray = ProjectSettings.get_setting(
+        "editor_plugins/enabled", PackedStringArray())
+    return enabled_plugins.has(plugin_cfg_path)
 
-func get_extension(name: String) -> EditorExtension:
-    # 获取扩展
-    var editor_interface = get_editor_interface()
-    return editor_interface.get_extension(name)
+func _set_extension_enabled(plugin_cfg_path: String, enabled: bool) -> void:
+    var enabled_plugins: PackedStringArray = ProjectSettings.get_setting(
+        "editor_plugins/enabled", PackedStringArray())
+    if enabled and not enabled_plugins.has(plugin_cfg_path):
+        enabled_plugins.append(plugin_cfg_path)
+    elif not enabled:
+        enabled_plugins.erase(plugin_cfg_path)
+    ProjectSettings.set_setting("editor_plugins/enabled", enabled_plugins)
+    ProjectSettings.save()   # 重启编辑器后生效
 
-func get_all_extensions() -> Array:
-    # 获取所有扩展
-    var editor_interface = get_editor_interface()
-    return editor_interface.get_extensions()
+func get_all_extensions() -> PackedStringArray:
+    # 已启用的扩展列表本身就是一串 plugin.cfg 路径
+    return ProjectSettings.get_setting("editor_plugins/enabled", PackedStringArray())
 ```
 
 ### 2.3 扩展管理
@@ -463,34 +460,28 @@ func initialize_extensions():
                 _load_extension(extensions_dir + "/" + file_name)
             file_name = dir.get_next()
 
-func _load_extension(path: String):
-    # 加载扩展
-    var extension = load(path)
-    if extension is EditorExtension:
-        extensions[extension.name] = extension
-        register_extension(extension)
+# 一个“扩展”就是一个已启用的插件：路径指向其 plugin.cfg
+func _load_extension(plugin_cfg_path: String) -> void:
+    extensions[plugin_cfg_path] = true
+    register_extension(plugin_cfg_path)
 
-func _save_extension(extension: EditorExtension):
-    # 保存扩展
-    var path = "res://editor_extensions/" + extension.name + ".gd"
-    var file = FileAccess.open(path, FileAccess.WRITE)
+func _save_extension(plugin_cfg_path: String, source_code: String) -> void:
+    # 把扩展脚本写到插件目录，之后再用 _load_extension() 启用
+    var script_path := plugin_cfg_path.get_base_dir() + "/extension.gd"
+    var file := FileAccess.open(script_path, FileAccess.WRITE)
     if file:
-        file.store_string(extension.to_string())
+        file.store_string(source_code)
         file.close()
 
-func _remove_extension(name: String):
-    # 移除扩展
-    if extensions.has(name):
-        var extension = extensions[name]
-        unregister_extension(extension)
-        extensions.erase(name)
+func _remove_extension(plugin_cfg_path: String) -> void:
+    if extensions.has(plugin_cfg_path):
+        unregister_extension(plugin_cfg_path)
+        extensions.erase(plugin_cfg_path)
 
-func _update_extension(name: String):
-    # 更新扩展
-    if extensions.has(name):
-        var extension = extensions[name]
-        unregister_extension(extension)
-        register_extension(extension)
+func _update_extension(plugin_cfg_path: String) -> void:
+    # 重新启用一次，让编辑器在重启后加载新版本
+    if extensions.has(plugin_cfg_path):
+        register_extension(plugin_cfg_path)
 ```
 
 ---
@@ -543,20 +534,20 @@ func _merge_nodes(nodes: Array):
     # 这里可以添加具体的合并代码
     pass
 
-func _optimize_resource_loader():
-    # 优化资源加载器
-    var loader = ResourceLoader.get_singleton()
-    loader.set_thread_pool_size(4)
+func _optimize_worker_threads():
+    # 后台加载线程数由项目设置控制，ResourceLoader 没有实例可获取
+    ProjectSettings.set_setting("threading/worker_pool/max_threads", 4)
 
-func _optimize_rendering():
-    # 优化渲染
-    var renderer = VisualServer.get_singleton()
-    renderer.set_render_info(VisualServer.RENDER_INFO_VISIBLE_NODES, 1000)
+func _inspect_rendering_load():
+    # 通过 RenderingServer 的渲染信息读取当前帧的可见对象数
+    var visible_objects := RenderingServer.get_rendering_info(
+        RenderingServer.RENDERING_INFO_TOTAL_OBJECTS_IN_FRAME)
+    print("当前帧可见对象数：", visible_objects)
 
-func _optimize_memory_usage():
-    # 优化内存使用
-    for i in range(10):
-        OS.gc_collect()
+func _report_memory_usage():
+    # GDScript 无法主动触发 GC，只能读取内存监视器做诊断
+    var static_mem := Performance.get_monitor(Performance.MEMORY_STATIC)
+    print("静态内存占用：%.2f MB" % (static_mem / 1048576.0))
 ```
 
 ### 3.2 响应优化
@@ -571,22 +562,21 @@ func optimize_editor_responsiveness():
     _optimize_input_handling()
     _optimize_async_operations()
 
-func _optimize_ui_updates():
-    # 优化UI更新
-    var editor_interface = get_editor_interface()
-    editor_interface.get_editor_settings().set_setting("interface/editor/disable_low_fps_mode", true)
-    editor_interface.get_editor_settings().set_setting("editors/3d/accessibility/disable_shadows", true)
+func _optimize_ui_updates() -> void:
+    # 让编辑器持续重绘（默认关闭以省电；重型工具插件打开后可避免“画面冻结”感）
+    var settings := get_editor_interface().get_editor_settings()
+    settings.set_setting("interface/editor/update_continuously", true)
 
-func _optimize_input_handling():
-    # 优化输入处理
-    var editor_interface = get_editor_interface()
-    editor_interface.get_editor_settings().set_setting("input/keyboard/repeat_delay", 0.1)
-    editor_interface.get_editor_settings().set_setting("input/keyboard/repeat_speed", 0.05)
+func _optimize_input_handling() -> void:
+    # 编辑器设置里没有键盘重复参数（那由操作系统接管）；
+    # 与输入手感相关的可调项是脚本编辑器的滚动速度
+    var settings := get_editor_interface().get_editor_settings()
+    settings.set_setting("text_editor/behavior/navigation/v_scroll_speed", 120)
 
-func _optimize_async_operations():
-    # 优化异步操作
-    var editor_interface = get_editor_interface()
-    editor_interface.get_editor_settings().set_setting("editors/3d/use_async_geometry_generation", true)
+func _optimize_async_operations() -> void:
+    # 脚本补全的空闲解析间隔（默认 1.5s），调小诊断更及时但更耗 CPU
+    var settings := get_editor_interface().get_editor_settings()
+    settings.set_setting("text_editor/completion/idle_parse_delay", 0.8)
 ```
 
 ### 3.3 UI优化
@@ -601,22 +591,22 @@ func optimize_editor_ui():
     _optimize_themes()
     _optimize_accessibility()
 
-func _optimize_layout():
-    # 优化布局
-    var editor_interface = get_editor_interface()
-    editor_interface.get_editor_settings().set_setting("editors/3d/layout_preset", "4_views")
-    editor_interface.get_editor_settings().set_setting("editors/3d/layout_3d_pane", "4_views")
+func _optimize_layout() -> void:
+    # 3D 视口布局没有“预设”设置键，面板布局由编辑器界面自行管理；
+    # 可持久化的是工作区相关开关，例如免打扰（无干扰）模式
+    var settings := get_editor_interface().get_editor_settings()
+    settings.set_setting("interface/editor/separate_distraction_mode", true)
 
-func _optimize_themes():
-    # 优化主题
-    var editor_interface = get_editor_interface()
-    editor_interface.get_editor_settings().set_setting("interface/editor/theme/preferred_theme", "Dark")
+func _optimize_themes() -> void:
+    # 主题预设的可选值：Default / Dark / Light / Gray / Solarized (Dark) / Solarized (Light)
+    var settings := get_editor_interface().get_editor_settings()
+    settings.set_setting("interface/theme/preset", "Dark")
 
-func _optimize_accessibility():
-    # 优化可访问性
-    var editor_interface = get_editor_interface()
-    editor_interface.get_editor_settings().set_setting("interface/editor/accessibility/font_size", 14)
-    editor_interface.get_editor_settings().set_setting("interface/editor/accessibility/contrast", 1.0)
+func _optimize_accessibility() -> void:
+    # 字号是界面主字号，对比度属于主题参数
+    var settings := get_editor_interface().get_editor_settings()
+    settings.set_setting("interface/editor/main_font_size", 14)
+    settings.set_setting("interface/theme/contrast", 0.3)
 ```
 
 ---
@@ -802,31 +792,38 @@ var editor_extensions: EditorExtensions
 var editor_performance: EditorPerformance
 var editor_security: EditorSecurity
 
-func initialize():
-    # 初始化编辑器协调器
+# 扩展点名 -> 已注册的回调列表（不存在虚构的 EditorExtension 类型）
+var _registered_callbacks: Dictionary = {}
+
+func initialize() -> void:
     editor_extensions = EditorExtensions.new()
     editor_performance = EditorPerformance.new()
     editor_security = EditorSecurity.new()
-    
+
     _connect_components()
 
-func _connect_components():
-    # 连接编辑器组件
-    editor_extensions.connect("extension_registered", editor_performance, "_on_extension_registered")
-    editor_extensions.connect("extension_registered", editor_security, "_on_extension_registered")
+func _connect_components() -> void:
+    # 各组件之间没有现成信号可连；确实需要广播时，
+    # 先在 EditorExtensions 里声明 signal extension_registered(extension_point: String)
+    # 再用 editor_extensions.extension_registered.connect(...) 连接。
+    pass
 
-func optimize_editor():
-    # 优化编辑器
+func optimize_editor() -> void:
     editor_performance.optimize_editor_performance_metrics()
     editor_security.check_editor_security()
 
-func handle_extension_registration(extension: EditorExtension):
-    # 处理扩展注册
-    editor_extensions.connect_extension_point(extension.extension_point, extension.callback)
+func handle_extension_registration(extension_point: String, callback: Callable) -> void:
+    editor_extensions.connect_extension_point(extension_point, callback)
+    _callbacks_for(extension_point).append(callback)
 
-func handle_extension_unregistration(extension: EditorExtension):
-    # 处理扩展注销
-    editor_extensions.disconnect_extension_point(extension.extension_point, extension.callback)
+func handle_extension_unregistration(extension_point: String, callback: Callable) -> void:
+    editor_extensions.disconnect_extension_point(extension_point, callback)
+    _callbacks_for(extension_point).erase(callback)
+
+func _callbacks_for(extension_point: String) -> Array:
+    if not _registered_callbacks.has(extension_point):
+        _registered_callbacks[extension_point] = []
+    return _registered_callbacks[extension_point]
 
 func generate_editor_report() -> Dictionary:
     # 生成编辑器报告

@@ -51,7 +51,7 @@ var core_template = {
     "description": "Basic plugin structure",
     "files": [
         "plugin.gd",
-        "metadata.json",
+        "plugin.cfg",
         "icon.png",
         "README.md"
     ],
@@ -68,7 +68,7 @@ var tool_template = {
     "description": "Tool plugin structure",
     "files": [
         "tool.gd",
-        "metadata.json",
+        "plugin.cfg",
         "icon.png",
         "README.md",
         "editor_script.gd"
@@ -86,7 +86,7 @@ var resource_template = {
     "description": "Resource management plugin structure",
     "files": [
         "resource_plugin.gd",
-        "metadata.json",
+        "plugin.cfg",
         "icon.png",
         "README.md",
         "editor_inspector_plugin.gd"
@@ -104,7 +104,7 @@ var workflow_template = {
     "description": "Workflow plugin structure",
     "files": [
         "workflow_plugin.gd",
-        "metadata.json",
+        "plugin.cfg",
         "icon.png",
         "README.md",
         "workflow.gd"
@@ -122,7 +122,7 @@ var ui_template = {
     "description": "UI extension plugin structure",
     "files": [
         "ui_plugin.gd",
-        "metadata.json",
+        "plugin.cfg",
         "icon.png",
         "README.md",
         "custom_control.tscn"
@@ -204,7 +204,7 @@ func create_core_template(template_path: String) -> bool:
     # 创建核心模板
     _create_directory(template_path)
     _create_plugin_file(template_path)
-    _create_metadata_file(template_path)
+    _create_plugin_cfg_file(template_path)
     _create_icon_file(template_path)
     _create_readme_file(template_path)
     
@@ -245,20 +245,21 @@ func _make_visible(visible):
         file.store_string(plugin_code)
         file.close()
 
-func _create_metadata_file(path: String):
-    # 创建元数据文件
-    var metadata = {
-        "name": "MyPlugin",
-        "version": "1.0.0",
-        "author": "Your Name",
-        "description": "A Godot plugin",
-        "license": "MIT",
-        "homepage": "https://yourwebsite.com"
-    }
-    
-    var file = FileAccess.open(path + "/metadata.json", FileAccess.WRITE)
+func _create_plugin_cfg_file(path: String) -> void:
+    # Godot 识别插件的唯一依据是 plugin.cfg（INI 格式）；
+    # metadata.json 不是 Godot 的约定，编辑器不会读取它。
+    # 缺少 plugin.cfg 时，「项目设置 → 插件」列表里根本不会出现该插件。
+    var cfg := """[plugin]
+
+name="MyPlugin"
+description="A Godot plugin"
+author="Your Name"
+version="1.0.0"
+script="plugin.gd"
+"""
+    var file := FileAccess.open(path + "/plugin.cfg", FileAccess.WRITE)
     if file:
-        file.store_string(JSON.stringify(metadata, "  "))
+        file.store_string(cfg)
         file.close()
 
 func _create_icon_file(path: String):
@@ -309,7 +310,7 @@ func create_tool_template(template_path: String) -> bool:
     # 创建工具模板
     _create_directory(template_path)
     _create_tool_file(template_path)
-    _create_metadata_file(template_path)
+    _create_plugin_cfg_file(template_path)
     _create_icon_file(template_path)
     _create_readme_file(template_path)
     _create_editor_script_file(template_path)
@@ -350,7 +351,7 @@ func _setup_button():
     # 设置工具栏按钮
     button = Button.new()
     button.text = "My Tool"
-    button.connect("pressed", self, "_on_button_pressed")
+    button.pressed.connect(_on_button_pressed)
     add_control_to_container(CONTAINER_TOOLBAR, button)
 
 func _cleanup_button():
@@ -406,7 +407,7 @@ func create_resource_template(template_path: String) -> bool:
     # 创建资源模板
     _create_directory(template_path)
     _create_resource_plugin_file(template_path)
-    _create_metadata_file(template_path)
+    _create_plugin_cfg_file(template_path)
     _create_icon_file(template_path)
     _create_readme_file(template_path)
     _create_inspector_plugin_file(template_path)
@@ -500,7 +501,7 @@ func create_workflow_template(template_path: String) -> bool:
     # 创建工作流模板
     _create_directory(template_path)
     _create_workflow_plugin_file(template_path)
-    _create_metadata_file(template_path)
+    _create_plugin_cfg_file(template_path)
     _create_icon_file(template_path)
     _create_readme_file(template_path)
     _create_workflow_file(template_path)
@@ -604,7 +605,7 @@ func create_ui_template(template_path: String) -> bool:
     # 创建UI模板
     _create_directory(template_path)
     _create_ui_plugin_file(template_path)
-    _create_metadata_file(template_path)
+    _create_plugin_cfg_file(template_path)
     _create_icon_file(template_path)
     _create_readme_file(template_path)
     _create_custom_control_file(template_path)
@@ -716,8 +717,8 @@ func _get_template_files(template_path: String) -> Array:
 
 func _get_template_metadata(template_path: String) -> Dictionary:
     # 获取模板元数据
-    var metadata_path = template_path + "/metadata.json"
-    var file = FileAccess.open(metadata_path, FileAccess.READ)
+    var plugin_cfg_path = template_path + "/plugin.cfg"
+    var file = FileAccess.open(plugin_cfg_path, FileAccess.READ)
     if file:
         var json_string = file.get_as_text()
         file.close()
@@ -799,8 +800,8 @@ func _get_latest_version_from_server(template_name: String) -> String:
 
 func _get_installed_version(template_name: String) -> String:
     # 获取已安装版本
-    var metadata_path = "res://addons/" + template_name + "/metadata.json"
-    var file = FileAccess.open(metadata_path, FileAccess.READ)
+    var plugin_cfg_path = "res://addons/" + template_name + "/plugin.cfg"
+    var file = FileAccess.open(plugin_cfg_path, FileAccess.READ)
     if file:
         var json_string = file.get_as_text()
         file.close()
@@ -933,7 +934,7 @@ func test_template(template_path: String) -> Dictionary:
 
 func _check_files_exist(template_path: String) -> bool:
     # 检查文件是否存在
-    var required_files = ["plugin.gd", "metadata.json", "README.md"]
+    var required_files = ["plugin.cfg", "plugin.gd", "README.md"]
     for file in required_files:
         if not FileAccess.file_exists(template_path + "/" + file):
             return false
@@ -951,8 +952,8 @@ func _check_metadata_valid(template_path: String) -> bool:
 
 func _get_metadata(template_path: String) -> Dictionary:
     # 获取元数据
-    var metadata_path = template_path + "/metadata.json"
-    var file = FileAccess.open(metadata_path, FileAccess.READ)
+    var plugin_cfg_path = template_path + "/plugin.cfg"
+    var file = FileAccess.open(plugin_cfg_path, FileAccess.READ)
     if file:
         var json_string = file.get_as_text()
         file.close()
@@ -1003,8 +1004,8 @@ func generate_documentation(template_path: String) -> Dictionary:
 
 func _get_metadata(template_path: String) -> Dictionary:
     # 获取元数据
-    var metadata_path = template_path + "/metadata.json"
-    var file = FileAccess.open(metadata_path, FileAccess.READ)
+    var plugin_cfg_path = template_path + "/plugin.cfg"
+    var file = FileAccess.open(plugin_cfg_path, FileAccess.READ)
     if file:
         var json_string = file.get_as_text()
         file.close()
@@ -1197,7 +1198,7 @@ func _populate_template_list():
 
 ```gdscript
 # 模板安装器
-class_name TemplateInstaller
+class_name TemplateInstallerPlugin
 
 extends EditorPlugin
 

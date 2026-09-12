@@ -111,7 +111,7 @@
 | Unity | Godot | 说明 |
 |-------|-------|------|
 | Resources.Load() | load() | 加载资源 |
-| Resources.LoadAsync() | ResourceLoader.load_interactive() | 异步加载 |
+| Resources.LoadAsync() | ResourceLoader.load_threaded_request() | 异步加载 |
 | Instantiate() | instantiate() / PackedScene.instantiate() | 实例化 |
 | Destroy() | queue_free() | 销毁对象 |
 | DontDestroyOnLoad() | 自动加载/单例 | 持久化对象 |
@@ -121,7 +121,7 @@
 | Unity | Godot | 说明 |
 |-------|-------|------|
 | SceneManager.LoadScene() | get_tree().change_scene_to_file() | 加载场景 |
-| SceneManager.LoadSceneAsync() | ResourceLoader.load_interactive() | 异步加载 |
+| SceneManager.LoadSceneAsync() | ResourceLoader.load_threaded_request() | 异步加载 |
 | DontDestroyOnLoad() | 场景外独立节点 | 跨场景持久 |
 
 ### 协程

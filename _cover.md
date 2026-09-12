@@ -10,7 +10,7 @@
 - 📊 320+ 个图表
 
 [开始阅读](/README.md)
-[GitHub 仓库](https://github.com/)
+[GitHub 仓库](https://github.com/wangshucheng/godot-engine-book)
 
 ---
 

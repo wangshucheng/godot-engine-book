@@ -24,7 +24,7 @@ Godot 使用原生 2D 渲染，而非 3D 模拟：
 # Node2D
 #   ├── Sprite2D
 #   ├── Polygon2D
-#   └── TileMap
+#   └── TileMapLayer
 # Control
 #   ├── Label
 #   ├── Button
@@ -53,7 +53,7 @@ GPU 渲染
 |------|------|
 | **相同纹理** | 自动合批 |
 | **相同材质** | 自动合批 |
-| **TileMap** | 自动合批 |
+| **TileMapLayer** | 自动合批 |
 | **NinePatch** | 特殊处理 |
 
 ---
@@ -92,7 +92,7 @@ material.light_mode = CanvasItemMaterial.LIGHT_MODE_UNSHADED
 | 技巧 | 说明 |
 |------|------|
 | **纹理图集** | 合并纹理 |
-| **TileMap** | 自动合批 |
+| **TileMapLayer** | 自动合批 |
 | **可见性** | 关闭屏幕外渲染 |
 | **LOD** | 远距离简化 |
 
@@ -112,23 +112,23 @@ material.light_mode = CanvasItemMaterial.LIGHT_MODE_UNSHADED
 1. **原生 2D**：像素坐标，CanvasItem
 2. **2D 合批**：自动合并相同纹理
 3. **2D 光照**：PointLight2D、LightOccluder2D
-4. **优化**：纹理图集、TileMap
+4. **优化**：纹理图集、TileMapLayer
 
 ### 下一篇
 
-**下一篇**: 后处理效果
+**下一篇**: [第 19 篇：后处理效果](/articles/19-post-processing-effects.md)
 
 ---
 
 **作者**: wangshucheng
 **首发平台**: 微信公众号  
 **写作时间**: 2026 年 3 月  
-**Godot 版本**: 4.3（最新稳定版）
+**Godot 版本**: 4.x（基线 4.3，2026-09 最新稳定版为 4.7）
 
 ---
 
-**上一篇**: [第 17 篇：GDShader 语言](#)  
-**下一篇**: [第 19 篇：后处理效果](#)
+**上一篇**: [第 17 篇：GDShader 语言](/articles/17-gdshader-language.md)
+**下一篇**: [第 19 篇：后处理效果](/articles/19-post-processing-effects.md)
 
 ---
 

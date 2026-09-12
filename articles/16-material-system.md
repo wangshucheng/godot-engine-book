@@ -119,19 +119,19 @@ instance2.roughness = 0.8
 
 ### 下一篇
 
-**下一篇**: GDShader 语言
+**下一篇**: [第 17 篇：GDShader 语言](/articles/17-gdshader-language.md)
 
 ---
 
 **作者**: wangshucheng
 **首发平台**: 微信公众号  
 **写作时间**: 2026 年 3 月  
-**Godot 版本**: 4.3（最新稳定版）
+**Godot 版本**: 4.x（基线 4.3，2026-09 最新稳定版为 4.7）
 
 ---
 
-**上一篇**: [第 15 篇：光照系统](#)  
-**下一篇**: [第 17 篇：GDShader 语言](#)
+**上一篇**: [第 15 篇：光照系统](/articles/15-lighting-system.md)
+**下一篇**: [第 17 篇：GDShader 语言](/articles/17-gdshader-language.md)
 
 ---
 

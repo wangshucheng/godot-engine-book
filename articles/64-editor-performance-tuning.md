@@ -70,12 +70,14 @@ func _count_nodes(node: Node) -> int:
     return count
 
 func _get_resource_cache_size() -> int:
-    # 获取资源缓存大小
-    return ResourceCache.get_cached().size()
+    # 没有可查询的“资源缓存”对象；用对象监视器里的资源计数代替
+    return int(Performance.get_monitor(Performance.OBJECT_RESOURCE_COUNT))
 
 func _get_editor_plugin_count() -> int:
-    # 获取编辑器插件数量
-    return get_editor_interface().get_plugins().size()
+    # 编辑器没有列出插件实例的 API；启用数从项目设置读取
+    var enabled_plugins: PackedStringArray = ProjectSettings.get_setting(
+        "editor_plugins/enabled", PackedStringArray())
+    return enabled_plugins.size()
 ```
 
 ### 1.2 性能热点识别
@@ -166,8 +168,9 @@ func _identify_rendering_hotspots() -> Array:
     # 识别渲染热点
     var hotspots = []
     
-    var render_info = VisualServer.get_singleton().get_render_info()
-    if render_info["visible_nodes"] > 1000:
+    var visible_objects := RenderingServer.get_rendering_info(
+        RenderingServer.RENDERING_INFO_TOTAL_OBJECTS_IN_FRAME)
+    if visible_objects > 1000:
         hotspots.append({
             "type": "rendering",
             "name": "High visible nodes",
@@ -176,7 +179,8 @@ func _identify_rendering_hotspots() -> Array:
             "recommendation": "Consider culling and LOD"
         })
     
-    if render_info["draw_calls"] > 1000:
+    if RenderingServer.get_rendering_info(
+            RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME) > 1000:
         hotspots.append({
             "type": "rendering",
             "name": "High draw calls",
@@ -188,19 +192,20 @@ func _identify_rendering_hotspots() -> Array:
     return hotspots
 
 func _identify_ui_hotspots() -> Array:
-    # 识别UI热点
-    var hotspots = []
-    
-    var editor_metrics = get_editor_interface().get_editor_settings().get_setting("editors/3d/editor_metrics")
-    if editor_metrics["frame_time"] > 16:
+    # 编辑器设置里没有 editor_metrics；
+    # 编辑器进程的帧耗时直接读 Performance 监视器（在编辑器中同样有效）
+    var hotspots: Array = []
+
+    var frame_ms := Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+    if frame_ms > 16.0:
         hotspots.append({
             "type": "ui",
             "name": "High UI frame time",
             "severity": "medium",
-            "description": "Editor UI frame time is over 16ms",
+            "description": "Editor frame time is over 16ms",
             "recommendation": "Consider UI optimization"
         })
-    
+
     return hotspots
 ```
 
@@ -299,9 +304,10 @@ func _test_rendering_performance() -> Dictionary:
     # 测试渲染性能
     var start_time = Time.get_ticks_msec()
     
-    # 渲染1000帧
-    for i in range(1000):
-        VisualServer.get_singleton().draw()
+    # 等待 1000 帧完成，读取真实帧时间而非调用不存在的绘制接口
+    var start_frames := Engine.get_frames_drawn()
+    while Engine.get_frames_drawn() - start_frames < 1000:
+        await get_tree().process_frame
     
     var end_time = Time.get_ticks_msec()
     
@@ -384,75 +390,68 @@ func _optimize_process_nodes(scene: Node):
 # 资源加载优化
 class_name ResourceLoadingOptimization
 
-func optimize_resource_loading():
-    # 优化资源加载
-    _enable_cache_loading()
+var lazy_paths: Array[String] = []
+
+func optimize_resource_loading() -> void:
+    # 没有开关式的“缓存加载”或“异步加载”编辑器设置：
+    # 资源缓存是 ResourceLoader 的内建行为，后台加载用线程化 API
     _use_threaded_loading()
     _implement_lazy_loading()
 
-func _enable_cache_loading():
-    # 启用缓存加载
-    var settings = get_editor_interface().get_editor_settings()
-    settings.set_setting("editors/3d/use_resource_cache", true)
+func _use_threaded_loading() -> void:
+    # 后台线程加载大资源，避免卡顿（4.x 取代 3.x 的 load_interactive）
+    ResourceLoader.load_threaded_request("res://large_level.scn")
+    var progress: Array = []
+    if ResourceLoader.load_threaded_get_status("res://large_level.scn", progress) \
+            == ResourceLoader.THREAD_LOAD_LOADED:
+        var resource := ResourceLoader.load_threaded_get("res://large_level.scn")
 
-func _use_threaded_loading():
-    # 使用多线程加载
-    var settings = get_editor_interface().get_editor_settings()
-    settings.set_setting("editors/3d/use_async_loading", true)
+func _implement_lazy_loading() -> void:
+    # 懒加载：只保存路径，真正需要时再 load
+    # 典型场景：编辑器面板不在 _init() 里扫描全部资源
+    lazy_paths = ["res://textures/a.png", "res://textures/b.png"]
 
-func _implement_lazy_loading():
-    # 实现懒加载
-    # 懒加载资源直到它们被实际需要
-    pass
+func get_lazy(index: int) -> Resource:
+    return load(lazy_paths[index]) if index < lazy_paths.size() else null
 
-func _preload_critical_resources():
-    # 预加载关键资源
-    var critical_resources = [
-        "res://icon.png",
-        "res://default_material.tres",
-        "res://editor_style.tss"
-    ]
-    
-    for resource_path in critical_resources:
-        load(resource_path)
+func _preload_critical_resources() -> void:
+    # 关键资源用 preload 在编译期加载，最稳
+    var icon := preload("res://icon.png")
 
-func _unload_unused_resources():
-    # 卸载未使用的资源
-    var resources = ResourceCache.get_cached()
-    for resource_path in resources:
-        if not _is_resource_in_use(resources[resource_path]):
-            ResourceCache.remove(resources[resource_path])
+func _unload_unused_resources(resource: Resource) -> void:
+    # ⚠️ 不存在 ResourceCache.get_cached()/remove()：
+    # 资源由引用计数管理，释放只需去掉所有引用
+    resource = null
 ```
 
 ### 2.3 渲染优化
 
 ```gdscript
-# 渲染优化
+# 渲染优化：这些能力属于游戏项目本身，不存在 editor settings 开关
 class_name RenderingOptimization
 
-func optimize_rendering():
-    # 优化渲染
-    _optimize_visible_nodes()
-    _reduce_draw_calls()
+func optimize_rendering() -> void:
     _implement_culling()
+    _use_lod()
 
-func _optimize_visible_nodes():
-    # 优化可见节点
-    var settings = get_editor_interface().get_editor_settings()
-    settings.set_setting("editors/3d/display_lods", true)
-    settings.set_setting("editors/3d/display_lights", false)
+# 遮挡剔除：在场景里放 OccluderInstance3D 并由编辑器烘焙遮挡网格
+func _implement_culling() -> void:
+    var occluder := OccluderInstance3D.new()
+    occluder.bake_mask = 4294967295   # 默认烘焙所有视觉层
+    add_child(occluder)
 
-func _reduce_draw_calls():
-    # 减少draw调用
-    var settings = get_editor_interface().get_editor_settings()
-    settings.set_setting("editors/3d/use_batching", true)
-    settings.set_setting("editors/3d/use_instancing", true)
+# LOD：用节点的 visibility_range_* 按距离控制显示
+func _use_lod() -> void:
+    var mesh_instance := $MeshInstance3D as MeshInstance3D
+    mesh_instance.visibility_range_begin = 0.0
+    mesh_instance.visibility_range_end = 50.0
 
-func _implement_culling():
-    # 实现剔除
-    var settings = get_editor_interface().get_editor_settings()
-    settings.set_setting("editors/3d/use_occlusion_culling", true)
-    settings.set_setting("editors/3d/use_frustum_culling", true)
+# 减少绘制调用：合并网格或使用 MultiMesh 实例化
+func _reduce_draw_calls(source: Mesh, count: int) -> void:
+    var multi_mesh := MultiMesh.new()
+    multi_mesh.transform_format = MultiMesh.TRANSFORM_3D
+    multi_mesh.mesh = source
+    multi_mesh.instance_count = count
 ```
 
 ---
@@ -520,7 +519,7 @@ func _start_monitoring_timer():
     var timer = Timer.new()
     timer.wait_time = 1.0
     timer.one_shot = false
-    timer.connect("timeout", self, "_on_monitoring_timer_timeout")
+    timer.timeout.connect(_on_monitoring_timer_timeout)
     add_child(timer)
     timer.start()
 
@@ -642,7 +641,7 @@ func _setup_monitoring():
     timer = Timer.new()
     timer.wait_time = 0.5
     timer.one_shot = false
-    timer.connect("timeout", self, "_on_monitoring_timer_timeout")
+    timer.timeout.connect(_on_monitoring_timer_timeout)
     add_child(timer)
     timer.start()
 
@@ -812,12 +811,14 @@ func _count_nodes(node: Node) -> int:
     return count
 
 func _get_resource_cache_size() -> int:
-    # 获取资源缓存大小
-    return ResourceCache.get_cached().size()
+    # 没有可查询的“资源缓存”对象；用对象监视器里的资源计数代替
+    return int(Performance.get_monitor(Performance.OBJECT_RESOURCE_COUNT))
 
 func _get_editor_plugin_count() -> int:
-    # 获取编辑器插件数量
-    return get_editor_interface().get_plugins().size()
+    # 编辑器没有列出插件实例的 API；启用数从项目设置读取
+    var enabled_plugins: PackedStringArray = ProjectSettings.get_setting(
+        "editor_plugins/enabled", PackedStringArray())
+    return enabled_plugins.size()
 ```
 
 ---

@@ -201,7 +201,7 @@ func _draw_waveform():
     if audio_buffer.is_empty():
         return
     
-    var points = PoolVector2Array()
+    var points := PackedVector2Array()
     
     for i in range(sample_count):
         var x = float(i) / sample_count * size.x
