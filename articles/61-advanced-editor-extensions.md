@@ -564,8 +564,8 @@ func _exit_tree() -> void:
 >   **只能在 `_import()` 内部调用**。它做两件事：触发外部资源的导入；
 >   把 `generator_parameters` 写进该资源的 `.import` 文件 `[remap]` 段的
 >   `generator_parameters` 键（例如存源数据的 md5）。
-> - `_get_option_visibility()` 在 **4.3 实测是 3 个参数**（4.7.2 未复核——移植前请以你所用分支的 `editor/editor_plugin.h` 实际签名为准）
->   `(path, option_name, options)`；写 2 参会在 4.3 上签名不匹配。
+> - `_get_option_visibility()` 在 **4.3 与 4.7.2 上都是 3 个参数**
+>   `(path, option_name, options)`；写 2 参会签名不匹配。
 
 ### 3.2 批量导入工具
 
