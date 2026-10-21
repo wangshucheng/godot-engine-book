@@ -402,7 +402,7 @@ Unity -batchmode -quit -projectPath . \
 
 ## 七、第二卷预告
 
-### 第二卷：渲染系统（12 篇）
+### 第二卷：渲染系统（12 篇） <!-- {docsify-ignore} -->
 
 | 编号 | 标题 |
 |------|------|

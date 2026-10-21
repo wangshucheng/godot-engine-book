@@ -17,9 +17,19 @@
       --theme-color-dark: #3a7ca5;
     }
     
+    /* 侧边栏卷标题：_sidebar.md 用 * **卷名** 标记，渲染成
+       <li><p><strong>卷名</strong></p></li>；不能再用 ## 标题，
+       否则会被 docsify 混进正文 TOC，重复出现在每章左侧导航里。 */
     .sidebar-nav > ul > li > p {
-      font-weight: 600;
+      margin: 0;
+    }
+
+    .sidebar-nav > ul > li > p > strong,
+    .sidebar-nav > ul > li > strong {
+      display: block;
+      margin: 14px 0 4px;
       font-size: 1.1em;
+      font-weight: 700;
     }
     
     .markdown-section h1 {

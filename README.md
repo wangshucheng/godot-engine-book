@@ -332,7 +332,4 @@ grep -r "动画混合" .
 
 **Godot 版本**: 4.x（基线 4.7.2；本文涉及的版本差异已在行内标注）
 
-**上一篇**: [附录 D：性能优化清单](/articles/appendix-d-performance-checklist.md)
-
-
-**上一篇**: [附录 D：性能优化清单](/articles/appendix-d-performance-checklist.md)
+**下一篇**: [第 1 篇：Godot 引擎概述：历史、现状、架构](/articles/01-godot-overview.md)
