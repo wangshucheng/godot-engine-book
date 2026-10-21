@@ -225,7 +225,7 @@ func _property_get_revert(property: StringName) -> Variant:
 > - `_property_can_revert()` 与 `_property_get_revert()` 必须**成对实现**：
 >   只有前者返回 `true`，后者才会被调用；两者都实现后，检查器才会显示还原箭头。
 > - 属性列表的结构变化后要调用 `notify_property_list_changed()` 通知编辑器刷新。
-> - 4.3 的 `Object.xml` 明确写着：脚本不是 `@tool` 时，`_get_property_list()`
+> - 4.7.2 的 `Object.xml` 明确写着：脚本不是 `@tool` 时，`_get_property_list()`
 >   **不会在编辑器里被调用**。
 
 ---
@@ -564,7 +564,7 @@ func _exit_tree() -> void:
 >   **只能在 `_import()` 内部调用**。它做两件事：触发外部资源的导入；
 >   把 `generator_parameters` 写进该资源的 `.import` 文件 `[remap]` 段的
 >   `generator_parameters` 键（例如存源数据的 md5）。
-> - `_get_option_visibility()` 在 **4.3 与 master 上都是 3 个参数**
+> - `_get_option_visibility()` 在 **4.3 实测是 3 个参数**（4.7.2 未复核——移植前请以你所用分支的 `editor/editor_plugin.h` 实际签名为准）
 >   `(path, option_name, options)`；写 2 参会在 4.3 上签名不匹配。
 
 ### 3.2 批量导入工具
