@@ -39,6 +39,17 @@ LINK_RE = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 CLASS_TOKEN_RE = re.compile(r"^[A-Z][A-Za-z0-9]*$")
 UPPER_CONST_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
+# 工作区行尾约定：仓库内是 LF（git 规范化），Windows 检出时是 CRLF（core.autocrlf=true）。
+# 「必须 CRLF」只对 Windows 本地有意义；在 Linux CI 上检出的是 LF，不该判错。
+# 可用环境变量 GODOT_BOOK_CRLF=on|off 显式覆盖（默认按平台自动判断）。
+_crlf_mode = os.environ.get("GODOT_BOOK_CRLF", "").strip().lower()
+if _crlf_mode in ("0", "off", "false", "no"):
+    REQUIRE_CRLF = False
+elif _crlf_mode in ("1", "on", "true", "yes"):
+    REQUIRE_CRLF = True
+else:
+    REQUIRE_CRLF = os.name == "nt"
+
 # GDScript 语言层内建函数（不在官方类参考的 @GlobalScope 里）
 LANG_BUILTINS = set(
     """
@@ -564,14 +575,24 @@ def rule_structure(book: Book, articles):
         # 内部链接
         check_local_links(book, name, text)
         # 行尾
-        if "\r\n" not in text and "\n" in text:
-            book.add("structure", "error", name, 1, "文件未使用 CRLF 行尾")
-        else:
-            bad = [i for i, ln in enumerate(text.split("\n"), 1)
-                   if ln and not ln.endswith("\r")]
-            if bad:
-                book.add("structure", "error", name, bad[0],
-                         f"存在裸 LF 行尾（共 {len(bad)} 行）")
+        #   仓库里存的是 **LF**（git 在 core.autocrlf=true 下入库时规范化），
+        #   Windows 工作区检出时才是 CRLF。所以：
+        #     · 「混用」在任何平台都是错 → error
+        #     · 「必须 CRLF」只是 **Windows 工作区约定** → 仅在 Windows 上查
+        #   否则 Linux CI 检出的全是 LF，会把每个文件都误判成错。
+        crlf = text.count("\r\n")
+        lone_lf = text.count("\n") - crlf
+        lone_cr = text.count("\r") - crlf
+        if lone_cr:
+            book.add("structure", "error", name, 1,
+                     f"存在单独的 CR（老 Mac 换行），共 {lone_cr} 处")
+        elif crlf and lone_lf:
+            book.add("structure", "error", name, 1,
+                     f"行尾混用：CRLF {crlf} 处、LF {lone_lf} 处")
+        elif REQUIRE_CRLF and lone_lf:
+            book.add("structure", "error", name, 1,
+                     f"文件未使用 CRLF 行尾（Windows 工作区约定，仓库内仍是 LF）"
+                     f"：有 {lone_lf} 处 LF")
         # 篇末四件套（取最后 300 行；附录本来就以清单结尾，不要求篇末导航）
         if not name.startswith("appendix-"):
             tail = "\n".join(text.split("\n")[-300:])
