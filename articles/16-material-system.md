@@ -732,7 +732,7 @@ render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley, specular_sc
 用户写的 `.gdshader` 只是"半份"着色器。真正跑在 GPU 上的是**引擎内置 GLSL + 你的代码**拼出来的一份：
 
 ```glsl
-// Godot 4.3 源码 - servers/rendering/renderer_rd/shaders/forward_clustered/scene_forward_clustered.glsl
+// Godot 4.7.2 源码 - servers/rendering/renderer_rd/shaders/forward_clustered/scene_forward_clustered.glsl
 // 这一大段是引擎内建的 spatial 着色器：包含 SceneData / LightsData 的读取、
 // 阴影采样、簇化光照循环、雾、体积雾等。
 // 你的 .gdshader 的 vertex() / fragment() 被"嵌入"到其中。
@@ -1065,7 +1065,7 @@ print(RenderingServer.instance_geometry_get_shader_parameter_list(mi.get_instanc
 
 - **官方文档**: [Standard Material 3D 与 ORM Material 3D](https://docs.godotengine.org/en/stable/tutorials/3d/standard_material_3d.html)、[着色器语言参考](https://docs.godotengine.org/en/stable/tutorials/shaders/shader_reference/shading_language.html)、[使用 ShaderMaterial](https://docs.godotengine.org/en/stable/tutorials/shaders/shader_reference/shading_language.html)
 - **类参考**: [StandardMaterial3D](https://docs.godotengine.org/en/stable/classes/class_standardmaterial3d.html)、[ShaderMaterial](https://docs.godotengine.org/en/stable/classes/class_shadermaterial.html)、[Shader](https://docs.godotengine.org/en/stable/classes/class_shader.html)、[Material](https://docs.godotengine.org/en/stable/classes/class_material.html)、[GeometryInstance3D](https://docs.godotengine.org/en/stable/classes/class_geometryinstance3d.html)
-- **源码位置**: `scene/resources/material.cpp`、`scene/resources/visual_shader.cpp`、`servers/rendering/shader_language.cpp`、`servers/rendering/renderer_rd/shader_rd.cpp`、`servers/rendering/renderer_rd/pipeline_cache_rd.cpp`、`servers/rendering/renderer_rd/storage_rd/material_storage.cpp`、`servers/rendering/renderer_rd/forward_clustered/scene_shader_forward_clustered.cpp`
+- **源码位置**: `scene/resources/material.cpp`、`modules/visual_shader/visual_shader.cpp`、`servers/rendering/shader_language.cpp`、`servers/rendering/renderer_rd/shader_rd.cpp`、`servers/rendering/renderer_rd/pipeline_cache_rd.cpp`、`servers/rendering/renderer_rd/storage_rd/material_storage.cpp`、`servers/rendering/renderer_rd/forward_clustered/scene_shader_forward_clustered.cpp`
 
 ---
 

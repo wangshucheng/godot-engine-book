@@ -51,7 +51,7 @@
 ### 1.2 Godot 4.x 的 3D 音频到底做了什么（以及没做什么）
 
 > ⚠️ **重要边界**：Godot 4.x **没有实现**双耳渲染（HRTF，Head-Related Transfer Function）。
-> 具体核验依据（4.3 官方源码）：
+> 具体核验依据（4.7.2 官方源码）：
 > - `doc/classes/AudioServer.xml` 的方法表里没有任何 `hrtf` 相关项；
 > - `servers/audio/effects/` 目录下没有 HRTF 效果器；
 > - `ProjectSettings` 的 `audio/*` 完整清单里没有 HRTF 设置项。
@@ -689,7 +689,7 @@ func apply_audio_lod(player: AudioStreamPlayer3D, lod: LODLevel):
 - **官方文档**: [Audio buses](https://docs.godotengine.org/en/stable/tutorials/audio/audio_buses.html)
 - **类参考**: [AudioStreamPlayer3D](https://docs.godotengine.org/en/stable/classes/class_audiostreamplayer3d.html)
 - **类参考**: [AudioListener3D](https://docs.godotengine.org/en/stable/classes/class_audiolistener3d.html)
-- **源码位置**: `scene/3d/audio_stream_player_3d.h`、`servers/audio_server.cpp`、`modules/interactive_music/`
+- **源码位置**: `scene/3d/audio_stream_player_3d.h`、`servers/audio/audio_server.cpp`、`modules/interactive_music/`
 
 ---
 

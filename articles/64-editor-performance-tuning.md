@@ -875,7 +875,7 @@ func _count_nodes(node: Node) -> int:
 - **官方文档 · 性能监视器**: <https://docs.godotengine.org/en/stable/tutorials/performance/index.html>
 - **类参考**: <https://docs.godotengine.org/en/stable/classes/class_performance.html>
 - **类参考**: <https://docs.godotengine.org/en/stable/classes/class_os.html>
-- **源码位置**: `core/performance/performance.cpp`, `servers/rendering_server.cpp`
+- **源码位置**: `main/performance.cpp`, `servers/rendering/rendering_server.cpp`
 
 ---
 

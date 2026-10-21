@@ -1170,7 +1170,7 @@ func get_viscosity(shear_stress: float, shear_rate: float) -> float:
 - **GPUParticles3D**: <https://docs.godotengine.org/en/stable/classes/class_gpuparticles3d.html>
 - **ParticleProcessMaterial**: <https://docs.godotengine.org/en/stable/classes/class_particleprocessmaterial.html>
 - **说明**: Godot 没有内置流体求解器，SPH/网格法需自行实现或借助 GDExtension
-- **源码位置**: `servers/rendering/renderer_rd/storage_rd/particles.cpp`
+- **源码位置**: `servers/rendering/renderer_rd/storage_rd/particles_storage.cpp`
 
 ---
 

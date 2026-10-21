@@ -985,7 +985,7 @@ motion_sprite.position_changed.connect(_on_motion_sprite_position_changed)
 - **官方文档**: [GDExtension C++ example](https://docs.godotengine.org/en/stable/tutorials/scripting/gdextension/gdextension_cpp_example.html)
 - **官方文档**: [Custom modules in C++（对比模块开发）](https://docs.godotengine.org/en/stable/engine_details/engine_api/custom_modules_in_cpp.html)
 - **源码位置**: godot-cpp 仓库 `https://github.com/godotengine/godot-cpp`（含 `test/` 目录下的官方示例）
-- **源码位置**: Godot 引擎源码 `core/extension/gdextension_interface.h`、`core/extension/extension_api_dump.cpp`
+- **源码位置**: Godot 引擎源码 `core/extension/gdextension_interface.json`（接口定义，公开头文件 `gdextension_interface.gen.h` 由 `core/extension/gdextension_interface_header_generator.cpp` 生成）、`core/extension/extension_api_dump.cpp`
 
 ---
 

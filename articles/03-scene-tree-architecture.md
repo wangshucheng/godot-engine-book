@@ -111,7 +111,7 @@ MeshInstance3D, CharacterBody3D, Camera3D, ...
 **Node 类核心成员变量**（简化版）：
 
 ```cpp
-// Godot 源码 - scene/main/node.h（Godot 4.3，节选）
+// Godot 源码 - scene/main/node.h（Godot 4.7.2，节选）
 class Node : public Object {
     // 节点树相关
     Node *parent = nullptr;                     // 父节点
@@ -191,7 +191,7 @@ _exit_tree()       // 节点离开场景树
 **源码分析**: 生命周期调用时机
 
 ```cpp
-// Godot 源码 - scene/main/node.cpp（Godot 4.3，节选）
+// Godot 源码 - scene/main/node.cpp（Godot 4.7.2，节选）
 // 注意：4.x 里**没有** Node::_enter_tree() / Node::_ready() / Node::_exit_tree() 这些 C++ 虚函数。
 // 脚本回调由 GDVIRTUAL 宏注册，引擎侧通过 _propagate_* 系列函数转发。
 
@@ -348,7 +348,7 @@ func _exit_tree():
 **添加子节点**：
 
 ```cpp
-// Godot 源码 - scene/main/node.cpp（Godot 4.3，节选）
+// Godot 源码 - scene/main/node.cpp（Godot 4.7.2，节选）
 void Node::add_child(Node *p_child, bool p_force_readable_name, InternalMode p_internal) {
     ERR_FAIL_NULL(p_child);
     ERR_FAIL_COND_MSG(p_child == this, "Can't add child to itself.");
@@ -437,7 +437,7 @@ $Player/Sprite   # 等价于 get_node("Player/Sprite")
 **源码分析**: `get_node()` 实现
 
 ```cpp
-// Godot 源码 - scene/main/node.cpp（Godot 4.3，节选）
+// Godot 源码 - scene/main/node.cpp（Godot 4.7.2，节选）
 Node *Node::get_node(const NodePath &p_path) const {
     Node *node = get_node_or_null(p_path);
     if (unlikely(!node)) {
@@ -552,15 +552,15 @@ SceneTree (场景树)
 **SceneTree 核心成员**：
 
 ```cpp
-// Godot 源码 - scene/main/scene_tree.h（Godot 4.3，节选）
+// Godot 源码 - scene/main/scene_tree.h（Godot 4.7.2，节选）
 class SceneTree : public MainLoop {
     // 场景树根节点（4.x 根节点是 Window）
     Window *root = nullptr;
 
     // 当前场景：注意是**节点实例**，不是 PackedScene 资源
     Node *current_scene = nullptr;
-    Node *pending_new_scene = nullptr;   // 等待挂载的新场景
-    Node *prev_scene = nullptr;          // 等待释放的旧场景
+    ObjectID pending_new_scene_id;      // 4.7.2 起是 ObjectID，不再是裸指针   // 等待挂载的新场景
+    ObjectID prev_scene_id;             // 4.7.2 起是 ObjectID，不再是裸指针          // 等待释放的旧场景
 
     // 场景组
     struct Group {
@@ -673,7 +673,7 @@ get_tree().quit()
 **源码分析**: 场景切换流程
 
 ```cpp
-// Godot 源码 - scene/main/scene_tree.cpp（Godot 4.3）
+// Godot 源码 - scene/main/scene_tree.cpp（Godot 4.7.2）
 Error SceneTree::change_scene_to_packed(const Ref<PackedScene> &p_scene) {
     ERR_FAIL_COND_V_MSG(p_scene.is_null(), ERR_INVALID_PARAMETER,
             "Can't change to a null scene. Use unload_current_scene() if you wish to unload it.");
@@ -750,7 +750,7 @@ print(get_tree().root.get_child_count())  # 新场景不在里面
 
 ### 3.4 场景树信号
 
-**SceneTree 提供的信号**（4.3 `SceneTree::_bind_methods()` 的全集）：
+**SceneTree 提供的信号**（4.7.2 `SceneTree::_bind_methods()` 的全集）：
 
 ```gdscript
 # 节点添加到场景树
@@ -901,7 +901,7 @@ add_child(enemy)
 **源码分析**: 实例化流程
 
 ```cpp
-// Godot 源码 - scene/resources/packed_scene.cpp（Godot 4.3）
+// Godot 源码 - scene/resources/packed_scene.cpp（Godot 4.7.2）
 Node *PackedScene::instantiate(GenEditState p_edit_state) const {
     // 真正的实例化工作交给 SceneState（它持有了打包好的节点数据）
     Node *s = state->instantiate((SceneState::GenEditState)p_edit_state);
@@ -923,7 +923,7 @@ Node *PackedScene::instantiate(GenEditState p_edit_state) const {
 }
 ```
 
-> 4.x 把"创建节点 / 恢复属性 / 恢复信号连接"这些细节都收进了 `SceneState::instantiate()`（`scene/resources/scene_state.cpp`），`PackedScene` 自己只负责持有 `SceneState` 并派发通知。想知道属性和连接具体怎么恢复，去看 `SceneState`。
+> 4.x 把"创建节点 / 恢复属性 / 恢复信号连接"这些细节都收进了 `SceneState::instantiate()`（`scene/resources/packed_scene.cpp`），`PackedScene` 自己只负责持有 `SceneState` 并派发通知。想知道属性和连接具体怎么恢复，去看 `SceneState`。
 
 **实例化流程**：
 
@@ -1314,7 +1314,7 @@ SceneTree (管理)
 
 - **官方文档**: [场景树](https://docs.godotengine.org/en/stable/tutorials/scripting/scene_tree.html)、[节点](https://docs.godotengine.org/en/stable/tutorials/scripting/scene_tree.html)
 - **类参考**: [Node](https://docs.godotengine.org/en/stable/classes/class_node.html)、[SceneTree](https://docs.godotengine.org/en/stable/classes/class_scenetree.html)、[PackedScene](https://docs.godotengine.org/en/stable/classes/class_packedscene.html)
-- **源码位置**: `scene/main/scene_tree.cpp`、`core/object/node.cpp`
+- **源码位置**: `scene/main/scene_tree.cpp`、`scene/main/node.cpp`
 
 ---
 

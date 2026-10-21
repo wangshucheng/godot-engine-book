@@ -169,7 +169,7 @@ Godot 4.x 提供了三种渲染器，每种针对不同的使用场景：
 
 ```gdscript
 # GDScript 示例：通过 RenderingServer 创建网格
-# 真实签名（servers/rendering_server.h）：
+# 真实签名（servers/rendering/rendering_server.h）：
 #   mesh_add_surface_from_arrays(mesh: RID, primitive: int, arrays: Array,
 #                               blend_shapes: Array = [], lods: Dictionary = {},
 #                               compress_format: int = 0)
@@ -192,10 +192,10 @@ RenderingServer.mesh_add_surface_from_arrays(
 
 #### Renderer 类
 
-每种渲染器都是 `RendererSceneRender` 抽象基类的具体实现（4.3 真实继承链）：
+每种渲染器都是 `RendererSceneRender` 抽象基类的具体实现（4.7.2 真实继承链）：
 
 ```cpp
-// Godot 4.3 源码 - servers/rendering/renderer_scene_render.h:43
+// Godot 4.7.2 源码 - servers/rendering/renderer_scene_render.h:41
 class RendererSceneRender {          // 普通抽象基类，不是 Singleton
 public:
     virtual void render_scene(const Ref<RenderSceneBuffers> &p_render_buffers,
@@ -347,7 +347,7 @@ print("移动端默认渲染器：", platform_method)
 print("GPU 适配器：", RenderingServer.get_video_adapter_name())
 ```
 
-> **不要用 `RenderingServer.supports_feature()`**：4.3 里 `RenderingServer.Features` 枚举只剩 `FEATURE_SHADERS` 与 `FEATURE_MULTITHREADED` 两个常量，且被 `#ifndef DISABLE_DEPRECATED` 包裹、官方注释为 "Never actually used"、文档里标注 `deprecated="This constant has not been used since Godot 3.0."`；对应的方法名是 `has_feature()`，不是 `supports_feature()`，且未导出为脚本方法。判断能力请直接读项目设置或查询具体类属性。
+> **不要用 `RenderingServer.supports_feature()`**：4.7.2 里 `RenderingServer.Features` 枚举只剩 `FEATURE_SHADERS` 与 `FEATURE_MULTITHREADED` 两个常量，且被 `#ifndef DISABLE_DEPRECATED` 包裹、官方注释为 "Never actually used"、文档里标注 `deprecated="This constant has not been used since Godot 3.0."`；对应的方法名是 `has_feature()`，不是 `supports_feature()`，且未导出为脚本方法。判断能力请直接读项目设置或查询具体类属性。
 
 ### 6.3 运行时适配
 
@@ -421,7 +421,7 @@ func adapt_graphics_quality():
 
 ### 8.1 三个角色：场景端、RenderingServer、渲染线程
 
-一次 3D 绘制在 Godot 4.3 里被切成三层职责：
+一次 3D 绘制在 Godot 4.7.2 里被切成三层职责：
 
 | 角色 | 载体（源码路径） | 线程 | 职责 |
 |------|------|------|------|
@@ -462,7 +462,7 @@ RendererViewport::_draw_3d()          renderer_viewport.cpp:248
 `RendererSceneRender::render_scene()` 的签名（`servers/rendering/renderer_scene_render.h`）是理解整条数据流的关键：它接收的**不是场景树**，而是一批**已经剔除、已经排序好的扁平列表**。
 
 ```cpp
-// Godot 4.3 源码 - servers/rendering/renderer_scene_render.h
+// Godot 4.7.2 源码 - servers/rendering/renderer_scene_render.h
 virtual void render_scene(const Ref<RenderSceneBuffers> &p_render_buffers,
 						  const CameraData *p_camera_data,
 						  const CameraData *p_prev_camera_data,
@@ -480,10 +480,10 @@ virtual void render_scene(const Ref<RenderSceneBuffers> &p_render_buffers,
 
 ### 8.3 渲染线程模型：三种 `RenderThreadMode`
 
-Godot 4.3 把"渲染要不要独立线程"做成了**项目设置**，取值来自 `OS::RenderThreadMode`：
+Godot 4.7.2 把"渲染要不要独立线程"做成了**项目设置**，取值来自 `OS::RenderThreadMode`：
 
 ```cpp
-// Godot 4.3 源码 - core/os/os.h:94
+// Godot 4.7.2 源码 - core/os/os.h:51
 enum RenderThreadMode {
 	RENDER_THREAD_UNSAFE,   // 0
 	RENDER_THREAD_SAFE,     // 1
@@ -494,35 +494,34 @@ enum RenderThreadMode {
 对应的项目设置是 `rendering/driver/threads/thread_model`（整数，默认 `OS::RENDER_THREAD_SAFE`）：
 
 ```cpp
-// Godot 4.3 源码 - main/main.cpp:2314
-// 默认 RENDER_THREAD_SAFE；编辑器与无线程构建被强制为 SAFE。
-if (rtm == -1) {
-	rtm = GLOBAL_DEF("rendering/driver/threads/thread_model", OS::RENDER_THREAD_SAFE);
+// Godot 4.7.2 源码 - main/main.cpp:2775
+// 默认 RENDER_THREAD_SAFE；编辑器与无线程构建被强制为不分线程。
+if (separate_thread_render == -1) {
+	separate_thread_render = (int)GLOBAL_DEF("rendering/driver/threads/thread_model", OS::RENDER_THREAD_SAFE) == OS::RENDER_SEPARATE_THREAD;
 }
 
-if (rtm >= 0 && rtm < 3) {
-	if (editor || project_manager) {
-		// Editor and project manager cannot run with rendering in a separate thread (they will crash on startup).
-		rtm = OS::RENDER_THREAD_SAFE;
+if (editor || project_manager) {
+	// Editor and project manager cannot run with rendering in a separate thread (they will crash on startup).
+	separate_thread_render = 0;
 	}
 #if !defined(THREADS_ENABLED)
-	rtm = OS::RENDER_THREAD_SAFE;
+	separate_thread_render = 0;
 #endif
-	OS::get_singleton()->_render_thread_mode = OS::RenderThreadMode(rtm);
+	OS::get_singleton()->_separate_thread_render = separate_thread_render;
 }
 ```
 
-**只有 `RENDER_SEPARATE_THREAD` 才会真的开一个渲染线程**（main/main.cpp:2866）：
+**只有 `RENDER_SEPARATE_THREAD` 才会真的开一个渲染线程**（main/main.cpp:3565）：
 
 ```cpp
 rendering_server = memnew(RenderingServerDefault(
-		OS::get_singleton()->get_render_thread_mode() == OS::RENDER_SEPARATE_THREAD));
+		OS::get_singleton()->is_separate_thread_rendering_enabled()));
 ```
 
 | 模式 | 取值 | 渲染跑在哪 | 说明 |
 |------|------|------------|------|
 | `RENDER_THREAD_UNSAFE` | 0 | 主线程 | 渲染与游戏逻辑同线程；对应"驱动允许非线程安全调用"的档位 |
-| `RENDER_THREAD_SAFE` | 1 | 主线程 | 同样不建独立线程，但走线程安全档位；**4.3 的默认值**，也是编辑器/无线程构建的强制值 |
+| `RENDER_THREAD_SAFE` | 1 | 主线程 | 同样不建独立线程，但走线程安全档位；**4.7.2 的默认值**，也是编辑器/无线程构建的强制值 |
 | `RENDER_SEPARATE_THREAD` | 2 | 独立渲染线程 | 渲染逻辑搬到 `WorkerThreadPool` 的专用任务上，与主线程通过命令队列通信 |
 
 > ⚠️ 三个名字最容易读错：**只有第 3 种才是"独立渲染线程"**。`SAFE` 与 `UNSAFE` 的差别在 RD 驱动层的线程安全档位（资源创建 / 上传与命令录制能否并发），而不是"有没有第二个线程"。这一档位在不同图形后端上的具体影响由驱动实现决定，官方文档未逐条展开，**以引擎源码与目标平台实测为准**。
@@ -532,7 +531,7 @@ rendering_server = memnew(RenderingServerDefault(
 `RenderingServerDefault` 用一条 `CommandQueueMT` 把主线程的请求排队给渲染线程：
 
 ```cpp
-// Godot 4.3 源码 - servers/rendering/rendering_server_default.cpp:248 / :371
+// Godot 4.7.2 源码 - servers/rendering/rendering_server_default.cpp:276 / :283
 void RenderingServerDefault::init() {
 	if (create_thread) {
 		print_verbose("RenderingServerWrapMT: Starting render thread");
@@ -597,7 +596,7 @@ void RenderingServerDefault::init() {
 | `RenderingServer.draw()` | 提交一帧绘制 | 独立线程模式下**立即返回**，不等待 GPU |
 
 ```cpp
-// Godot 4.3 源码 - servers/rendering/rendering_server_default.cpp:394
+// Godot 4.7.2 源码 - servers/rendering/rendering_server_default.cpp:435
 void RenderingServerDefault::sync() {
 	if (create_thread) {
 		command_queue.sync();
@@ -620,9 +619,9 @@ RenderingServer.call_on_render_thread(func():
 )
 ```
 
-> ⚠️ **C++ 侧与脚本侧的名字不一样**。`servers/rendering_server.h` 里与同步相关的公开虚函数是 `virtual void sync() = 0;`（第 1658 行）、`virtual bool has_changed() const = 0;` 与 `virtual void draw(bool p_swap_buffers = true, double frame_step = 0.0) = 0;`——**没有** `force_sync()` 这个虚函数。
+> ⚠️ **C++ 侧与脚本侧的名字不一样**。`servers/rendering/rendering_server.h` 里与同步相关的公开虚函数是 `virtual void sync() = 0;`（第 967 行）、`virtual bool has_changed() const = 0;` 与 `virtual void draw(bool p_swap_buffers = true, double frame_step = 0.0) = 0;`——**没有** `force_sync()` 这个虚函数。
 >
-> 📌 **脚本侧却确实有** `RenderingServer.force_sync()`：它在 `servers/rendering_server.cpp:3437` 被绑定到 `RenderingServer::sync`（`ClassDB::bind_method(D_METHOD("force_sync"), &RenderingServer::sync);`），而且**没有**标记废弃。它的作用是**冲刷渲染命令队列**（`command_queue.sync()` / `flush_all()`），让主线程已经下发的渲染命令在渲染线程上跑完。
+> 📌 **脚本侧却确实有** `RenderingServer.force_sync()`：它在 `servers/rendering/rendering_server.cpp:3572` 被绑定到 `RenderingServer::sync`（`ClassDB::bind_method(D_METHOD("force_sync"), &RenderingServer::sync);`），而且**没有**标记废弃。它的作用是**冲刷渲染命令队列**（`command_queue.sync()` / `flush_all()`），让主线程已经下发的渲染命令在渲染线程上跑完。
 >
 > ⚠️ 但它**不等 GPU 完成**——要等 GPU 仍需 `RenderingDevice.sync()`（**仅本地 RD 可用**，见第 12 篇）。两者都有明确的性能代价。
 
@@ -631,7 +630,7 @@ RenderingServer.call_on_render_thread(func():
 VSync 属于**显示层**，不属于渲染线程模型：
 
 ```cpp
-// Godot 4.3 源码 - servers/display_server.h:71
+// Godot 4.7.2 源码 - servers/display/display_server_enums.h:263
 // Keep the VSyncMode enum values in sync with the `display/window/vsync/vsync_mode`
 // project setting hint.
 enum VSyncMode {
@@ -665,16 +664,16 @@ enum VSyncMode {
 2. `TIME_PHYSICS_PROCESS` 是**一个物理帧**的耗时（不是一帧里的物理步数总和的墙钟时间口径之外的另一种定义），与 `TIME_PROCESS` 不是同一个量纲。
 3. `TIME_PROCESS` 与 `TIME_FPS` 的关系是**倒数关系但不是严格互推**：`TIME_FPS` "is only updated once per second, even if queried more often"。
 
-**为什么还需要 GPU 侧的数据**：因为 `TIME_PROCESS` 看不见 GPU。要看 GPU 侧每一步的耗时，4.3 的路径是：
+**为什么还需要 GPU 侧的数据**：因为 `TIME_PROCESS` 看不见 GPU。要看 GPU 侧每一步的耗时，4.7.2 的路径是：
 
 | 手段 | 层级 | 说明 |
 |------|------|------|
 | 编辑器 **Visual Profiler** | 编辑器 | 逐 pass 显示 GPU 耗时，底层读的是 `RenderingServer::get_frame_profile()` |
-| `RenderingServer.get_frame_profile()` | C++ | `servers/rendering_server.h` 的虚函数，返回 `Vector<FrameProfileArea>` |
-| `RenderingServer::FrameProfileArea` | C++ | 结构体只有三个字段：`String name; double gpu_msec; double cpu_msec;` |
+| `RenderingServer.get_frame_profile()` | C++ | `servers/rendering/rendering_server.h` 的虚函数，返回 `Vector<FrameProfileArea>` |
+| `RenderingServerTypes::FrameProfileArea` | C++ | 结构体只有三个字段：`String name; double gpu_msec; double cpu_msec;`（4.7.2 起在 `servers/rendering/rendering_server_types.h`） |
 | `RenderingServer.get_rendering_info()` / `viewport_get_render_info()` | GDScript | 拿 draw call、对象数等**统计量**（不是耗时） |
 
-> ⚠️ **`get_frame_profile()` 在 Godot 4.7.2 里依然没有导出为 GDScript 方法**。`doc/classes/RenderingServer.xml` 里搜不到 `get_frame_profile`、`FrameProfileArea`、`set_frame_profiling_enabled` 中的任何一个——它只在 C++ 层存在（`servers/rendering_server.h`），编辑器 Visual Profiler 是它的主要消费者。想在脚本里拿 GPU 侧数据，4.7.2 的公开入口是 `get_rendering_info()` / `viewport_get_render_info()` 这类统计接口。
+> ⚠️ **`get_frame_profile()` 在 Godot 4.7.2 里依然没有导出为 GDScript 方法**。`doc/classes/RenderingServer.xml` 里搜不到 `get_frame_profile`、`FrameProfileArea`、`set_frame_profiling_enabled` 中的任何一个——它只在 C++ 层存在（`servers/rendering/rendering_server.h`），编辑器 Visual Profiler 是它的主要消费者。想在脚本里拿 GPU 侧数据，4.7.2 的公开入口是 `get_rendering_info()` / `viewport_get_render_info()` 这类统计接口。
 
 ### 8.9 相关项目设置速查
 
@@ -778,7 +777,7 @@ print("缓冲：", Performance.RENDER_BUFFER_MEM_USED / 1024.0 / 1024.0, " MB")
 **第 2 层：C++ 层的逐 pass 耗时**（`FrameProfileArea`）
 
 ```cpp
-// Godot 4.3 源码 - servers/rendering_server.h
+// Godot 4.7.2 源码 - servers/rendering/rendering_server_types.h
 // 结构体只有三个字段：一个显示名、GPU 耗时（毫秒）、CPU 耗时（毫秒）。
 struct FrameProfileArea {
     String name;
@@ -786,15 +785,15 @@ struct FrameProfileArea {
     double cpu_msec;
 };
 
-// 取当前帧的逐区域耗时
-virtual Vector<FrameProfileArea> get_frame_profile() const = 0;
+// 取当前帧的逐区域耗时（4.7.2 起这个结构体在 RenderingServerTypes 命名空间下）
+virtual Vector<RenderingServerTypes::FrameProfileArea> get_frame_profile() = 0;
 ```
 
 > ⚠️ **`get_frame_profile()` 在 Godot 4.7.2 里依然没有导出为 GDScript 方法**（`doc/classes/RenderingServer.xml` 里搜不到它）。它在 C++ 层存在，**编辑器 Visual Profiler 是它的主要消费者**。想在脚本里拿 GPU 侧数据，4.7.2 的公开入口只有第 1 层那些计数器。
 
 **第 3 层：编辑器可视化开关**（`Viewport.debug_draw`）
 
-`Viewport.DebugDraw` 在 4.3 共有 **27 项**，常用的几项：
+`Viewport.DebugDraw` 在 4.7.2 共有 **29 项**，常用的几项：
 
 | 枚举值 | 看什么 |
 |--------|--------|
@@ -865,7 +864,7 @@ virtual Vector<FrameProfileArea> get_frame_profile() const = 0;
 | GPU 粒子 | ✅ | ✅ | ❌（回退为 CPU 粒子） |
 | 目标平台 | 桌面 / 高端主机 | 移动 / 中端桌面 | Web / 老旧设备 |
 
-> ⚠️ 这张表的"支持"指的是**4.3 引擎自身提供了该特性的实现**。个别特性（尤其是屏幕空间效果）的 Compatibility 支持状态在不同 4.x 小版本间有变化，上线前请以目标版本源码与目标平台实测为准。表中"全局光照"一行指的是**可用的 GI 手段集合**，不表示各手段在每种渲染器下的行为完全一致。
+> ⚠️ 这张表的"支持"指的是**4.7.2 引擎自身提供了该特性的实现**。个别特性（尤其是屏幕空间效果）的 Compatibility 支持状态在不同 4.x 小版本间有变化，上线前请以目标版本源码与目标平台实测为准。表中"全局光照"一行指的是**可用的 GI 手段集合**，不表示各手段在每种渲染器下的行为完全一致。
 
 > 💡 **从这张表能直接读出的三条结论**：
 > 1. **Mobile 砍掉的是"屏幕空间 + 体积"这一类依赖视差与历史帧的特效**，不是砍掉阴影或烘焙光照 —— 所以 Mobile 上的画面差异主要在"远处的空气感"，几何与直接光基本一致。
@@ -908,12 +907,12 @@ virtual Vector<FrameProfileArea> get_frame_profile() const = 0;
 | CPU 侧每帧构建 | 遍历所有可见灯做投影与分桶，是实打实的 CPU 开销 |
 | 数据上传 | 簇 → 光源列表要作为存储缓冲上传到 GPU |
 | 簇内列表有容量 | 单个簇能记录的光源数有上限，超出部分按距离/能量裁剪 —— 极端密集布光时仍会"丢灯" |
-| 深度切片的分布 | 近处切得密、远处切得疏是这类方案的标准做法；具体层数与分布曲线由 `cluster_builder_rd.h` 的实现决定（以 4.3 源码为准） |
+| 深度切片的分布 | 近处切得密、远处切得疏是这类方案的标准做法；具体层数与分布曲线由 `cluster_builder_rd.h` 的实现决定（以 4.7.2 源码为准） |
 
 **源码锚点**：
 
 ```cpp
-// Godot 4.3 源码 - servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.h
+// Godot 4.7.2 源码 - servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.h
 class RenderForwardClustered : public RendererSceneRenderRD {
 	// 簇（光源集合）的构建器
 	ClusterBuilderRD *cluster_builder = nullptr;
@@ -992,7 +991,7 @@ Compatibility 渲染器**完全绕开 `RenderingDevice`**：
 | 泛光（`Environment.glow_enabled`） | ✅ 可用 | 走 GL 后处理 |
 | 深度雾 / 高度雾 | ✅ 可用 | 走 GL 雾 |
 
-> 💡 **一条实用的判断法**：凡是**需要读回上一帧或深度缓冲做屏幕空间计算**的特性（SSR / SSIL / SSAO / 体积雾），在 Compatibility 下**完全没有**实现——`RasterizerSceneGLES3::environment_set_ssao_quality()` 在 4.3 是空函数体，SSAO / SSIL / SDFGI / 体积雾全部如此；凡是**在 CPU 侧或单次绘制内就能算完**的特性（阴影、烘焙光照、雾、泛光），都还在。迁移到 Web 时，按这条线评估工作量最快。
+> 💡 **一条实用的判断法**：凡是**需要读回上一帧或深度缓冲做屏幕空间计算**的特性，在 Compatibility 下大多**没有**实现——4.7.2 里只有 **SSAO 落地了**（`RasterizerSceneGLES3::environment_set_ssao_quality()` 有真实实现），SSR / SSIL / SDFGI / 体积雾仍然缺失（启用时引擎会直接告警「only available when using the Forward+ renderer」）；凡是**在 CPU 侧或单次绘制内就能算完**的特性（阴影、烘焙光照、雾、泛光），都还在。迁移到 Web 时，按这条线评估工作量最快。
 
 ### 9.7 换渲染器时，哪些东西会变
 

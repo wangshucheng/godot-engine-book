@@ -110,7 +110,7 @@ func _exit_tree():
 **源码位置**: `scene/main/node.h`
 
 ```cpp
-// Godot 源码简化版（Godot 4.3，scene/main/node.h）
+// Godot 源码简化版（Godot 4.7.2，scene/main/node.h）
 class Node : public Object {
     // 节点树相关
     Node *parent = nullptr;
@@ -256,15 +256,15 @@ player.AddComponent<PlayerController>();
 **源码位置**: `scene/main/scene_tree.h`
 
 ```cpp
-// Godot 源码简化版（Godot 4.3，scene/main/scene_tree.h）
+// Godot 源码简化版（Godot 4.7.2，scene/main/scene_tree.h）
 class SceneTree : public MainLoop {
     // 场景树根节点（4.x 根节点是 Window）
     Window *root = nullptr;
 
     // 当前场景（已挂载的节点实例，不是资源）
     Node *current_scene = nullptr;
-    Node *pending_new_scene = nullptr;   // 待挂载的新场景
-    Node *prev_scene = nullptr;
+    ObjectID pending_new_scene_id;      // 4.7.2 起是 ObjectID，不再是裸指针   // 待挂载的新场景
+    ObjectID prev_scene_id;             // 4.7.2 起是 ObjectID，不再是裸指针
 
     // 场景组
     struct Group {
@@ -982,7 +982,7 @@ GPU 执行渲染
 
 - **官方文档**: [Godot 架构概览](https://docs.godotengine.org/en/stable/about/getting_started/step_by_step/architecture.html)、[Unity 与 Godot 的差异](https://docs.godotengine.org/en/stable/tutorials/best_practices/project_organization.html)
 - **类参考**: [Node](https://docs.godotengine.org/en/stable/classes/class_node.html)、[Object](https://docs.godotengine.org/en/stable/classes/class_object.html)、[SceneTree](https://docs.godotengine.org/en/stable/classes/class_scenetree.html)
-- **源码位置**: `core/object/object.h`、`core/object/node.h`、`scene/main/scene_tree.h`
+- **源码位置**: `core/object/object.h`、`scene/main/node.h`、`scene/main/scene_tree.h`
 
 ---
 

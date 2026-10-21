@@ -39,7 +39,7 @@
 **源码位置**: `core/variant/variant.h`
 
 ```cpp
-// Godot 源码 - core/variant/variant.h（Godot 4.3，节选）
+// Godot 源码 - core/variant/variant.h（Godot 4.7.2，节选）
 class Variant {
 public:
 	// If this changes the table in variant_op must be updated
@@ -128,7 +128,7 @@ private:
 - **`RID`** —— 渲染服务器等服务器层的资源句柄；
 - **10 种 `PACKED_*_ARRAY`** —— 与 `Array` 语义相同但内存连续的打包数组。
 
-> ⚠️ **Variant 不是"最大 20 字节"**。4.3 源码里的原话是：
+> ⚠️ **Variant 不是"最大 20 字节"**。4.7.2 源码里的原话是：
 > *"Variant takes 24 bytes when real_t is float, and 40 bytes if double. It only allocates extra memory for AABB/Transform2D (24, 48 if double), Basis/Transform3D (48, 96 if double), Projection (64, 128 if double), and PackedArray/Array/Dictionary (platform-dependent)."*
 >
 > 也就是说：小的类型直接内联在联合体里，大类型（AABB / Transform / Projection）与容器（Array / Dictionary / Packed*Array）则改为**堆上分配 + 联合体里存指针**。
@@ -226,10 +226,10 @@ extends Resource
 
 ### 3.2 属性序列化
 
-**源码位置**: `core/object/object.h`
+**源码位置**: `core/variant/variant.h`（4.7.2 起 `PropertyInfo` 从 `core/object/object.h` 移到了这里）
 
 ```cpp
-// Godot 源码 - core/object/object.h（Godot 4.3）
+// Godot 源码 - core/variant/variant.h（Godot 4.7.2）
 struct PropertyInfo {
 	Variant::Type type = Variant::NIL;
 	String name;
@@ -333,7 +333,7 @@ shape = SubResource("SphereShape3D_body")
 >
 > 1. **`SubResource()` 引用必须先有定义**。`mesh = SubResource("SphereMesh")` 只有在文件里存在 `[sub_resource type="SphereMesh" id="SphereMesh"]` 块时才有效，否则加载会直接失败。
 > 2. **`material/0` 是"属性路径"写法，表示数组的第 0 个元素**，它的类型由属性本身决定——`MeshInstance3D.material` 是 `Material` 数组，**不能**塞进一个 `Texture2D`。把纹理挂到网格上，正确路径是"先建一个 `StandardMaterial3D` 子资源，用它的 `albedo_texture` 引用纹理，再让 `SphereMesh.material` 指向这个材质子资源"。
-> 3. **`load_steps` 是给加载器看的资源计数提示**。4.3 的 `ResourceFormatSaverTextInstance::save()` 里写得很直白：`int load_steps = saved_resources.size() + external_resources.size();`——即**子资源数 + 外部资源数**，并且只有 `load_steps > 1` 时才会写进文件头。上面这个示例是 2 个外部资源 + 3 个子资源 = 5。
+> 3. **`load_steps` 是给加载器看的资源计数提示**。4.7.2 的 `ResourceFormatSaverTextInstance::save()` 里写得很直白：`int load_steps = saved_resources.size() + external_resources.size();`——即**子资源数 + 外部资源数**，并且只有 `load_steps > 1` 时才会写进文件头。上面这个示例是 2 个外部资源 + 3 个子资源 = 5。
 
 ### 4.2 .tres 格式（资源）
 

@@ -411,10 +411,10 @@ $OutdoorWall.layers = 1 << 1        # 第 2 层
 | **SDFGI** | `Environment.sdfgi_enabled` | 实时 | 符号距离场，随相机运行时更新，**仅 Forward+ 支持** |
 | **SSIL** | `Environment.ssil_enabled` | 实时（屏幕空间） | 屏幕空间间接光，仅 Forward+ 支持 |
 
-五个 GI 类的注册点在场景类型的注册代码里（`scene/register_scene_types.cpp:575-579` 附近）：
+五个 GI 类的注册点在场景类型的注册代码里（`scene/register_scene_types.cpp:658-662` 附近）：
 
 ```cpp
-// Godot 4.3 源码 - scene/register_scene_types.cpp:575-579 附近
+// Godot 4.7.2 源码 - scene/register_scene_types.cpp:658-662 附近
 // 注册的五个 GI 相关类：
 //   VoxelGI / VoxelGIData    —— 体素 GI（节点 + 数据资源）
 //   LightmapGI / LightmapGIData —— 光照贴图 GI（节点 + 数据资源）
@@ -901,7 +901,7 @@ func _ready() -> void:
 
 - **官方文档**: [3D 灯光与阴影](https://docs.godotengine.org/en/stable/tutorials/3d/lights_and_shadows.html)、[使用 Lightmap 全局光照](https://docs.godotengine.org/en/stable/tutorials/3d/global_illumination/using_lightmap_gi.html)、[使用 VoxelGI](https://docs.godotengine.org/en/stable/tutorials/3d/global_illumination/using_voxel_gi.html)
 - **类参考**: [Light3D](https://docs.godotengine.org/en/stable/classes/class_light3d.html)、[DirectionalLight3D](https://docs.godotengine.org/en/stable/classes/class_directionallight3d.html)、[LightmapGI](https://docs.godotengine.org/en/stable/classes/class_lightmapgi.html)、[VoxelGI](https://docs.godotengine.org/en/stable/classes/class_voxelgi.html)、[LightmapProbe](https://docs.godotengine.org/en/stable/classes/class_lightmapprobe.html)、[ReflectionProbe](https://docs.godotengine.org/en/stable/classes/class_reflectionprobe.html)、[Environment](https://docs.godotengine.org/en/stable/classes/class_environment.html)
-- **源码位置**: `scene/3d/lightmap_gi.h/.cpp`、`scene/3d/voxel_gibake.h`、`scene/register_scene_types.cpp`（五个 GI 类的注册）、`servers/rendering/renderer_rd/`（阴影贴图分配与渲染）
+- **源码位置**: `scene/3d/lightmap_gi.h/.cpp`、`scene/3d/voxel_gi.h`、`scene/register_scene_types.cpp`（五个 GI 类的注册）、`servers/rendering/renderer_rd/`（阴影贴图分配与渲染）
 
 ---
 

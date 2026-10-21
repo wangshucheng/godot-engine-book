@@ -15,7 +15,7 @@
 
 **源码位置**: `core/object/object.h`
 
-下面是 `Object` 类中真实存在的关键成员（节选自 Godot 4.3 源码，字段名与源码一致）：
+下面是 `Object` 类中真实存在的关键成员（节选自 Godot 4.7.2 源码，字段名与源码一致）：
 
 ```cpp
 class Object {
@@ -42,8 +42,9 @@ class Object {
     ObjectID _instance_id;               // 实例 ID，全局唯一
     bool _block_signals = false;         // block_signals() 的开关
     bool _emitting = false;              // 正在发射信号
-    bool type_is_reference = false;      // 是否为引用计数类型（friend class RefCounted）
-    bool _is_queued_for_deletion = false;// queue_delete() 置位
+    bool _is_queued_for_deletion : 1;   // queue_delete() 置位（4.7.2 起是位域，不再是独立 bool）
+    // 4.7.2 起「是否引用计数类型」不再靠成员标志位，而是 is_ref_counted()
+    // （内部查 _has_ancestry(AncestralClass::REF_COUNTED)）
 
     // 脚本绑定
     ScriptInstance *script_instance = nullptr;  // GDScript/C# 实例数据
@@ -420,7 +421,7 @@ ClassDB::register_abstract_class<T>(); // 抽象类（无 new()）
 ClassDB::register_class<T>(true);      // 虚拟类（仅作基类，不可实例化）
 ```
 
-> ⚠️ **没有 `ClassDB::register_virtual_class<T>()` 这个函数**。4.3 `core/object/class_db.h` 里与注册相关的模板函数只有 `register_class()`（第二个参数 `p_virtual` 默认为 `false`）、`register_abstract_class()`、`register_internal_class()`、`register_custom_instance_class()`。引擎内部实际用的是一组宏：
+> ⚠️ **没有 `ClassDB::register_virtual_class<T>()` 这个函数**。4.7.2 `core/object/class_db.h` 里与注册相关的模板函数是 `register_class()`（第二个参数 `p_virtual` 默认为 `false`）、`register_abstract_class()`、`register_internal_class()`、`register_runtime_class()`、`register_custom_instance_class()`。引擎内部实际用的是一组宏：
 >
 > | 宏 | 等价调用 | 用途 |
 > |----|---------|------|

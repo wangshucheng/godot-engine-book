@@ -420,7 +420,7 @@ func get_plugin_version(plugin_dir_name: String) -> String:
 - **类参考**: <https://docs.godotengine.org/en/stable/classes/class_editorscript.html>
 - **类参考**: <https://docs.godotengine.org/en/stable/classes/class_editorplugin.html>
 - **类参考**: <https://docs.godotengine.org/en/stable/classes/class_editorselection.html>
-- **源码位置**: `editor/editor_script.cpp`, `editor/plugins/editor_plugin.cpp`
+- **源码位置**: `editor/script/editor_script.cpp`, `editor/plugins/editor_plugin.cpp`
 
 ---
 

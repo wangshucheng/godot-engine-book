@@ -33,9 +33,9 @@ CollisionObject2D（抽象：承载形状、层/掩码、区域监测）
 
 ### 1.3 2D 物理服务器：源码地图
 
-2D 物理不是"3D 物理的 2D 版"，而是一套完全独立的实现。引擎源码在 `servers/physics_2d/`，与 3D 的 `servers/physics_3d/` **不共享任何代码**（第 23 篇讲的 `GodotPhysics3D` 在 2D 侧没有对应物）。4.3 的文件分工：
+2D 物理不是"3D 物理的 2D 版"，而是一套完全独立的实现。引擎源码在 `modules/godot_physics_2d/`，与 3D 的 `modules/godot_physics_3d/` **不共享任何代码**（第 23 篇讲的 `GodotPhysics3D` 在 2D 侧没有对应物）。4.7.2 的文件分工：
 
-| 源码文件（`servers/physics_2d/`） | 职责 |
+| 源码文件（`modules/godot_physics_2d/`） | 职责 |
 |---|---|
 | `godot_physics_server_2d.h/cpp` | `PhysicsServer2D` 实现，管理 space / body / area / shape / joint 的 RID 生命周期 |
 | `godot_space_2d.h/cpp` | 一个物理世界（space）：物体表、岛屿划分、每帧步进与休眠调度 |
@@ -50,7 +50,7 @@ CollisionObject2D（抽象：承载形状、层/掩码、区域监测）
 宽相位在 4.3 里是**接口 + 工厂**，而不是写死的一种结构：
 
 ```cpp
-// servers/physics_2d/godot_broad_phase_2d.h（4.3）
+// modules/godot_physics_2d/godot_broad_phase_2d.h（4.3）
 class GodotBroadPhase2D {
 public:
 	typedef GodotBroadPhase2D *(*CreateFunction)();
@@ -74,7 +74,7 @@ public:
 窄相位的入口是 `GodotCollisionSolver2D::solve()`，它对两个形状做扫掠求解：
 
 ```cpp
-// servers/physics_2d/godot_collision_solver_2d.h（4.3）
+// modules/godot_physics_2d/godot_collision_solver_2d.h（4.3）
 static bool solve(const GodotShape2D *p_shape_A, const Transform2D &p_transform_A,
 		const Vector2 &p_motion_A, const GodotShape2D *p_shape_B, const Transform2D &p_transform_B,
 		const Vector2 &p_motion_B, CallbackResult p_result_callback, void *p_userdata,
@@ -743,7 +743,7 @@ func _physics_process(delta: float) -> void:
 
 ## 九、总结
 
-2D 物理与 3D 共享同一套设计语言，但类型独立、源码独立（`servers/physics_2d/` vs `servers/physics_3d/`）：
+2D 物理与 3D 共享同一套设计语言，但类型独立、源码独立（`modules/godot_physics_2d/` vs `modules/godot_physics_3d/`）：
 
 - **选型**：`CharacterBody2D` 驱动角色、`RigidBody2D` 做力学响应、`StaticBody2D`/`AnimatableBody2D` 做场景碰撞、`Area2D` 做事件区
 - **手感**：土狼时间 + 跳跃缓冲 + 可变跳跃是 2D 角色的标准三件套；运动参数见 3.5 调参表
@@ -772,7 +772,7 @@ func _physics_process(delta: float) -> void:
 - **Area2D**: <https://docs.godotengine.org/en/stable/classes/class_area2d.html>
 - **TileMapLayer**: <https://docs.godotengine.org/en/stable/classes/class_tilemaplayer.html>
 - **AnimatableBody2D**: <https://docs.godotengine.org/en/stable/classes/class_animatablebody2d.html>
-- **源码位置**: `servers/physics_2d/`（`godot_broad_phase_2d.h`、`godot_collision_solver_2d.h`、`godot_body_pair_2d.cpp`）、`scene/2d/physics/`
+- **源码位置**: `modules/godot_physics_2d/`（`godot_broad_phase_2d.h`、`godot_collision_solver_2d.h`、`godot_body_pair_2d.cpp`）、`scene/2d/physics/`
 
 ---
 

@@ -603,11 +603,11 @@ void process() {
 | `ACTIVE` | bool | 粒子是否存活；在 `process()` 里写 `ACTIVE = false` 立刻回收该粒子 |
 | `LIFETIME` | float | 剩余寿命 |
 | `DELTA` | float | 距上一帧的时间增量 |
-> ⚠️ `FLAG_DISABLE_Z` / `FLAG_ROTATE_Y` / `FLAG_ALIGN_Y` **不是粒子着色器内置量**——4.3 的 `particles` 着色器里没有它们（`servers/rendering/shader_types.cpp:359-363`、`:393-397` 只有 `FLAG_EMIT_*` 与 `RESTART_*`）。
+> ⚠️ `FLAG_DISABLE_Z` / `FLAG_ROTATE_Y` / `FLAG_ALIGN_Y` **不是粒子着色器内置量**——4.7.2 的 `particles` 着色器里没有它们（`servers/rendering/shader_types.cpp:393-397`、`:398-400` 只有 `FLAG_EMIT_*` 与 `RESTART_*`）。
 >
 > 它们是 `ParticleProcessMaterial` 上的**过程材质属性**：`particle_flag_disable_z` / `particle_flag_rotate_y` / `particle_flag_align_y`，对应枚举 `ParticleProcessMaterial.PARTICLE_FLAG_DISABLE_Z` / `_ROTATE_Y` / `_ALIGN_Y_TO_VELOCITY`——见本章过程材质一节。
 
-配套的 `GPUParticles3D` 侧常量（4.3 的类常量，描述 `start()` 里哪些输出会被写回粒子状态）：
+配套的 `GPUParticles3D` 侧常量（4.7.2 的类常量，描述 `start()` 里哪些输出会被写回粒子状态）：
 
 | 常量 | 含义 |
 |------|------|

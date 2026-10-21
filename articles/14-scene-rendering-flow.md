@@ -29,7 +29,7 @@
 7. 显示
 ```
 
-> 📌 上面的流程图是**概念示意**（只说明"哪些步骤先做、哪些步骤可以并行"）。**Godot 4.3 的真实 pass 顺序**（深度预通道 → 阴影 → 不透明 → 天空 → 透明 → SSAO / SSIL / SSR → SDFGI / 体积雾 → Glow → DOF → 色调映射 → 抗锯齿 → 输出，每一步都标注了源码函数与 Visual Profiler 里的时间条）见 **第五章「深度预通道、OIT 与真实 Pass 顺序」**。
+> 📌 上面的流程图是**概念示意**（只说明"哪些步骤先做、哪些步骤可以并行"）。**Godot 4.7.2 的真实 pass 顺序**（准备场景 → SDFGI → 深度预通道 → 阴影 / GI → SSAO / SSIL / SSR → 体积雾 → 不透明 → 天空 → 透明 → 后处理链 → 色调映射 → 抗锯齿 → 输出，每一步都标注了源码函数与 Visual Profiler 里的时间条）见 **第五章「深度预通道、OIT 与真实 Pass 顺序」**。
 
 > Godot 4.x **没有** Godot 3.x 那种"自动合批器"：渲染列表里每个可见表面各自提交一次绘制，Draw Call 的削减靠"共享材质 + MultiMesh 实例化 + 可见性范围"在**场景组织**层面完成，而不是渲染器在运行时帮你把物体合并。
 
@@ -38,7 +38,7 @@
 **源码位置**：`servers/rendering/renderer_scene_render.h`（抽象基类）与 `servers/rendering/renderer_scene_render.cpp`；具体实现在 `servers/rendering/renderer_rd/` 下。
 
 ```cpp
-// Godot 4.3 源码 - servers/rendering/renderer_scene_render.h:43
+// Godot 4.7.2 源码 - servers/rendering/renderer_scene_render.h:41
 class RendererSceneRender {
 private:
 	RendererEnvironmentStorage environment_storage;
@@ -80,24 +80,25 @@ public:
 | 阶段 | 源码入口 | 线程 | 产出 |
 |------|----------|------|------|
 | **剔除 + 排序** | `RendererSceneCull::render_camera()`（`servers/rendering/renderer_scene_cull.cpp:2549`） | 主线程 | `PagedArray<RenderGeometryInstance *>` 等扁平列表 |
-| **渲染列表 + 录制** | `RendererSceneRenderRD::render_scene()`（`servers/rendering/renderer_scene_render_rd.cpp:1108`） | 渲染线程 | `RenderingDevice` 命令缓冲 |
+| **渲染列表 + 录制** | `RendererSceneRenderRD::render_scene()`（`servers/rendering/renderer_rd/renderer_scene_render_rd.cpp:1359`） | 渲染线程 | `RenderingDevice` 命令缓冲 |
 | **GPU 提交** | `RenderingDevice` → `RenderingDeviceDriver` | 渲染线程 | Vulkan / D3D12 / Metal 命令 |
 
 场景端这一侧再细分是三个连续调用：
 
 ```cpp
-// Godot 4.3 源码 - servers/rendering/renderer_scene_cull.cpp
-// :2549  render_camera()：一帧一次的入口
-// :3028  _render_scene()：把剔除结果组装成渲染器要的列表
-// :3414  scene_render->render_scene(...)：交给渲染器
+// Godot 4.7.2 源码 - servers/rendering/renderer_scene_cull.cpp
+// :2670  render_camera()：一帧一次的入口
+// :3297  _render_scene()：把剔除结果组装成渲染器要的列表
+// :3706  scene_render->render_scene(...)：交给渲染器
 ```
 
 渲染器这一侧的落点是：
 
 ```cpp
-// Godot 4.3 源码 - servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.cpp:1570
-void RenderForwardClustered::_render_scene(const Ref<RenderSceneBuffers> &p_render_buffers, ...) {
-	// 本章第五节列出的所有 RENDER_TIMESTAMP 标记都在这个函数体里
+// Godot 4.7.2 源码 - servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.cpp:1704
+void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Color &p_default_bg_color) {
+	// 第五节表里的大部分标记在这个函数体里；
+	// 阴影 / GI / SSAO / SSIL / SSR / 体积雾那一组在 _pre_opaque_render()（:1517）里
 }
 ```
 
@@ -217,7 +218,7 @@ Godot 4.3 的剔除不是"一个开关"，而是**三个互相独立的层**。�
 排序发生在 `RenderForwardClustered::RenderList` 里（`servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.h`），用两个 64 位排序键打包成 `sort_key1` / `sort_key2`：
 
 ```cpp
-// Godot 4.3 源码 - render_forward_clustered.h
+// Godot 4.7.2 源码 - render_forward_clustered.h
 struct SortByKey {
 	_FORCE_INLINE_ bool operator()(const GeometryInstanceSurfaceDataCache *A,
 									const GeometryInstanceSurfaceDataCache *B) const {
@@ -277,7 +278,7 @@ struct SortByReverseDepthAndPriority {   // 透明物体
 
 ## 四、减少 Draw Call 的手段
 
-> Godot 4.x 的渲染器**没有**运行时合批器（Godot 3.x 的 batcher 已移除）。`servers/rendering/renderer_canvas_cull.cpp`、`renderer_canvas_render_rd.cpp`、`renderer_scene_render_rd.cpp` 与 `servers/rendering_server.h` 中 "batch" 的命中数**全部为 0**。Draw Call 的削减要在**场景组织**层面完成。
+> Godot 4.x 的渲染器**没有**运行时合批器（Godot 3.x 的 batcher 已移除）。`servers/rendering/renderer_canvas_cull.cpp`、`renderer_canvas_render_rd.cpp`、`renderer_scene_render_rd.cpp` 与 `servers/rendering/rendering_server.h` 中 "batch" 的命中数**全部为 0**。Draw Call 的削减要在**场景组织**层面完成。
 
 ### 4.1 Godot 4 的等价手段
 
@@ -387,7 +388,7 @@ mm.instance_count = 100
 
 ## 五、深度预通道、OIT 与真实 Pass 顺序
 
-第 1 节那张"1. 场景更新 → 2. 可见性剔除 → …→ 7. 显示"的流程图，是通用引擎的**概念示意**，不是 Godot 的实现。本章把它换成以 **Godot 4.3 源码为锚**的真实顺序。
+第 1 节那张"1. 场景更新 → 2. 可见性剔除 → …→ 7. 显示"的流程图，是通用引擎的**概念示意**，不是 Godot 的实现。本章把它换成以 **Godot 4.7.2 源码为锚**的真实顺序。
 
 本章的顺序不是推演出来的，而是直接来自源码里的 `RENDER_TIMESTAMP()` 标记 —— 这些标记正是编辑器 **Visual Profiler** 里显示的条目名。所以下面每一行你都能在 Profiler 里找到同名的时间条。
 
@@ -410,12 +411,12 @@ mm.instance_count = 100
 它在源码里的落点非常清楚：
 
 ```cpp
-// Godot 4.3 源码 - servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.cpp:1931
+// Godot 4.7.2 源码 - servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.cpp:2123
 RENDER_TIMESTAMP("GI + Render Depth Pre-Pass (Parallel)");   // 与 GI 更新并行
 ...
-RENDER_TIMESTAMP("Render Depth Pre-Pass");                   // :1933
+RENDER_TIMESTAMP("Render Depth Pre-Pass");                   // :2125
 ...
-RENDER_TIMESTAMP("Resolve Depth Pre-Pass (MSAA)");           // :1954 多重采样下做 resolve
+RENDER_TIMESTAMP("Resolve Depth Pre-Pass (MSAA)");           // :2146 多重采样下做 resolve
 ```
 
 它解决的问题可以用一句话概括：**没有深度预通道时，一层楼板后面的一百个室内物件会各自跑一遍完整 PBR 着色，然后被楼板全部覆盖——这些着色全部是浪费的。** 深度预通道把"被覆盖"这件事提前到最廉价的阶段判定。
@@ -423,16 +424,16 @@ RENDER_TIMESTAMP("Resolve Depth Pre-Pass (MSAA)");           // :1954 多重采�
 **哪些材质会进深度预通道？** 由 `SceneShaderForwardClustered` 的 `ShaderData` 决定：
 
 ```cpp
-// Godot 4.3 源码 - servers/rendering/renderer_rd/forward_clustered/scene_shader_forward_clustered.cpp:64
+// Godot 4.7.2 源码 - servers/rendering/renderer_rd/forward_clustered/scene_shader_forward_clustered.cpp:66
 uses_depth_prepass_alpha = false;
 ...
-// :118  把着色器里的 render_mode 开关映射到材质标志
+// :130  把着色器里的 render_mode 开关映射到材质标志
 actions.render_mode_flags["depth_prepass_alpha"] = &uses_depth_prepass_alpha;
 ...
-// :711  对应的 shader 宏
+// :868  对应的 shader 宏
 actions.render_mode_defines["depth_prepass_alpha"] = "#define USE_OPAQUE_PREPASS\n";
 ...
-// :421  最终判定：这个材质要不要进深度预通道
+// :259  最终判定：这个材质要不要进深度预通道
 return !has_alpha || (uses_depth_prepass_alpha && !(depth_draw == DEPTH_DRAW_DISABLED || depth_test == DEPTH_TEST_DISABLED));
 ```
 
@@ -512,7 +513,7 @@ Forward+ 的主 pass 顺序（源码锚定，见 5.8 的完整表）里，三个
 排序规则是**先优先级、再反向深度**：
 
 ```cpp
-// Godot 4.3 源码 - servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.h
+// Godot 4.7.2 源码 - servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.h
 struct SortByReverseDepthAndPriority {   // 透明物体
 	_FORCE_INLINE_ bool operator()(const GeometryInstanceSurfaceDataCache *A,
 									const GeometryInstanceSurfaceDataCache *B) const {
@@ -699,11 +700,11 @@ SDFGI 把可视范围切成若干个**级联（cascade）**，每个级联有自
 
 #### 5.7.2 探针与更新时机
 
-SDFGI 在场景中布置一批探针，每个探针记录周围若干个方向上的间接光。探针的更新在 Forward+ 的**第一个** pass：
+SDFGI 在场景中布置一批探针，每个探针记录周围若干个方向上的间接光。探针的更新是 Forward+ 每帧的**第二个**标记（紧跟在 `Prepare 3D Scene` 之后）：
 
 | 顺序 | 源码标记 | 源码位置 |
 |------|----------|----------|
-| 1 | `Render SDFGI` | `forward_clustered/render_forward_clustered.cpp:1139`，由 `_update_sdfgi()`（:1128）调用 |
+| 2 | `Render SDFGI` | `forward_clustered/render_forward_clustered.cpp:1266`，由 `_update_sdfgi()`（:1255）调用 |
 
 `_update_sdfgi()` 的输入是**上一帧结束时的场景状态**——因为 SDFGI 依赖的遮挡信息（哪些地方被挡住了）要到不透明 pass 画完才知道。这意味着：
 
@@ -729,36 +730,44 @@ SDFGI 在场景中布置一批探针，每个探针记录周围若干个方向�
 
 | # | Profiler 里的条目名 | 源码位置（`forward_clustered/render_forward_clustered.cpp`，除注明外） | 说明 |
 |---|-------------------|--------------------------------------------------------------|------|
-| 1 | `Render SDFGI` | :1139（`_update_sdfgi`，:1128） | SDFGI 探针更新 |
-| 2 | `Update Volumetric Fog` | :1517（`_update_volumetric_fog`，:1187） | 体积雾缓冲更新 |
-| 3 | `Process SSAO` | :1289（`_process_ssao`，:1281） | 屏幕空间环境光遮蔽 |
-| 4 | `Process SSIL` | :1315（`_process_ssil`，:1307） | 屏幕空间间接光 |
-| 5 | `Render OmniLight Shadows` | :1410 | 全向光阴影 |
-| 6 | `Render GI + Render Shadows (Parallel)` / `Render Shadows` / `Render GI` | :1430 / :1432 / :1434（`_pre_opaque_render`，:1368） | 阴影与 GI 可并行 |
-| 7 | `Prepare Depth for SSAO/SSIL` | :1467 | 为 SSAO/SSIL 准备深度 |
-| 8 | `Pre Opaque Render` | :1483 | 不透明前处理收尾 |
-| 9 | `Prepare 3D Scene` | :1590（`_render_scene`，:1570） | 准备场景 |
-| 10 | `Setup 3D Scene` | :1642 | 构建渲染列表、簇数据 |
-| 11 | `Setup Sky` | :1867 | 准备天空 |
-| 12 | **`Render Depth Pre-Pass`** | :1933 | 深度预通道 |
-| 13 | `Resolve Depth Pre-Pass (MSAA)` | :1954 | MSAA 下的深度 resolve |
-| 14 | `Process Pre Opaque Compositor Effects` | :1980 | Compositor 回调点 1 |
-| 15 | **`Render Opaque Pass`** | :1992 | 不透明 pass |
-| 16 | `Render Motion Pass` | :2043 | 运动矢量（需要时） |
-| 17 | `Process Post Opaque Compositor Effects` | :2067 | Compositor 回调点 2 |
-| 18 | **`Render Sky`** | :2095 | 天空 |
-| 19 | `Resolve MSAA` | :2107 | 颜色 resolve |
-| 20 | `Process Post Sky Compositor Effects` | :2128 | Compositor 回调点 3 |
-| 21 | `Sub-Surface Scattering` | :2135（`_process_sss`，:1550） | 次表面散射 |
-| 22 | `Screen-Space Reflections` | :2142（`_process_ssr`，:1523） | 屏幕空间反射 |
-| 23 | `Merge Specular` | :2152 | 合并高光（分离高光缓冲） |
-| 24 | `Copy Screen Texture` / `Copy Depth Texture` | :2174 / :2181 | 拷贝屏幕/深度纹理 |
-| 25 | `Process Pre Transparent Compositor Effects` | :2206 | Compositor 回调点 4 |
-| 26 | **`Render 3D Transparent Pass`** | :2210 | 透明 pass |
-| 27 | `Resolve` | :2232 | 解析 |
-| 28 | `Process Post Transparent Compositor Effects` | :2251 | Compositor 回调点 5 |
-| 29 | `FSR2` / `TAA` | :2272 / :2311 | 抗锯齿 / 时间累积 |
-| 30 | `Tonemap` | :2320 → 调用 `_render_buffers_post_process_and_tonemap()` | 进入后处理链 |
+| 1 | `Prepare 3D Scene` | :1726（`_render_scene`，:1704） | 准备场景 |
+| 2 | `Render SDFGI` | :1266（`_update_sdfgi`，:1255） | SDFGI 探针更新 |
+| 3 | `Setup 3D Scene` | :1778 | 构建渲染列表、簇数据 |
+| 4 | `Setup Sky` | :2071 | 准备天空 |
+| 5 | `GI + Render Depth Pre-Pass (Parallel)` | :2123 | 深度预通道与 GI 并行 |
+| 6 | **`Render Depth Pre-Pass`** | :2125 | 深度预通道 |
+| 7 | `Resolve Depth Pre-Pass (MSAA)` | :2146 | MSAA 下的深度 resolve |
+| 8 | `Process Pre Opaque Compositor Effects` | :2172 | Compositor 回调点 1 |
+| 9 | `Setup Shadows` | :1530（`_pre_opaque_render`，:1517） | 准备阴影贴图 |
+| 10 | `Render OmniLight Shadows` | :1562 | 全向光阴影 |
+| 11 | `Render GI + Render Directional/SpotLight Shadows (Parallel)` | :1583 | 阴影与 GI 可并行 |
+| 12 | `Render Directional/SpotLight Shadows` | :1585 | 平行光 / 聚光阴影 |
+| 13 | `Render GI` | :1587 | 实时光照探针 |
+| 14 | `Prepare Depth for SSAO/SSIL` | :1624 | 为 SSAO/SSIL 准备深度 |
+| 15 | `Process SSAO` | :1430（`_process_ssao`，:1422） | 屏幕空间环境光遮蔽 |
+| 16 | `Process SSIL` | :1456（`_process_ssil`，:1448） | 屏幕空间间接光 |
+| 17 | `Process SSR` | :1490（`_process_ssr`，:1483） | 屏幕空间反射 |
+| 18 | `Pre Opaque Render` | :1644 | 不透明前处理收尾 |
+| 19 | `Update Volumetric Fog` | :1678（`_update_volumetric_fog`，:1317） | 体积雾缓冲更新 |
+| 20 | **`Render Opaque Pass`** | :2188 | 不透明 pass |
+| 21 | `Render Motion Pass` | :2245 | 运动矢量（需要时） |
+| 22 | `Process Post Opaque Compositor Effects` | :2269 | Compositor 回调点 2 |
+| 23 | **`Render Sky`** | :2297 | 天空 |
+| 24 | `Resolve MSAA` | :2309 | 颜色 resolve |
+| 25 | `Process Post Sky Compositor Effects` | :2330 | Compositor 回调点 3 |
+| 26 | `Sub-Surface Scattering` | :2337（`_process_sss`，:1684） | 次表面散射 |
+| 27 | `Merge Specular` | :2345 | 合并高光（分离高光缓冲） |
+| 28 | `Clear Separate Specular (Canvas Background Mode)` | :2353 | 画布背景模式下的清理 |
+| 29 | `Copy Screen Texture` / `Copy Depth Texture` | :2367 / :2378 | 拷贝屏幕/深度纹理 |
+| 30 | `Process Pre Transparent Compositor Effects` | :2407 | Compositor 回调点 4 |
+| 31 | **`Render 3D Transparent Pass`** | :2411 | 透明 pass |
+| 32 | `Resolve` | :2431 | 解析 |
+| 33 | `Copy Final Framebuffer (SSIL/SSR)` | :2451 | 拷贝最终帧缓冲供后处理用 |
+| 34 | `Process Post Transparent Compositor Effects` | :2457 | Compositor 回调点 5 |
+| 35 | `FSR2` / `TAA` | :2471 / :2539 | 抗锯齿 / 时间累积 |
+| 36 | `Tonemap` | :2548 → 调用 `_render_buffers_post_process_and_tonemap()` | 进入后处理链 |
+
+> 📌 **4.7.2 相对 4.3 的顺序变化**：屏幕空间效果（SSAO / SSIL / SSR）现在与阴影、GI 一起落在 `_pre_opaque_render()`（:1517）里，**排在深度预通道之后、不透明 pass 之前**；`Process SSR` 是 4.7.2 的标记名（4.3 叫 `Screen-Space Reflections`）。另外 4.7.2 新增了 `Setup Shadows`（:1530）、`GI + Render Depth Pre-Pass (Parallel)`（:2123）与 `Copy Final Framebuffer (SSIL/SSR)`（:2451）三个标记。
 
 `_render_buffers_post_process_and_tonemap()`（`renderer_scene_render_rd.cpp:412`）内部的顺序是：
 
@@ -783,13 +792,13 @@ SDFGI 在场景中布置一批探针，每个探针记录周围若干个方向�
 
 | # | Profiler 条目名 | 源码行号 | 与 Forward+ 的差异 |
 |---|----------------|---------|-------------------|
-| 1 | `Render Shadows` | :625（`_pre_opaque_render`，:586） | 同样先出阴影，但没有 GI 并行分支 |
-| 2 | `Prepare 3D Scene` | :661 | — |
-| 3 | `Setup 3D Scene` | :665 | — |
-| 4 | `Setup Sky` | :878 | — |
-| 5 | `Render Opaque` | :963 | **没有深度预通道** |
-| 6 | `Render Transparent` | :1073 | 直接接在不透明之后 |
-| 7 | `Tonemap` | :1101 | 没有独立的 DOF / Auto exposure / Glow 时间条 |
+| 1 | `Render Shadows` | :808（`_pre_opaque_render`，:767） | 同样先出阴影，但没有 GI 并行分支 |
+| 2 | `Prepare 3D Scene` | :844 | — |
+| 3 | `Setup 3D Scene` | :852 | — |
+| 4 | `Setup Sky` | :1127 | — |
+| 5 | `Render Opaque` | :1229 | **没有深度预通道** |
+| 6 | `Render Transparent` | :1357 | 直接接在不透明之后 |
+| 7 | `Tonemap` | :1385 | 没有独立的 DOF / Auto exposure / Glow 时间条 |
 
 差异总结成一张表：
 
@@ -840,10 +849,10 @@ environment.compositor = compositor
 | 3 | `EFFECT_CALLBACK_TYPE_PRE_TRANSPARENT` | 在透明 pass **之前**、天空渲染之后、后缓冲创建之后被调用 |
 | 4 | `EFFECT_CALLBACK_TYPE_POST_TRANSPARENT` | 在透明 pass **之后**、任何内建后处理与输出到渲染目标**之前**被调用 |
 
-C++ 侧的枚举定义（`servers/rendering_server.h:1089`）：
+C++ 侧的枚举定义（`servers/rendering/rendering_server.h:1089`）：
 
 ```cpp
-enum CompositorEffectCallbackType {   // servers/rendering_server.h:1089
+enum CompositorEffectCallbackType {   // servers/rendering/rendering_server.h:1089
 	COMPOSITOR_EFFECT_CALLBACK_TYPE_PRE_OPAQUE, POST_OPAQUE, POST_SKY,
 	COMPOSITOR_EFFECT_CALLBACK_TYPE_PRE_TRANSPARENT, POST_TRANSPARENT,
 	COMPOSITOR_EFFECT_CALLBACK_TYPE_MAX, COMPOSITOR_EFFECT_CALLBACK_TYPE_ANY = -1,

@@ -1201,7 +1201,7 @@ func _process(delta):
 ## 🔗 延伸阅读
 
 - **官方文档**: [Godot Destruction Systems](https://docs.godotengine.org/en/stable/tutorials/physics/destruction_systems.html)
-- **源码位置**: `servers/physics_3d/destruction/`
+- **源码位置**: `modules/godot_physics_3d/`
 - **技术博客**: [Godot Destruction Implementation](https://godotengine.org/article/destruction-implementation/)
 
 ---

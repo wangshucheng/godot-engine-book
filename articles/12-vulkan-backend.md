@@ -60,7 +60,7 @@ Godot 4.x 把 Vulkan 驱动拆成**两个职责不同**的类：
 ### 2.2 RenderingDeviceDriverVulkan
 
 ```cpp
-// Godot 4.3 源码 - drivers/vulkan/rendering_device_driver_vulkan.h:50
+// Godot 4.7.2 源码 - drivers/vulkan/rendering_device_driver_vulkan.h:54
 class RenderingDeviceDriverVulkan : public RenderingDeviceDriver {
 	struct Queue {
 		VkQueue queue = VK_NULL_HANDLE;
@@ -163,7 +163,7 @@ Forward+ 渲染
 **簇构建**：`servers/rendering/renderer_rd/cluster_builder_rd.cpp/.h`
 
 ```cpp
-// Godot 4.3 源码 - servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.h
+// Godot 4.7.2 源码 - servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.h
 namespace RendererSceneRenderImplementation {
 
 class RenderForwardClustered : public RendererSceneRenderRD {
@@ -307,10 +307,10 @@ var local_rd := RenderingServer.create_local_rendering_device()
 
 ### 6.2 `RenderingDeviceDriver`：后端抽象
 
-`RenderingDeviceDriver`（`servers/rendering/rendering_device_driver.h:120`）是一个**纯虚接口**：
+`RenderingDeviceDriver`（`servers/rendering/rendering_device_driver.h:90`）是一个**纯虚接口**：
 
 ```cpp
-// Godot 4.3 源码 - servers/rendering/rendering_device_driver.h:120
+// Godot 4.7.2 源码 - servers/rendering/rendering_device_driver.h:90
 class RenderingDeviceDriver : public RenderingDeviceCommons {
 public:
 	// 资源
@@ -329,10 +329,10 @@ public:
 };
 ```
 
-`RenderingDeviceDriverVulkan`（`drivers/vulkan/rendering_device_driver_vulkan.h:50`）是它的 Vulkan 实现：
+`RenderingDeviceDriverVulkan`（`drivers/vulkan/rendering_device_driver_vulkan.h:54`）是它的 Vulkan 实现：
 
 ```cpp
-// Godot 4.3 源码 - drivers/vulkan/rendering_device_driver_vulkan.h:50
+// Godot 4.7.2 源码 - drivers/vulkan/rendering_device_driver_vulkan.h:54
 class RenderingDeviceDriverVulkan : public RenderingDeviceDriver {
 	struct Queue {
 		VkQueue queue = VK_NULL_HANDLE;
@@ -376,7 +376,7 @@ class RenderingDeviceDriverVulkan : public RenderingDeviceDriver {
 4.x 不再手写固定的 pass 顺序，而是用 **RenderGraph** 声明"每个 pass 读写哪些资源"，由引擎推导出执行顺序、屏障与资源切换。
 
 ```cpp
-// Godot 4.3 源码 - servers/rendering/rendering_device_graph.h:46
+// Godot 4.7.2 源码 - servers/rendering/rendering_device_graph.h:49
 class RenderingDeviceGraph {
 public:
 	...
@@ -491,7 +491,7 @@ rd.compute_list_end()
 **Godot 在这之上又加了一层"虚拟队列"**：
 
 ```cpp
-// Godot 4.3 源码 - drivers/vulkan/rendering_device_driver_vulkan.h
+// Godot 4.7.2 源码 - drivers/vulkan/rendering_device_driver_vulkan.h
 class RenderingDeviceDriverVulkan : public RenderingDeviceDriver {
 	struct Queue {
 		VkQueue queue = VK_NULL_HANDLE;   // 真实的 Vulkan 队列句柄
@@ -837,7 +837,7 @@ rd.set_resource_name(buffer, "MyComputeOutput")
 | 来源 | 接口 | 适用场景 |
 |------|------|----------|
 | 预编译 SPIR-V | `.glsl` / `.spirv` 导入成 `RDShaderFile` → `get_spirv()` → `shader_create_from_spirv()` | **生产环境的正解**：着色器随资源打包，运行时不编译 |
-| 运行时编译源码 | `shader_compile_spirv_from_source()` | 开发期工具链；4.3 已提供，但是否在导出包中可用取决于构建配置 |
+| 运行时编译源码 | `shader_compile_spirv_from_source()` | 开发期工具链；4.7.2 已提供，但是否在导出包中可用取决于构建配置 |
 | 字节码 / 管线缓存 | `shader_create_from_bytecode()`、`get_device_pipeline_cache_uuid()` | 跨机器复用编译结果，省首次编译卡顿 |
 | 占位符 | `shader_create_placeholder()` | 先占住 RID，之后再填内容（引擎内部大量使用） |
 

@@ -1370,7 +1370,7 @@ func on_frozen():
 - **SoftBody3D**: <https://docs.godotengine.org/en/stable/classes/class_softbody3d.html>
 - **物理教程总览**: <https://docs.godotengine.org/en/stable/tutorials/physics/index.html>
 - **说明**: Godot 的布料通常用质点弹簧/PBD 自行实现，SoftBody3D 适合软体而非布料
-- **源码位置**: `scene/3d/physics_body_3d.cpp`, `servers/physics_3d/`
+- **源码位置**: `scene/3d/physics/physics_body_3d.cpp`, `servers/physics_3d/`
 
 ---
 

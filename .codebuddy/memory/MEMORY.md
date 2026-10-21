@@ -7,8 +7,9 @@
 
 ## 验证方法
 - Godot 事实核验抓源码：`raw.githubusercontent.com/godotengine/godot/<tag>/<路径>`（docs 页面 fetch 只返回导航，且体积巨大，慎用）；
-  本机 raw 域名常超时，走 jsDelivr 镜像或 git 浅克隆更稳。
-  **书里的源码路径/行号引用是 4.3 快照**，API 存在性按 4.7.2 判定——两套口径别混。
+  本机 raw 域名常超时，走 jsDelivr 镜像或 git 浅克隆更稳；GitHub API 会限流，contents API 优先用 `gcore.jsdelivr.net`。
+  **书里的源码路径与行号引用已按 4.7.2 官方源码逐处核对**（含第 14 篇两张 pass 顺序表，按 4.7.2 的实际执行顺序重建）；
+  API 存在性以 4.7.2 官方类参考为准——两套口径别混。
 - 编辑器设置键在 `editor/editor_settings.cpp`；已确认真实键与虚构键清单见 2026-09-12.md。
 
 ## 改稿前必跑的门禁（2026-10-21 起）

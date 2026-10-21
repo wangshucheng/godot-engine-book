@@ -137,7 +137,7 @@ void vertex() {
 ### 2.1 继承关系与数据流
 
 ```cpp
-class SoftBody3D : public MeshInstance3D   // 4.3 源码，scene/3d/soft_body_3d.h
+class SoftBody3D : public MeshInstance3D   // 4.7.2 源码，scene/3d/physics/soft_body_3d.h
 ```
 
 `SoftBody3D` **继承自 `MeshInstance3D`**：它本身就渲染一个网格，物理端模拟顶点位置，再通过渲染服务器把结果写回网格（内部辅助类 `SoftBodyRenderingServerHandler` 的 `set_vertex`/`set_normal`）。
@@ -242,7 +242,7 @@ soft_body.set_point_pinned(0, false)
 
 ### 3.2 编辑器里的 `pinned_points` 与 `attachments`
 
-虽然节点上没有 `spatial_attachment_path` 属性，但**编辑器检查器里能看到固定点配置**——这是 `SoftBody3D` 通过 `_get_property_list()` / `_set()` 动态暴露的一组属性（4.3 源码 `soft_body_3d.cpp`）：
+虽然节点上没有 `spatial_attachment_path` 属性，但**编辑器检查器里能看到固定点配置**——这是 `SoftBody3D` 通过 `_get_property_list()` / `_set()` 动态暴露的一组属性（4.7.2 源码 `scene/3d/physics/soft_body_3d.cpp`）：
 
 | 动态属性 | 类型 | 说明 |
 |---|---|---|
@@ -436,7 +436,7 @@ func make_jelly() -> SoftBody3D:
 - **SkeletonModifier3D**: <https://docs.godotengine.org/en/stable/classes/class_skeletonmodifier3d.html>
 - **PhysicalBoneSimulator3D**: <https://docs.godotengine.org/en/stable/classes/class_physicalbonesimulator3d.html>
 - **SpringBoneSimulator3D**: <https://docs.godotengine.org/en/stable/classes/class_springbonesimulator3d.html>
-- **源码位置**: `scene/3d/soft_body_3d.cpp` / `scene/3d/soft_body_3d.h`（模拟与渲染写回）、`servers/physics_3d/`（软体服务器接口）
+- **源码位置**: `scene/3d/physics/soft_body_3d.cpp` / `scene/3d/physics/soft_body_3d.h`（模拟与渲染写回）、`servers/physics_3d/`（软体服务器接口）
 - **自研布料路线**: 见第 30 篇（质点弹簧与 PBD）
 
 ---

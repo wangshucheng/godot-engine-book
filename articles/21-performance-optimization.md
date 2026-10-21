@@ -57,7 +57,7 @@ CPU 忙 → 少画东西、少提交、少设状态；GPU 忙 → 少填像素�
 
 ### 1.2 Godot 4 没有 3D 通用合批器（必须先讲清的事实）
 
-> Godot 4.x 的渲染器**没有**运行时合批器（Godot 3.x 的 batcher 已移除）：`renderer_canvas_cull.cpp`、`renderer_canvas_render_rd.cpp`、`renderer_scene_render_rd.cpp` 与 `servers/rendering_server.h` 中 "batch" 的命中数**全部为 0**。削减 Draw Call 只能靠下面的场景组织手段。
+> Godot 4.x 的渲染器**没有**运行时合批器（Godot 3.x 的 batcher 已移除）：`renderer_canvas_cull.cpp`、`renderer_canvas_render_rd.cpp`、`renderer_scene_render_rd.cpp` 与 `servers/rendering/rendering_server.h` 中 "batch" 的命中数**全部为 0**。削减 Draw Call 只能靠下面的场景组织手段。
 
 这句话要展开成三个可操作的结论：
 
@@ -935,7 +935,7 @@ func _write_report() -> void:
 
 - **官方文档**: [可见性范围（Visibility ranges / HLOD）](https://docs.godotengine.org/en/stable/tutorials/3d/visibility_ranges.html)、[遮挡剔除（Occlusion culling）](https://docs.godotengine.org/en/stable/tutorials/3d/occlusion_culling.html)、[使用服务器优化（Optimization using Servers）](https://docs.godotengine.org/en/stable/tutorials/performance/using_servers.html)、[多网格（MultiMesh）](https://docs.godotengine.org/en/stable/tutorials/performance/using_servers.html)
 - **类参考**: [MultiMesh](https://docs.godotengine.org/en/stable/classes/class_multimesh.html)、[MultiMeshInstance3D](https://docs.godotengine.org/en/stable/classes/class_multimeshinstance3d.html)、[GeometryInstance3D](https://docs.godotengine.org/en/stable/classes/class_geometryinstance3d.html)、[OccluderInstance3D](https://docs.godotengine.org/en/stable/classes/class_occluderinstance3d.html)、[Performance](https://docs.godotengine.org/en/stable/classes/class_performance.html)
-- **源码位置**: `servers/rendering_server.h`（`multimesh_*`）、`scene/3d/mesh_instance_3d.h`、`scene/3d/geometry_instance_3d.h`、`servers/rendering/renderer_scene_cull.cpp`、`servers/rendering/renderer_scene_occlusion_cull.cpp`
+- **源码位置**: `servers/rendering/rendering_server.h`（`multimesh_*`）、`scene/3d/mesh_instance_3d.h`、`scene/3d/visual_instance_3d.h`、`servers/rendering/renderer_scene_cull.cpp`、`servers/rendering/renderer_scene_occlusion_cull.cpp`
 
 ---
 

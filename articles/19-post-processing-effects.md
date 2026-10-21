@@ -68,7 +68,7 @@ Godot 4.x 提供了强大的后处理系统，基于 Vulkan 的计算着色器�
 └─────────────────────────────────────────────────────────────┘
 ```
 
-> 这张图是**概念图**，不是源码里的真实 pass 顺序。Godot 4.3 的实际 pass 顺序由 `servers/rendering/renderer_rd/renderer_scene_render_rd.cpp` 的 `_render_scene()` 决定，深度预通道、OIT、SDFGI、体积雾各自插在什么位置要看那段代码——第 14 篇《场景渲染流程》会逐行拆。
+> 这张图是**概念图**，不是源码里的真实 pass 顺序。Godot 4.7.2 的实际 pass 顺序由 `servers/rendering/renderer_rd/renderer_scene_render_rd.cpp` 的 `_render_scene()` 决定，深度预通道、OIT、SDFGI、体积雾各自插在什么位置要看那段代码——第 14 篇《场景渲染流程》会逐行拆。
 
 ### 1.2 WorldEnvironment 节点
 
@@ -399,7 +399,7 @@ env.adjustment_color_correction = load("res://lut.png")   # Texture2D
 
 > `adjustment_color_correction_lut` 与 `adjustment_color_correction_lut_scale` 在 4.3 **不存在**——`adjustment_color_correction` 本身就是那个 LUT 贴图，缩放由贴图本身的尺寸决定。
 >
-> ⚠️ **`use_1d_color_correction` 从来就不是脚本可设的属性**。它是 `Environment` 的**内部成员**（`scene/resources/environment.h:220`），从 4.3 起就存在，但**从来没有**出现在 4.3 到 4.8 的类参考里。引擎根据 `adjustment_color_correction` 的纹理类型**自动派生**它：喂 `Texture2D` 走 2D LUT，喂 `GradientTexture1D` 走 1D LUT（`scene/resources/environment.cpp:1067-1072`）。
+> ⚠️ **`use_1d_color_correction` 从来就不是脚本可设的属性**。它是 `Environment` 的**内部成员**（`scene/resources/environment.h:223`），从 4.3 起就存在，但**从来没有**出现在 4.3 到 4.8 的类参考里。引擎根据 `adjustment_color_correction` 的纹理类型**自动派生**它：喂 `Texture2D` 走 2D LUT，喂 `GradientTexture1D` 走 1D LUT（`scene/resources/environment.cpp:1081-1083`）。
 >
 > 所以在 4.3 写 `env.use_1d_color_correction = true` 确实会报 `Invalid set index`——但**别以为 4.4 之后就能手动选了**，那一版起它同样不能手动设。
 

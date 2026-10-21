@@ -1338,7 +1338,7 @@ joint.exclude_nodes_from_collision = true
 #    Joint3D.solver_priority 默认 1；数值越大越先被求解。
 joint.solver_priority = 10
 
-# 3) 服务器层等价接口（servers/physics_server_3d.h）
+# 3) 服务器层等价接口（servers/physics_3d/physics_server_3d.h）
 var j_rid := joint.get_rid()
 PhysicsServer3D.joint_disable_collisions_between_bodies(j_rid, true)
 PhysicsServer3D.joint_set_solver_priority(j_rid, 10)
@@ -1393,7 +1393,7 @@ PhysicsServer3D.joint_set_solver_priority(j_rid, 10)
 
 - **VehicleBody3D**: <https://docs.godotengine.org/en/stable/classes/class_vehiclebody3d.html>
 - **VehicleWheel3D**: <https://docs.godotengine.org/en/stable/classes/class_vehiclewheel3d.html>
-- **源码位置**: `scene/3d/vehicle_body_3d.cpp`
+- **源码位置**: `scene/3d/physics/vehicle_body_3d.cpp`
 
 ---
 

@@ -725,7 +725,7 @@ $sprite.material = mat
 
 ### 7.1 没有自动合批器
 
-Godot 3.x 的 2D batcher 在 Godot 4 中**已被移除**：`servers/rendering/renderer_canvas_cull.cpp`（93 KB）与 `servers/rendering/renderer_canvas_render_rd.cpp`（113 KB）中 "batch" 的命中数都是 **0**。Godot 4 的 2D 渲染器是"一个 CanvasItem 一批绘制命令"，不会在运行时把相同纹理的 Sprite2D 合并成一次 Draw Call。
+Godot 3.x 的 2D batcher 在 Godot 4 中**已被移除**：`servers/rendering/renderer_canvas_cull.cpp`（93 KB）与 `servers/rendering/renderer_rd/renderer_canvas_render_rd.cpp`（113 KB）中 "batch" 的命中数都是 **0**。Godot 4 的 2D 渲染器是"一个 CanvasItem 一批绘制命令"，不会在运行时把相同纹理的 Sprite2D 合并成一次 Draw Call。
 
 ```
 多个 Sprite2D
@@ -824,9 +824,9 @@ func _ready() -> void:
 | 检索对象 | 4.3 的命中数 |
 |---|---|
 | `servers/rendering/renderer_canvas_cull.cpp` 中 "batch" | **0** |
-| `servers/rendering/renderer_canvas_render_rd.cpp` 中 "batch" | **0** |
+| `servers/rendering/renderer_rd/renderer_canvas_render_rd.cpp` 中 "batch" | **0** |
 | `servers/rendering/renderer_canvas_render.h` 中 "batch" | **0** |
-| `servers/rendering/renderer_scene_render_rd.cpp` 中 "batch" | **0** |
+| `servers/rendering/renderer_rd/renderer_scene_render_rd.cpp` 中 "batch" | **0** |
 
 > 最后一行同样重要：3D 侧也没有"通用合批器"。Godot 4 的 3D 走的是 MultiMesh / 实例化 + 材质共享，**不是**把不同 MeshInstance 合并成一次 Draw Call。
 

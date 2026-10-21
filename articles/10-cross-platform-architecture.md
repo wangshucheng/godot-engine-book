@@ -291,7 +291,7 @@ if OS.get_name() == "iOS":
     Input.start_joy_vibration(0, 0.5, 0.5, 1.0)
 ```
 
-> ⚠️ `OS.request_permission(name)` 在 4.3 里**只有 Android 实现**，而且仅用于 `"RECORD_AUDIO"`（`AudioDriverOpenSL`）；`OS.request_permissions()` 才是"请求全部危险权限"的 Android 接口。iOS 侧的权限必须走插件。
+> ⚠️ `OS.request_permission(name)` 在 4.7.2 里**只有 Android 实现**，而且仅用于 `"RECORD_AUDIO"`（`AudioDriverOpenSL`）；`OS.request_permissions()` 才是"请求全部危险权限"的 Android 接口。iOS 侧的权限必须走插件。
 
 ### 4.5 Web
 
@@ -443,7 +443,7 @@ Unity -batchmode -quit -projectPath . \
 
 - **官方文档**: [跨平台发布](https://docs.godotengine.org/en/stable/tutorials/export/exporting_for_different.html)、[命令行参数](https://docs.godotengine.org/en/stable/tutorials/editor/command_line_tutorial.html)
 - **类参考**: [OS](https://docs.godotengine.org/en/stable/classes/class_os.html)、[DisplayServer](https://docs.godotengine.org/en/stable/classes/class_displayserver.html)、[ProjectSettings](https://docs.godotengine.org/en/stable/classes/class_projectsettings.html)
-- **源码位置**: `core/os/os.cpp`、`servers/display_server.cpp`
+- **源码位置**: `core/os/os.cpp`、`servers/display/display_server.cpp`
 
 ---
 

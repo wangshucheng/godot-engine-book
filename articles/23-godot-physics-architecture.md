@@ -553,7 +553,7 @@ joint.exclude_nodes_from_collision = true
 #    Joint3D.solver_priority 默认 1；数值越大越先被求解。
 joint.solver_priority = 10
 
-# 3) 服务器层的等价接口（servers/physics_server_3d.h）
+# 3) 服务器层的等价接口（servers/physics_3d/physics_server_3d.h）
 #    joint_set_solver_priority(RID joint, int priority)
 #    joint_disable_collisions_between_bodies(RID joint, bool disable)
 var j_rid := joint.get_rid()
@@ -824,7 +824,7 @@ func adjust_physics_quality(elapsed_ms: float) -> void:
 - **官方文档**: [Godot Physics](https://docs.godotengine.org/en/stable/tutorials/physics/index.html)
 - **物理服务器**: [PhysicsServer3D](https://docs.godotengine.org/en/stable/classes/class_physicsserver3d.html)
 - **刚体参考**: [RigidBody3D](https://docs.godotengine.org/en/stable/classes/class_rigidbody3d.html)
-- **源码位置**: `servers/physics_3d/`, `modules/godot_physics_3d/`
+- **源码位置**: `servers/physics_3d/`（服务器接口层）, `modules/godot_physics_3d/`（实现）
 - **技术博客**: [Godot 4.0 Physics Deep Dive](https://godotengine.org/article/godot-4-0-physics-deep-dive/)
 
 ---

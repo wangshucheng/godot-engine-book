@@ -426,7 +426,7 @@ func wake_up_body(body: RigidBody3D):
 # 启用 CCD：4.x 只有布尔属性 continuous_cd，没有模式枚举也没有运动阈值
 body.continuous_cd = true
 
-# 服务器层等价接口（servers/physics_server_3d.h）
+# 服务器层等价接口（servers/physics_3d/physics_server_3d.h）
 PhysicsServer3D.body_set_enable_continuous_collision_detection(body.get_rid(), true)
 ```
 
@@ -1016,7 +1016,7 @@ _integrate_forces 性能提示:
 
 - **官方文档**: <https://docs.godotengine.org/en/stable/classes/class_rigidbody3d.html>
 - **物理教程**: <https://docs.godotengine.org/en/stable/tutorials/physics/index.html>
-- **源码位置**: `servers/physics_3d/`, `scene/3d/physics_body_3d.cpp`
+- **源码位置**: `servers/physics_3d/`, `scene/3d/physics/physics_body_3d.cpp`
 
 ---
 

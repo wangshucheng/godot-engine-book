@@ -415,7 +415,7 @@ Engine.max_physics_steps_per_frame = 8      # 单帧最多补跑的物理步数�
 - **PhysicsServer2D / PhysicsServer3D**: <https://docs.godotengine.org/en/stable/classes/class_physicsserver2d.html>
 - **物理教程总览**: <https://docs.godotengine.org/en/stable/tutorials/physics/index.html>
 - **使用 Jolt Physics**: <https://docs.godotengine.org/en/stable/tutorials/physics/using_jolt_physics.html>
-- **源码位置**: `servers/physics_2d/`、`servers/physics_3d/`、`scene/main/scene_tree.h`
+- **源码位置**: `modules/godot_physics_2d/`、`modules/godot_physics_3d/`、`scene/main/scene_tree.h`
 
 ---
 

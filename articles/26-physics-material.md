@@ -547,7 +547,7 @@ func setup_shared_materials():
 |------|------|------|
 | `exclude_nodes_from_collision` | `Joint3D` 节点属性（默认 `true`） | 关节两端物体互相碰撞会额外产生接触约束，关掉可省一轮窄相位 |
 | `solver_priority` | `Joint3D` 节点属性（默认 `1`） | 多关节互相影响时的求解顺序，数值越大越先解 |
-| `joint_disable_collisions_between_bodies()` / `joint_set_solver_priority()` | `PhysicsServer3D`（`servers/physics_server_3d.h`） | 服务器层的等价接口，便于批量调参 |
+| `joint_disable_collisions_between_bodies()` / `joint_set_solver_priority()` | `PhysicsServer3D`（`servers/physics_3d/physics_server_3d.h`） | 服务器层的等价接口，便于批量调参 |
 
 ```gdscript
 var joint := HingeJoint3D.new()

@@ -489,15 +489,15 @@ godot --gpu-profile
 
 > ⚠️ **`get_frame_profile()` 在 Godot 4.7.2 里依然没有导出为 GDScript 方法**。
 > `doc/classes/RenderingServer.xml` 里搜不到 `get_frame_profile`、`FrameProfileArea`、`set_frame_profiling_enabled` 中的任何一个——
-> 它只在 C++ 层存在（`servers/rendering_server.h`），**编辑器 Visual Profiler 是它的主要消费者**。
+> 它只在 C++ 层存在（`servers/rendering/rendering_server.h`，结构体在 `servers/rendering/rendering_server_types.h`），**编辑器 Visual Profiler 是它的主要消费者**。
 > 想在脚本里拿 GPU 侧数据，4.7.2 的公开入口是 `get_rendering_info()` / `viewport_get_render_info()` 这类统计接口。
 
-C++ 层的结构（`servers/rendering_server.h`）：
+C++ 层的结构（`servers/rendering/rendering_server.h`）：
 
 | 符号 | 形态 | 说明 |
 |------|------|------|
 | `RenderingServer::get_frame_profile()` | 虚函数 | 返回本帧的 profile 列表 |
-| `RenderingServer::FrameProfileArea` | 结构体 | 字段只有三个：`String name; double gpu_msec; double cpu_msec;` |
+| `RenderingServerTypes::FrameProfileArea` | 结构体 | 字段只有三个：`String name; double gpu_msec; double cpu_msec;`（4.7.2 起在该命名空间下） |
 | `FrameProfileArea` 的取值 | 枚举 | Viewport / Pass / Draw Call / Object / Process 等分区 |
 
 > 📌 也就是说：**每一项 profile 记录的是「一个名字 + 它的 GPU 毫秒 + 它的 CPU 毫秒」**。
@@ -909,7 +909,7 @@ Vulkan Validation Layer:
 2. **`Viewport.DebugDraw` 有 27 项**：从 `DEBUG_DRAW_UNSHADED` 到 `DEBUG_DRAW_CLUSTER_REFLECTION_PROBES`，覆盖几何、阴影、GI、聚簇、运动矢量等；缓冲类可视化基本只在 Forward+ 下有内容。
 3. **`DEBUG_DRAW_DISABLE_LOD` 不是「显示 LOD」**，而是「禁用 LOD、全部按最高精度绘制」。
 4. **统计三个口径**：`Performance` 监视器（全局）、`Viewport.get_render_info()`（按视口按通道）、`RenderingServer.get_frame_setup_time_cpu()`（CPU 帧准备时间）。
-5. **`RenderingServer::get_frame_profile()` 在 4.7.2 也没有导出到脚本**：它只存在于 C++ 层（`servers/rendering_server.h`），`FrameProfileArea` 结构体只有 `name` / `gpu_msec` / `cpu_msec` 三个字段，编辑器的 **Visual Profiler** 是它的主要消费者。
+5. **`RenderingServer::get_frame_profile()` 在 4.7.2 也没有导出到脚本**：它只存在于 C++ 层（`servers/rendering/rendering_server.h`），`FrameProfileArea` 结构体只有 `name` / `gpu_msec` / `cpu_msec` 三个字段，编辑器的 **Visual Profiler** 是它的主要消费者。
 6. **工具分工**：RenderDoc 看「画了什么 / 状态对不对」，apitrace 看「API 调用与资源生命周期」，Nsight Systems 看时间线、Nsight Graphics 看着色器；三者都贵，先用引擎自带的量缩小范围。
 7. **排查纪律**：从帧级 → pass 级 → draw call 级 → shader 级 → API 级，**从粗到细**，别一上来就抓帧。
 8. **任何结论都要带测试条件**（引擎版本 / 后端 / GPU / 分辨率 / 场景规模 / 采样方式），否则下一轮无法复现。
@@ -920,7 +920,7 @@ Vulkan Validation Layer:
 
 - **官方文档**: [命令行教程（命令行参数）](https://docs.godotengine.org/en/stable/tutorials/editor/command_line_tutorial.html)、[使用 Viewport](https://docs.godotengine.org/en/stable/tutorials/rendering/viewports.html)、[调试与可视化](https://docs.godotengine.org/en/stable/tutorials/editor/debugging.html)
 - **类参考**: [Viewport](https://docs.godotengine.org/en/stable/classes/class_viewport.html)、[Performance](https://docs.godotengine.org/en/stable/classes/class_performance.html)、[SceneTree](https://docs.godotengine.org/en/stable/classes/class_scenetree.html)、[RenderingServer](https://docs.godotengine.org/en/stable/classes/class_renderingserver.html)
-- **源码位置**: `servers/rendering_server.h`（`get_frame_profile()` / `FrameProfileArea`）、`servers/rendering/renderer_viewport.cpp`、`main/main.cpp`（命令行开关的注册处）
+- **源码位置**: `servers/rendering/rendering_server.h`（`get_frame_profile()` / `FrameProfileArea`）、`servers/rendering/renderer_viewport.cpp`、`main/main.cpp`（命令行开关的注册处）
 - **第三方工具**: [RenderDoc](https://renderdoc.org/)、[apitrace](https://github.com/apitrace/apitrace)、[NVIDIA Nsight](https://developer.nvidia.com/nsight)
 
 ---

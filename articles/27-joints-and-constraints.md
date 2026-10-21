@@ -209,7 +209,7 @@ func create_slider_joint():
     return joint
 ```
 
-> ⚠️ **4.x 的滑块关节没有弹簧**。`SliderJoint3D` 的 `Param` 枚举只有 `PARAM_LINEAR_LIMIT_*` / `PARAM_LINEAR_MOTION_*` / `PARAM_LINEAR_ORTHOGONAL_*` / `PARAM_ANGULAR_*` 这几族（见 `servers/physics_server_3d.h` 的 `SliderJointParam`），**没有** `PARAM_LINEAR_SPRING_STIFFNESS` / `PARAM_LINEAR_SPRING_DAMPING` / `PARAM_LINEAR_SPRING_EQUILIBRIUM_POINT`，3.x 教程里的这几行在 4.x 会报"常量不存在"。
+> ⚠️ **4.x 的滑块关节没有弹簧**。`SliderJoint3D` 的 `Param` 枚举只有 `PARAM_LINEAR_LIMIT_*` / `PARAM_LINEAR_MOTION_*` / `PARAM_LINEAR_ORTHOGONAL_*` / `PARAM_ANGULAR_*` 这几族（见 `servers/physics_3d/physics_server_3d.h` 的 `SliderJointParam`），**没有** `PARAM_LINEAR_SPRING_STIFFNESS` / `PARAM_LINEAR_SPRING_DAMPING` / `PARAM_LINEAR_SPRING_EQUILIBRIUM_POINT`，3.x 教程里的这几行在 4.x 会报"常量不存在"。
 >
 > 需要弹簧效果时的三条路：
 > 1. **2D**：用 `DampedSpringJoint2D`（它就是为弹簧设计的关节）；
@@ -1329,7 +1329,7 @@ joint.exclude_nodes_from_collision = true
 #    Joint3D.solver_priority 默认 1；数值越大越先被求解。
 joint.solver_priority = 10
 
-# 3) 服务器层等价接口（servers/physics_server_3d.h）
+# 3) 服务器层等价接口（servers/physics_3d/physics_server_3d.h）
 var j_rid := joint.get_rid()
 PhysicsServer3D.joint_disable_collisions_between_bodies(j_rid, true)
 PhysicsServer3D.joint_set_solver_priority(j_rid, 10)
@@ -1382,7 +1382,7 @@ PhysicsServer3D.joint_set_solver_priority(j_rid, 10)
 - **物理教程总览**: <https://docs.godotengine.org/en/stable/tutorials/physics/index.html>
 - **HingeJoint3D**: <https://docs.godotengine.org/en/stable/classes/class_hingejoint3d.html>
 - **Generic6DOFJoint3D**: <https://docs.godotengine.org/en/stable/classes/class_generic6dofjoint3d.html>
-- **源码位置**: `servers/physics_3d/joints/`
+- **源码位置**: `modules/godot_physics_3d/joints/`
 
 ---
 

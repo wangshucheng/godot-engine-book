@@ -90,7 +90,7 @@ func _process(delta):
 
 > **先读这一段**：下面三小节讲的是**通用算法**（教科书内容），不是 Godot 内置 3D 物理引擎的实现。
 >
-> - **Godot 内置物理（Godot Physics 3D）**的窄相位是**支撑映射 + 分离轴风格**：源码见 `servers/physics_3d/godot_shape_3d.cpp`，每个形状实现 `project_range()` / `get_support()` / `get_supports()` 三个虚函数，引擎用它们在候选轴上求投影区间来判定分离。**整个文件里没有 GJK、也没有 EPA。**
+> - **Godot 内置物理（Godot Physics 3D）**的窄相位是**支撑映射 + 分离轴风格**：源码见 `modules/godot_physics_3d/godot_shape_3d.cpp`，每个形状实现 `project_range()` / `get_support()` / `get_supports()` 三个虚函数，引擎用它们在候选轴上求投影区间来判定分离。**整个文件里没有 GJK、也没有 EPA。**
 > - **GJK / EPA** 是 **Jolt**（以及 Godot 3.x 时代的 Bullet）使用的窄相位方案。切到 Jolt 后端（第 34 篇）时，描述才成立。
 > - 因此下文的 GJK/EPA 代码是**教学用的简化实现**，用于理解算法本身，**不是引擎实现的复刻**。
 
@@ -142,7 +142,7 @@ GJK 算法步骤:
 # GJK 算法简化实现（教学用途）
 # ⚠️ 这是"Jolt 风格的 GJK/EPA"教学简化实现，不是 Godot 内置物理引擎的实现。
 #    Godot 内置物理（Godot Physics 3D）的窄相位是支撑映射 + 分离轴风格，
-#    见 servers/physics_3d/godot_shape_3d.cpp 的 project_range / get_support / get_supports。
+#    见 modules/godot_physics_3d/godot_shape_3d.cpp 的 project_range / get_support / get_supports。
 
 class_name GJKAlgorithm
 
@@ -530,7 +530,7 @@ static func calculate_contact_point(face: Dictionary,
 └─────────────────────────────────────────────────────────────┘
 
 说明:
-- "Godot 内置物理"列指 Godot Physics 3D（servers/physics_3d/）。
+- "Godot 内置物理"列指 Godot Physics 3D（实现位于 `modules/godot_physics_3d/`）。
   它用 project_range / get_support / get_supports 做支撑映射 + 分离轴判定，
   凸多边形另有专用算法。
 - GJK / EPA 两行标 ❌ 是因为它们属于 Jolt 后端（及 3.x 的 Bullet），
@@ -960,7 +960,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D):
 func setup_ccd(body: RigidBody3D):
     body.continuous_cd = true
     
-    # 服务器层等价接口（servers/physics_server_3d.h）
+    # 服务器层等价接口（servers/physics_3d/physics_server_3d.h）
     PhysicsServer3D.body_set_enable_continuous_collision_detection(body.get_rid(), true)
 
 # 批量启用 CCD
@@ -1147,7 +1147,7 @@ func _setup_low_precision_collision():
 
 - **官方文档**: [Godot Collision Detection](https://docs.godotengine.org/en/stable/tutorials/physics/using_kinematic_body_3d.html)
 - **物理查询**: [PhysicsDirectBodyState3D](https://docs.godotengine.org/en/stable/classes/class_physicsdirectbodystate3d.html)
-- **源码位置**: `servers/physics_3d/`, `scene/3d/area_3d.cpp`
+- **源码位置**: `servers/physics_3d/`, `scene/3d/physics/area_3d.cpp`
 - **技术博客**: [Godot Physics Optimization](https://godotengine.org/article/physics-optimization/)
 
 ---

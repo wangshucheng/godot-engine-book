@@ -589,7 +589,7 @@ func _cleanup_cache():
 
 - **官方文档**: [2D 粒子](https://docs.godotengine.org/en/stable/tutorials/2d/2d_particles.html)、[粒子材质](https://docs.godotengine.org/en/stable/tutorials/2d/2d_particles.html)
 - **类参考**: [GPUParticles2D](https://docs.godotengine.org/en/stable/classes/class_gpuparticles2d.html)、[CPUParticles2D](https://docs.godotengine.org/en/stable/classes/class_cpuparticles2d.html)、[ParticleProcessMaterial](https://docs.godotengine.org/en/stable/classes/class_particleprocessmaterial.html)
-- **源码位置**: `scene/2d/gpu_particles2d.cpp`、`scene/resources/particle_process_material.cpp`
+- **源码位置**: `scene/2d/gpu_particles_2d.cpp`、`scene/resources/particle_process_material.cpp`
 
 ---
 

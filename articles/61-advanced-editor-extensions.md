@@ -887,7 +887,7 @@ func get_dock_icon() -> Texture2D:
 > - 控件上取图标应该用 `Control.get_theme_icon(name, type)`——
 >   它会沿控件树向上找到正确的 Theme。
 > - **编辑器主题预设**由编辑器设置 `interface/theme/preset` 控制。
->   4.3 源码（`editor/themes/editor_theme_manager.cpp`）里识别这些取值：
+>   4.7.2 源码（`editor/themes/editor_theme_manager.cpp`）里识别这些取值：
 >   `Default`（深色默认）、`Breeze Dark`、`Godot 2`、`Gray`、`Light`、
 >   `Solarized (Dark)`、`Solarized (Light)`、`Black (OLED)`、
 >   `Custom`（用户自定义过 accent/base color 时自动落到这一档）。

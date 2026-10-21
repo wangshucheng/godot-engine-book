@@ -30,7 +30,7 @@
 
 **源码位置**: `core/io/resource.h` / `core/io/resource.cpp`
 
-由 `resource.cpp` 的实际使用可确证的成员（Godot 4.3）：
+由 `resource.cpp` 的实际使用可确证的成员（Godot 4.7.2）：
 
 ```cpp
 class Resource : public RefCounted {

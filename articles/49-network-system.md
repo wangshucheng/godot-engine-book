@@ -1463,7 +1463,7 @@ func print_stats():
 ## 🔗 延伸阅读
 
 - **官方文档**: [Godot Networking](https://docs.godotengine.org/en/stable/tutorials/networking/index.html)
-- **源码位置**（Godot 4.3）：
+- **源码位置**（Godot 4.7.2）：
   - `scene/main/multiplayer_api.cpp`、`scene/main/multiplayer_peer.h` —— 多人 API 与对等体基类
   - `modules/multiplayer/` —— `scene_multiplayer.h`（场景多人实现）、`multiplayer_spawner`、`multiplayer_synchronizer`
   - `modules/enet/enet_multiplayer_peer.h`、`modules/enet/enet_connection.h` —— ENet 传输层

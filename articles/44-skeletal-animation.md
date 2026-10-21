@@ -663,7 +663,7 @@ func _is_keep_bone(bone_name: String) -> bool:
 - **官方文档 · 导入 3D 场景**: <https://docs.godotengine.org/en/stable/tutorials/assets_pipeline/importing_3d_scenes/index.html>
 - **官方博客 · Design of the Skeleton Modifier 3D**: <https://godotengine.org/article/design-of-the-skeleton-modifier-3d/>
 - **源码位置**: `scene/3d/skeleton_3d.cpp`、`scene/3d/bone_attachment_3d.cpp`、
-  `scene/3d/skeleton_modifier_3d.cpp`、`scene/resources/skin.cpp`、`scene/resources/mesh.cpp`
+  `scene/3d/skeleton_modifier_3d.cpp`、`scene/resources/3d/skin.cpp`、`scene/resources/mesh.cpp`
 
 ---
 

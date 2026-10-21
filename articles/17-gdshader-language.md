@@ -355,7 +355,7 @@ void fragment() {
 
 > ⚠️ `albedo_texture` / `normal_texture` 是 **Godot 3.x** 的**内置**小写采样器名。4.x 把它们**彻底移除了**——spatial 着色器里**没有任何**内置纹理采样器，必须自己 `uniform sampler2D` 声明，再按变量名采样。
 >
-> 容易混的是：4.3 的 spatial 内置量里确实有一个 `NORMAL_MAP`，但它是 **`vec3`（法线贴图方向，可写）**，`NORMAL_MAP_DEPTH` 是 **`float`**（`servers/rendering/shader_types.cpp:121-122`）——**不是采样器，不能 `texture(NORMAL_MAP, UV)`**。
+> 容易混的是：4.7.2 的 spatial 内置量里确实有一个 `NORMAL_MAP`，但它是 **`vec3`（法线贴图方向，可写）**，`NORMAL_MAP_DEPTH` 是 **`float`**（`servers/rendering/shader_types.cpp:145-146`）——**不是采样器，不能 `texture(NORMAL_MAP, UV)`**。
 
 ### 2.4 uniform 与 hint
 
@@ -1055,7 +1055,7 @@ Godot 3.x 的内置变量是小写下划线风格，4.x 改成了大写下划线
 |---|---|---|
 | `albedo_texture` | 需自行声明 `uniform sampler2D albedo_texture : source_color;` | 4.x 移除了内置基础色采样器 |
 | `normal_texture` | 需自行声明 `uniform sampler2D normal_texture : hint_normal;` | 4.x 移除了内置法线采样器 |
-| `normal_texture_depth` | `NORMAL_MAP_DEPTH`（`float`） | 4.3 的 spatial 内置量，是深度**标量**不是采样器 |
+| `normal_texture_depth` | `NORMAL_MAP_DEPTH`（`float`） | 4.7.2 的 spatial 内置量，是深度**标量**不是采样器 |
 | `specular_shininess_texture` | 需自行声明 | 4.x 移除了内置高光采样器 |
 | `VERTEX` / `NORMAL` / `UV` / `COLOR` | 同名保留 | 这几个名字没变 |
 | `screen_uv` | `SCREEN_UV` | 屏幕 UV |
@@ -1092,7 +1092,7 @@ Godot 3.x 的内置变量是小写下划线风格，4.x 改成了大写下划线
 
 - **官方文档**: [着色器语言参考（Shading Language）](https://docs.godotengine.org/en/stable/tutorials/shaders/shader_reference/shading_language.html)、[空间着色器](https://docs.godotengine.org/en/stable/tutorials/shaders/shader_reference/spatial_shader.html)、[CanvasItem 着色器](https://docs.godotengine.org/en/stable/tutorials/shaders/shader_reference/canvas_item_shader.html)
 - **类参考**: [Shader](https://docs.godotengine.org/en/stable/classes/class_shader.html)、[ShaderMaterial](https://docs.godotengine.org/en/stable/classes/class_shadermaterial.html)、[Material](https://docs.godotengine.org/en/stable/classes/class_material.html)、[BaseMaterial3D](https://docs.godotengine.org/en/stable/classes/class_basematerial3d.html)
-- **源码位置**: `servers/rendering/shader_types.cpp`（内置变量与 `render_mode` 注册表）、`servers/rendering/shader_language.cpp`（词法表、内建函数表、类型转换）、`scene/resources/material.cpp`（`StandardMaterial3D` 的代码生成）、`scene/resources/visual_shader.cpp`（可视化着色器节点）
+- **源码位置**: `servers/rendering/shader_types.cpp`（内置变量与 `render_mode` 注册表）、`servers/rendering/shader_language.cpp`（词法表、内建函数表、类型转换）、`scene/resources/material.cpp`（`StandardMaterial3D` 的代码生成）、`modules/visual_shader/visual_shader.cpp`（可视化着色器节点）
 
 ---
 

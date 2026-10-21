@@ -72,7 +72,7 @@ Godot 内存模型
 **源码位置**: `core/object/ref_counted.h`
 
 ```cpp
-// Godot 源码 - core/object/ref_counted.h（Godot 4.3）
+// Godot 源码 - core/object/ref_counted.h（Godot 4.7.2）
 class RefCounted : public Object {
 	GDCLASS(RefCounted, Object);
 	SafeRefCount refcount;
@@ -105,7 +105,7 @@ public:
 > ⚠️ **析构通知不是 `unreference()` 发的**。`unreference()` 只负责维护计数并返回"是否该销毁了"；真正的 `NOTIFICATION_PREDELETE` 通知由 `Object::predelete_handler()` → `Object::_predelete()` 发出：
 >
 > ```cpp
-> // core/object/object.cpp（Godot 4.3）
+> // core/object/object.cpp（Godot 4.7.2）
 > bool predelete_handler(Object *p_object) {
 >     return p_object->_predelete();
 > }
@@ -250,7 +250,7 @@ func create_safe():
 ### 2.4 源码分析：引用计数实现
 
 ```cpp
-// Godot 源码 - core/object/ref_counted.cpp（Godot 4.3，节选）
+// Godot 源码 - core/object/ref_counted.cpp（Godot 4.7.2，节选）
 
 // 初始化引用：计数置 1
 bool RefCounted::init_ref() {
@@ -378,7 +378,7 @@ parent.queue_free()
 **源码位置**: `scene/main/node.cpp`
 
 ```cpp
-// Godot 源码 - scene/main/node.cpp（Godot 4.3）
+// Godot 源码 - scene/main/node.cpp（Godot 4.7.2）
 void Node::queue_free() {
 	// 优先用节点自己所属的 SceneTree（有些项目会创建多个场景树）
 	if (is_inside_tree()) {
@@ -390,10 +390,10 @@ void Node::queue_free() {
 	}
 }
 
-// Godot 源码 - scene/main/scene_tree.cpp（Godot 4.3）
-void SceneTree::queue_delete(Object *p_object) {
+// Godot 源码 - scene/main/scene_tree.cpp（Godot 4.7.2）
+void SceneTree::queue_delete(RequiredParam<Object> rp_object) {
 	_THREAD_SAFE_METHOD_
-	ERR_FAIL_NULL(p_object);
+	EXTRACT_PARAM_OR_FAIL(p_object, rp_object);
 	p_object->_is_queued_for_deletion = true;
 	delete_queue.push_back(p_object->get_instance_id());   // 只记 ObjectID
 }
@@ -457,7 +457,7 @@ Object 析构：断开全部信号连接、ObjectDB 注销
 内存释放
 ```
 
-**源码分析**（Godot 4.3，`scene/main/node.cpp`）：
+**源码分析**（Godot 4.7.2，`scene/main/node.cpp`）：
 
 ```cpp
 case NOTIFICATION_PREDELETE: {
@@ -534,7 +534,7 @@ func _exit_tree():
 **源码位置**: `core/io/resource.h`
 
 ```cpp
-// Godot 源码 - core/io/resource.h（Godot 4.3，节选）
+// Godot 源码 - core/io/resource.h（Godot 4.7.2，节选）
 class Resource : public RefCounted {
 	GDCLASS(Resource, RefCounted);
 
@@ -859,7 +859,7 @@ print(get_tree().get_node_count())
 
 - **官方文档**: [内存使用](https://docs.godotengine.org/en/stable/tutorials/performance/using_servers.html)、[优化内存使用](https://docs.godotengine.org/en/stable/tutorials/performance/optimizing_memory_usage.html)
 - **类参考**: [RefCounted](https://docs.godotengine.org/en/stable/classes/class_refcounted.html)、[WeakRef](https://docs.godotengine.org/en/stable/classes/class_weakref.html)、[Resource](https://docs.godotengine.org/en/stable/classes/class_resource.html)
-- **源码位置**: `core/object/ref_counted.h`、`core/object/weak_ref.h`
+- **源码位置**: `core/object/ref_counted.h`、`core/object/ref_counted.h`
 
 ---
 

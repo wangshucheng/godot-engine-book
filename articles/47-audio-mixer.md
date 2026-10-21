@@ -1006,7 +1006,7 @@ func print_stats():
 - **官方文档**: [Audio buses](https://docs.godotengine.org/en/stable/tutorials/audio/audio_buses.html)
 - **类参考**: [AudioServer](https://docs.godotengine.org/en/stable/classes/class_audioserver.html)
 - **类参考**: [AudioBusLayout](https://docs.godotengine.org/en/stable/classes/class_audiobuslayout.html)
-- **源码位置**: `servers/audio_server.cpp`（`_mix_step()`）、`servers/audio/effects/`
+- **源码位置**: `servers/audio/audio_server.cpp`（`_mix_step()`）、`servers/audio/effects/`
 
 ---
 
