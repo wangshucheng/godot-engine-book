@@ -982,7 +982,7 @@ func _to_stage_data(spirv: Dictionary) -> Array:
     return out
 ```
 
-> ⚠️ 上面 `_to_stage_data()` 的返回结构必须与目标版本 `shader_create_from_spirv()` 期望的 `Vector[ShaderStageSPIRVData]` 一致 —— 4.3 的官方类参考**没有把这个结构体列为脚本类**，所以纯 GDScript 里拿不到它的构造器，这也是 4.x 里 RD 计算着色器最常被卡住的一步。完整可跑的转换写法见**第 42 篇《粒子系统》**的 RD 计算着色器示例。
+> ⚠️ 上面 `_to_stage_data()` 的返回结构必须与目标版本 `shader_create_from_spirv()` 期望的 `Vector[ShaderStageSPIRVData]` 一致 —— 4.7.2 的官方类参考**没有把这个结构体列为脚本类**，所以纯 GDScript 里拿不到它的构造器，这也是 4.x 里 RD 计算着色器最常被卡住的一步。完整可跑的转换写法见**第 42 篇《粒子系统》**的 RD 计算着色器示例。
 
 > 💡 **三条最容易踩的坑**：
 > 1. **RID 不会自动释放**。`free_rid()` 忘记调用就是泄漏；释放后继续使用则是未定义行为。

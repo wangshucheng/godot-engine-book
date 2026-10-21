@@ -400,7 +400,7 @@ $OutdoorWall.layers = 1 << 1        # 第 2 层
 
 ### 3.1 Godot 4 的 GI 方案全景
 
-4.3 注册了五个 GI 相关类，再加上环境里的 SDFGI，一共是六条互不相同的路线：
+4.7.2 注册了五个 GI 相关类，再加上环境里的 SDFGI，一共是六条互不相同的路线：
 
 | 方案 | 载体 | 类型 | 说明 |
 |------|------|------|------|
@@ -451,6 +451,8 @@ $OutdoorWall.layers = 1 << 1        # 第 2 层
 | `LightmapGI.generate_probes_subdiv` | 顺带生成 `LightmapProbe` 的细分等级 |
 | `LightmapGI.use_denoiser` / `denoiser_strength` / `denoiser_range` | 降噪设置 |
 | `LightmapGI.bias` / `directional` / `interior` | 烘焙的偏置、方向性、室内模式 |
+| `LightmapGI.shadowmask_mode` | 阴影遮罩模式（4.7.2 相对 4.3 新增） |
+| `LightmapGI.supersampling` / `supersampling_factor` | 烘焙超采样（4.7.2 相对 4.3 新增） |
 | `LightmapGI.environment_mode` | `ENVIRONMENT_MODE_DISABLED` / `ENVIRONMENT_MODE_SCENE` / `ENVIRONMENT_MODE_CUSTOM_SKY` / `ENVIRONMENT_MODE_CUSTOM_COLOR` |
 | `LightmapGI.environment_custom_color` / `environment_custom_energy` / `environment_custom_sky` | 自定义环境光 |
 | `LightmapGI.camera_attributes` | 相机属性（影响降噪与色调） |
@@ -487,7 +489,7 @@ $OutdoorWall.layers = 1 << 1        # 第 2 层
 | `VoxelGIData.propagation` | 传播方式 |
 | `VoxelGIData.interior` | 室内模式（影响多次反弹的传播） |
 
-> 💡 **`VoxelGI.bake()` 存在、`LightmapGI.bake()` 不存在**，这是 4.3 里两个烘焙方案最大的 API 差异。VoxelGI 可以在游戏运行时重烘焙（适合"玩家建造后重新计算 GI"的场景），代价是重烘焙的那一帧会有明显卡顿。
+> 💡 **`VoxelGI.bake()` 存在、`LightmapGI.bake()` 不存在**，这是 4.7.2 里两个烘焙方案最大的 API 差异。VoxelGI 可以在游戏运行时重烘焙（适合"玩家建造后重新计算 GI"的场景），代价是重烘焙的那一帧会有明显卡顿。
 
 ### 3.4 LightmapProbe：只取光，不发光
 
@@ -510,7 +512,7 @@ add_child(lp)
 | `VoxelGI` | 随体素一起烘焙 |
 | `SDFGI` | 运行时自动生成的探针网格（不可手动摆放） |
 
-> ⚠️ `LightmapProbe` 在 4.3 的类参考里**没有任何属性**（它继承 `Node3D`，只多了 `position` / `rotation` 这些变换属性）。它没有 `bake` 方法，也没有"烘焙质量"属性——这些都在 `LightmapGI` 上。
+> ⚠️ `LightmapProbe` 在 4.7.2 的类参考里**没有任何属性**（它继承 `Node3D`，只多了 `position` / `rotation` 这些变换属性）。它没有 `bake` 方法，也没有"烘焙质量"属性——这些都在 `LightmapGI` 上。
 
 ### 3.5 ReflectionProbe：反射 + 间接光
 
@@ -634,7 +636,7 @@ SDFGI 的完整参数与它在 pass 顺序里的位置，见第 14 篇第 5.7 �
 
 ### 4.1 烘焙光照贴图
 
-`LightmapGI` 的**烘焙只在编辑器里进行**，4.3 的 `LightmapGI` 类没有暴露任何 `<methods>`，`bake()` 之类的方法并不存在。正确流程是：
+`LightmapGI` 的**烘焙只在编辑器里进行**，4.7.2 的 `LightmapGI` 类没有暴露任何 `<methods>`，`bake()` 之类的方法并不存在。正确流程是：
 
 ```
 编辑器操作（不是脚本）：
@@ -893,7 +895,7 @@ func _ready() -> void:
 5. **Godot 4.7.2 仍没有 VSM**，软阴影靠 `shadow_blur`（PCF）与 `light_size` / `light_angular_distance`（PCSS）共同完成。
 6. **GI 有六条路线**：LightmapGI（烘焙）、VoxelGI（可运行时重烘焙）、LightmapProbe（只取光）、ReflectionProbe（反射）、SDFGI（实时，仅 Forward+）、SSIL（屏幕空间，仅 Forward+）。
 7. **LightmapGI 的烘焙只在编辑器里**，`LightmapGI` 没有 `bake()` 方法、没有 `bake_mode`；质量枚举是 `BAKE_QUALITY_*`，开关在 `Light3D.light_bake_mode`，产物是 `LightmapGIData` 资源。
-8. **`VoxelGI.bake()` 存在而 `LightmapGI.bake()` 不存在**——这是 4.3 里两个烘焙方案最关键的 API 差异。
+8. **`VoxelGI.bake()` 存在而 `LightmapGI.bake()` 不存在**——这是 4.7.2 里两个烘焙方案最关键的 API 差异。
 
 ---
 

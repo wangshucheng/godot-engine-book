@@ -569,7 +569,7 @@ $WorldEnvironment.compositor = compositor
 
 ### 8.5 4.3 的限制
 
-这一节是 `CompositorEffect` 最容易踩坑的地方。4.3 的 `scene/resources/compositor.cpp` 里，`CompositorEffect::_validate_property()` 会按 `effect_callback_type` **隐藏**不适用的属性：
+这一节是 `CompositorEffect` 最容易踩坑的地方。4.7.2 的 `scene/resources/compositor.cpp` 里，`CompositorEffect::_validate_property()` 会按 `effect_callback_type` **隐藏**不适用的属性：
 
 ```cpp
 void CompositorEffect::_validate_property(PropertyInfo &p_property) const {
@@ -605,7 +605,7 @@ void CompositorEffect::_validate_property(PropertyInfo &p_property) const {
 
 最后一条尤其重要：**把项目切到 Compatibility 渲染器时，`CompositorEffect` 会静默失效**——回调根本不会被调用，`render_data.get_render_scene_buffers()` 拿到的也不是 `RenderSceneBuffersRD`。所以在写自定义后处理前，第一件事是确认目标渲染方法。
 
-还有一条容易忽略的限制：**渲染反射探针（ReflectionProbe）时会跳过全部合成器效果**。4.3 的 `RendererSceneRenderRD::_process_compositor_effects()` 开头就有这么一段判断——渲染数据里带着反射探针就直接 `return`。这意味着你在探针贴图里看到的是"没有自定义后处理"的画面，这是正常的。
+还有一条容易忽略的限制：**渲染反射探针（ReflectionProbe）时会跳过全部合成器效果**。4.7.2 的 `RendererSceneRenderRD::_process_compositor_effects()` 开头就有这么一段判断——渲染数据里带着反射探针就直接 `return`。这意味着你在探针贴图里看到的是"没有自定义后处理"的画面，这是正常的。
 
 另外两条使用纪律：
 

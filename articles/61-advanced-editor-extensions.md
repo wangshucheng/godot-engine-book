@@ -909,7 +909,7 @@ func get_dock_icon() -> Texture2D:
 
 `plugin.cfg` 的规范也在第 58 篇：它是 INI 格式，元数据全部写在 `[plugin]` 段
 （`name` / `description` / `author` / `version` / `script`），
-**4.3 不支持 `[dependencies]` 段**——依赖要在自己的 `_enter_tree()` 里用
+**4.7.2 仍不支持 `[dependencies]` 段**——依赖要在自己的 `_enter_tree()` 里用
 `EditorInterface.is_plugin_enabled()` 自行检测。
 
 ---

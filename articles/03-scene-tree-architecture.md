@@ -771,12 +771,15 @@ scene_tree.tree_process_mode_changed.connect(_on_tree_process_mode_changed)
 # 配置警告变化
 scene_tree.node_configuration_warning_changed.connect(_on_warning_changed)
 
+# 当前场景切换完成
+scene_tree.scene_changed.connect(_on_scene_changed)
+
 # 每帧 / 每个物理帧
 scene_tree.process_frame.connect(_on_process_frame)
 scene_tree.physics_frame.connect(_on_physics_frame)
 ```
 
-> ⚠️ **没有 `scene_paused` 这个信号**。4.x 的 `SceneTree` 信号只有上面这 8 个，暂停状态是一个**属性**（`paused`），不是信号。
+> ⚠️ **没有 `scene_paused` 这个信号**。4.7.2 的 `SceneTree` 信号只有上面这 9 个（4.3 时只有 8 个，4.7 新增了 `scene_changed`），暂停状态是一个**属性**（`paused`），不是信号。
 
 **暂停状态：用属性轮询，而不是信号**
 

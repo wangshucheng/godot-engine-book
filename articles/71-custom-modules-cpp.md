@@ -346,11 +346,11 @@ void uninitialize_summator_module(ModuleInitializationLevel p_level) {
 >
 > 这个钩子**不在本书基线（4.3）的能力范围内**。经核对引擎构建脚本：
 >
-> - Godot **4.3** 与 **4.4** 的 `modules/SCsub` 只生成两类调用——`initialize_<模块名>_module(p_level)` 与 `uninitialize_<模块名>_module(p_level)`；
+> - Godot **4.3 / 4.4** 的 `modules/SCsub` 手写生成两类调用——`initialize_<模块名>_module(p_level)` 与 `uninitialize_<模块名>_module(p_level)`；**4.7.2 改成由 `misc/modules_builders.py` 生成 `register_module_types.gen.cpp`**，预注册调用到底生不生成要看那个生成器；
 > - Godot **4.4** 的 `SConstruct` 中检索不到 `PREREGISTER` 字样；
 > - 4.5 及以后分支把生成逻辑挪进了 `modules/modules_builders.py`，但该文件里同样**没有**预注册调用的生成代码。
 >
-> 也就是说：在 4.3 / 4.4 上照下面写，你的 `preregister_<模块名>_types()` 函数**会被静默忽略**——不报错、也不执行，看起来「配了但没用」。该机制在更新的官方文档（4.7 文档页）中才有明确描述；**使用前请以你所用引擎分支的 `modules/SCsub` / `modules/modules_builders.py` 是否确实生成了预注册调用为准**，不要只看宏有没有定义。
+> 也就是说：在 4.3 / 4.4 上照下面写，你的 `preregister_<模块名>_types()` 函数**会被静默忽略**——不报错、也不执行，看起来「配了但没用」。**4.7.2 的生成机制也变了**：`modules/SCsub` 不再手写这些调用，而是交给 `misc/modules_builders.py` 的 `register_module_types_builder` 生成 `register_module_types.gen.cpp`。该机制在更新的官方文档（4.7 文档页）中才有明确描述；**使用前请以你所用引擎分支的 `modules/SCsub` / `misc/modules_builders.py` 是否确实生成了预注册调用为准**，不要只看宏有没有定义。
 
 这需要显式声明一个宏，告诉构建系统在编译期生成对应的调用代码：
 

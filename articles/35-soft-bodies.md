@@ -236,7 +236,7 @@ soft_body.set_point_pinned(0, false)
 > ⚠️ **`get_point_transform()` 的名字有误导性**：它返回的是 `Vector3`（一个位置），不是 `Transform3D`。而且这里有一处**类参考与实现不一致**，值得知道：
 >
 > - 4.3 类参考的描述是 "Returns local translation of a vertex in the surface array."（表面数组中顶点的局部位移）；
-> - 但 4.3 的实现 `SoftBody3D::get_point_transform()` 实际调用的是 `PhysicsServer3D.soft_body_get_point_global_position()`，返回的是**全局位置**。
+> - 但 4.7.2 的实现 `SoftBody3D::get_point_transform()` 实际调用的是 `PhysicsServer3D.soft_body_get_point_global_position()`，返回的是**全局位置**。
 >
 > 也就是说**以实现为准：它给的是全局坐标**。要拿"相对软体原点的偏移"，得自己减掉 `global_position`。
 

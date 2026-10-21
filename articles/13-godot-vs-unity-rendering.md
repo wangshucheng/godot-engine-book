@@ -309,7 +309,7 @@ GPU
 | **动态 GI** | SDFGI（Forward+ 专属） | Enlighten 动态模式 |
 | **光照探针** | LightmapProbe / ReflectionProbe | LightProbe / ReflectionProbe |
 
-> Godot 4.3 注册了五个 GI 相关类：`VoxelGI` / `VoxelGIData`（动态烘焙 GI）、`LightmapGI` / `LightmapGIData`（光照贴图烘焙）、`LightmapProbe`（探针），加上 `Environment.sdfgi_enabled` 控制的 SDFGI（实时符号距离场 GI，仅 Forward+ 支持）。它们不是同一个东西，不能笼统地统称"SDFGI"。
+> Godot 4.7.2 注册了五个 GI 相关类：`VoxelGI` / `VoxelGIData`（动态烘焙 GI）、`LightmapGI` / `LightmapGIData`（光照贴图烘焙）、`LightmapProbe`（探针），加上 `Environment.sdfgi_enabled` 控制的 SDFGI（实时符号距离场 GI，仅 Forward+ 支持）。它们不是同一个东西，不能笼统地统称"SDFGI"。
 
 ### 3.2 阴影
 
@@ -457,7 +457,7 @@ GPU
 | `Environment.sdfgi_enabled` | 符号距离场实时 GI | 运行时渐进更新（`sdfgi_cascades` / `sdfgi_min_cell_size` 控制成本） | **最高** | Forward+ 下的实时间接光 |
 | `Environment.ssil_enabled` | 屏幕空间间接光 | 每帧屏幕空间计算 | 高 | 补近景间接光的细节 |
 
-> ⚠️ **它们不是同一个东西，不能笼统地统称"SDFGI"**。4.3 注册了 `VoxelGI` / `VoxelGIData`、`LightmapGI` / `LightmapGIData`、`LightmapProbe` 五个 GI 相关类，加上 `Environment.sdfgi_enabled` 控制的实时 SDFGI。
+> ⚠️ **它们不是同一个东西，不能笼统地统称"SDFGI"**。4.7.2 注册了 `VoxelGI` / `VoxelGIData`、`LightmapGI` / `LightmapGIData`、`LightmapProbe` 五个 GI 相关类，加上 `Environment.sdfgi_enabled` 控制的实时 SDFGI。
 
 **逐项对照 Unity**：
 

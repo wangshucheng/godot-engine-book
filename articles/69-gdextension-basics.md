@@ -530,7 +530,7 @@ linux.release.x86_64 = "res://bin/libgdexample.linux.template_release.x86_64.so"
 
 **机制说明**：引擎并不是拿键去和一张固定枚举表比对，而是把键按 `.` 拆成若干段，**每一段都必须是当前运行环境报告的特性标签**（`OS::has_feature()`），全部满足才算命中；命中多条时取**标签段数最多**的那一条。所以 `windows.release.x86_64` 表示「平台是 windows + release 构建 + x86_64 架构」，`macos.debug` 表示「平台是 macos + debug 构建」（架构段可省）。
 
-按 Godot 4.3 `core/os/os.cpp` 的 `OS::has_feature()` 实现，这些构建类型的判定是：`editor` → 编辑器构建（`TOOLS_ENABLED`）；`template` / `template_debug` / `template_release` → 导出模板构建；`debug` → 带 `DEBUG_ENABLED` 的构建（编辑器构建与调试模板都算）；`release` → 发布模板构建。
+按 Godot 4.7.2 `core/os/os.cpp` 的 `OS::has_feature()` 实现，这些构建类型的判定是：`editor` → 编辑器构建（`TOOLS_ENABLED`）；`template` / `template_debug` / `template_release` → 导出模板构建；`debug` → 带 `DEBUG_ENABLED` 的构建（编辑器构建与调试模板都算）；`release` → 发布模板构建。
 
 这个设计还有一个重要的导出语义：**导出项目时，只有匹配目标平台的那个动态库会被打入导出包**，不会把 Windows 的 `.dll` 塞进 Linux 包里。
 

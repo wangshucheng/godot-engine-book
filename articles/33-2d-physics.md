@@ -364,7 +364,7 @@ func _integrate_forces(state: PhysicsDirectBodyState2D) -> void:
 
 ### 4.2 `PhysicsDirectBodyState2D`：`_integrate_forces` 的状态对象
 
-`RigidBody2D._integrate_forces(state)` 收到的 `state` 是 `PhysicsDirectBodyState2D`，它同时提供**读**（当前状态）与**写**（改写状态）两类接口。4.3 的完整字段如下。
+`RigidBody2D._integrate_forces(state)` 收到的 `state` 是 `PhysicsDirectBodyState2D`，它同时提供**读**（当前状态）与**写**（改写状态）两类接口。4.7.2 的成员如下（属性 14 个、方法 32 个，这里按用途归类；相比 4.3 多了 `collision_layer` / `collision_mask` 两个属性）。
 
 **成员属性（可直接读写）**
 
@@ -374,6 +374,7 @@ func _integrate_forces(state: PhysicsDirectBodyState2D) -> void:
 | `angular_velocity` | `float` | 角速度（弧度/秒） |
 | `transform` | `Transform2D` | 本体的变换矩阵（可写） |
 | `sleeping` | `bool` | 是否处于休眠 |
+| `collision_layer` / `collision_mask` | `int` | 本体的碰撞层 / 掩码（4.7.2 相对 4.3 新增） |
 | `step` | `float` | 本次模拟的步长（delta） |
 | `total_gravity` | `Vector2` | 当前作用在本体的**总**重力矢量（已包含 `Area2D` 的重力覆盖） |
 | `total_linear_damp` / `total_angular_damp` | `float` | 实际生效的阻尼（含 `Area2D` 覆盖） |

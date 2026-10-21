@@ -71,7 +71,7 @@ public:
 };
 ```
 
-> ⚠️ 4.3 里**不存在** `class RendererSceneRender : public Singleton`，也不存在 `_render_scene` / `_cull_objects` / `_sort_objects` / `_batch_objects` 这四个虚函数——它们在 `renderer_scene_render.h/.cpp` 中命中数为 0。剔除、排序、渲染列表的组装都由 `RendererSceneRenderRD` 及其子类（`RenderForwardClustered` / `RenderForwardMobile`）在 `renderer_rd/` 目录中实现。
+> ⚠️ 4.7.2 里**不存在** `class RendererSceneRender : public Singleton`，也不存在 `_render_scene` / `_cull_objects` / `_sort_objects` / `_batch_objects` 这四个虚函数——它们在 `renderer_scene_render.h/.cpp` 中命中数为 0。剔除、排序、渲染列表的组装都由 `RendererSceneRenderRD` 及其子类（`RenderForwardClustered` / `RenderForwardMobile`）在 `renderer_rd/` 目录中实现。
 
 ### 1.3 一帧被切成三段：谁在哪个线程上做什么
 
@@ -189,7 +189,7 @@ Godot 4.3 的剔除不是"一个开关"，而是**三个互相独立的层**。�
 
 ### 2.5 剔除是并行的，但开销算在主线程上
 
-场景端的剔除在 4.3 里是可以并行的：`RendererSceneCull` 会用 `WorkerThreadPool` 把可见性判定拆给多个工作线程（内部函数 `_visibility_cull_threaded()`）。
+场景端的剔除在 4.7.2 里是可以并行的：`RendererSceneCull` 会用 `WorkerThreadPool` 把可见性判定拆给多个工作线程（内部函数 `_visibility_cull_threaded()`）。
 
 但要注意两点：
 
@@ -663,7 +663,7 @@ Godot 4.3 里有**两套互不相干**的雾参数，初学者最容易混：
 
 ### 5.7 SDFGI：级联、探针与更新时机
 
-SDFGI（Software Dynamic Global Illumination）是 Godot 4.3 里**唯一完全实时的 GI 方案**，它用符号距离场（Signed Distance Field）表示场景遮挡，用一套 GPU 探针在运行时求解间接光。
+SDFGI（Software Dynamic Global Illumination）是 Godot 4.7.2 里**唯一完全实时的 GI 方案**，它用符号距离场（Signed Distance Field）表示场景遮挡，用一套 GPU 探针在运行时求解间接光。
 
 它的全部参数都在 `Environment` 上：
 
@@ -912,7 +912,7 @@ enum CompositorEffectCallbackType {   // servers/rendering/rendering_server.h:10
 
 ## 📝 本章总结
 
-渲染一帧，本质上是"**先决定画什么，再决定按什么顺序画，最后决定每一遍画到哪个 pass 里**"。Godot 4.3 把这三件事分别放在三个地方：剔除与排序在主线程的 `RendererSceneCull`，渲染列表与 pass 录制在渲染线程的 `RenderForwardClustered`，GPU 提交在 `RenderingDevice`。
+渲染一帧，本质上是"**先决定画什么，再决定按什么顺序画，最后决定每一遍画到哪个 pass 里**"。Godot 4.7.2 把这三件事分别放在三个地方：剔除与排序在主线程的 `RendererSceneCull`，渲染列表与 pass 录制在渲染线程的 `RenderForwardClustered`，GPU 提交在 `RenderingDevice`。
 
 本章最重要的一条认知是：**Godot 4 没有运行时合批器**。Draw Call 的削减不是渲染器的工作，而是你在场景组织层（共享材质、MultiMesh、可见性范围）就已经决定的结果。
 
