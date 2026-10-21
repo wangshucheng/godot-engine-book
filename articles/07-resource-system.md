@@ -1,5 +1,10 @@
 # 第 7 篇：Godot 资源系统深度解析
 
+> **本章导读**：场景、材质、音频、脚本在 Godot 里都是**资源**——它们共享同一套加载、缓存与引用语义。
+> 本章基于 `core/io/resource.cpp` 与 `resource_loader.cpp` 的真实实现，剖析资源的三重身份、`set_path()` 的五步流程与 `path_cache` 的双重含义、五种缓存模式、`local_to_scene` 的实际作用、`changed` 信号的线程安全边界，以及自定义 `ResourceFormatLoader` 的完整写法。
+> **前置知识**：第 4 篇《Godot 内存管理机制深度解析》、第 6 篇《Godot 信号系统深度解析》
+> **难度**：进阶。
+
 > **摘要**：资源（Resource）是 Godot 的核心概念——场景、材质、音频、脚本都是资源。本文基于 `core/io/resource.cpp` 与 `resource_loader.cpp` 的真实实现，剖析 `path_cache` 与资源缓存的关系、`set_path()` 的抢占语义、`ResourceLoader.load()` 的完整管线、五种 CACHE_MODE 的差异、线程化加载的真实行为，以及 `duplicate()`/`local_to_scene` 的复制规则。
 >
 > **与第 56 篇的分工**：本篇讲**引擎侧语义**（类结构、`set_path()` 抢占、`CACHE_MODE` 五态、`.tres`/`.res` 格式、`local_to_scene`、`changed` 线程安全）；[第 56 篇《资源加载与缓存实战》](/articles/56-resource-system.md) 讲**脚本侧策略**（何时同步/线程化加载、缓存怎么组织、引用怎么持有与释放、自定义资源怎么落地）。

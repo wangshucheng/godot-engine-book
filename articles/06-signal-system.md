@@ -1,5 +1,10 @@
 # 第 6 篇：Godot 信号系统深度解析
 
+> **本章导读**：信号是 Godot 里唯一「不依赖类型层级」的通信方式，也是与 Unity 事件模型差别最大的地方。
+> 本章基于 `core/object/object.cpp` 的真实实现，讲透 `connect()` 的三段校验、`emit_signalp()` 的六步执行管线、`CONNECT_DEFERRED` 背后到底 deferred 了什么，以及 `Signal` 与 `Callable` 这两个一等公民类型各自的定位。
+> **前置知识**：第 5 篇《Godot 对象系统深度解析》
+> **难度**：进阶。
+
 > **摘要**：信号（Signal）是 Godot 的观察者模式实现，用于节点间松耦合通信。本文基于 `core/object/object.cpp` 的真实实现，剖析 `connect()` 的三段校验、`emit_signalp()` 的六步执行管线、`CONNECT_DEFERRED` 背后的 MessageQueue、ONE_SHOT 的防重入设计、引用计数连接的判重规则，并给出生命周期与性能的实战清单。
 
 ---

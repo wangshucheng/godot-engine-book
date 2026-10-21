@@ -1,5 +1,10 @@
 # 第 2 篇：Godot vs Unity：架构设计深度对比
 
+> **本章导读**：从 Unity 过来的人最容易卡住的地方不是 API，而是**架构假设**——「对象是什么」「谁负责释放」「场景怎么组织」这三件事两个引擎答案完全不同。
+> 本章按六个维度逐条对比：设计哲学、基本单元、场景/层级系统、脚本系统、内存管理、渲染架构，每一节都给出「同一需求在两边怎么写」的代码对照，最后落到开发体验与选型影响。
+> **前置知识**：第 1 篇《Godot 引擎概述》
+> **难度**：入门。
+
 > **摘要**：Godot 和 Unity 的架构设计存在根本性差异：Godot 采用"组合优于继承"的场景树设计，而 Unity 采用 GameObject-Component 模式。本文将从设计哲学、基本单元、场景系统、脚本系统、内存管理、渲染架构 6 个维度深度对比两个引擎，帮助你理解架构选择背后的权衡。
 
 ---
@@ -294,16 +299,23 @@ class SceneTree : public MainLoop {
 3. **场景实例化**：可以多次实例化同一个场景
 4. **独立编辑**：每个场景可以独立编辑
 
-**场景嵌套示例**：
+**场景嵌套示例**（Godot 的 `.tscn` 与 Unity 的 Prefab 嵌套是同一件事，但入口不同）：
 
 ```
-Main.tscn (主场景)
-├── World (Node3D)
-│   └── Terrain (TerrainScene 实例)  # 嵌套场景
-├── Player (PlayerScene 实例)         # 嵌套场景
-└── Enemies (Node3D)
-    ├── Enemy1 (EnemyScene 实例)      # 嵌套场景
-    └── Enemy2 (EnemyScene 实例)      # 嵌套场景
+Godot                                  Unity
+────────────────────────────────────────────────────────────
+Main.tscn (主场景)                    Main.unity (场景)
+├── World (Node3D)                    ├── World (GameObject)
+│   └── Terrain (TerrainScene 实例)   │   └── Terrain (Prefab 实例)
+├── Player (PlayerScene 实例)         ├── Player (GameObject)
+└── Enemies (Node3D)                  └── Enemies (GameObject)
+    ├── Enemy1 (EnemyScene 实例)          ├── Enemy1 (Prefab 实例)
+    └── Enemy2 (EnemyScene 实例)          └── Enemy2 (Prefab 实例)
+
+Godot：.tscn 里存的是被实例化场景的**路径**（ext_resource），
+       改被实例场景的内容，引用它的所有场景同步更新。
+Unity：Prefab 是独立资产，拖进场景的是它的**实例**，
+       覆盖（override）会写回 Prefab 本身。
 ```
 
 **场景切换代码**：

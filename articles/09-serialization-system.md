@@ -1,5 +1,10 @@
 # 第 9 篇：Godot 序列化系统深度解析
 
+> **本章导读**：Godot 的序列化建立在 **Variant** 这个动态类型系统上，理解 Variant 就理解了场景文件、`.tres`、`.res` 与网络字节流。
+> 本章讲清 Variant 的类型表与转换规则、属性系统与 `PropertyInfo`、场景与资源的两种存储格式的差别、如何用 `_get_property_list` / `_set` / `_get` 实现自定义序列化，以及自定义 `ResourceFormatLoader` / `ResourceFormatSaver` 的入口。
+> **前置知识**：第 7 篇《Godot 资源系统深度解析》
+> **难度**：进阶。
+
 > **摘要**：Godot 的序列化系统基于 Variant 类型系统，支持场景、资源、属性的序列化。本文将深入分析 Variant 类型、属性系统、序列化格式及自定义序列化方法。
 
 ---

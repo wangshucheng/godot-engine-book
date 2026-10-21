@@ -5,10 +5,15 @@ on:
     branches: ["**"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      godot_check:
+        description: "额外跑 godot --headless --check-only（会下载 Godot 4.3 headless，约 50MB）"
+        type: boolean
+        default: false
 
 jobs:
   verify:
-    name: 类参考比对 + 结构检查 + 读数校验
+    name: 类参考比对 + 语法检查 + 结构检查 + 读数校验
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,8 +35,28 @@ jobs:
           name: gate-report
           path: gate-report.txt
 
-      - name: 类参考索引是否与官方一致（可选，联网时开启）
-        if: github.event_name == 'workflow_dispatch'
+  godot-syntax:
+    name: Godot --check-only（咨询性）
+    # 只在手动触发且显式开启时跑：需要下载 Godot 4.3 headless，
+    # 且书稿里只有 27/978 个 GDScript 块是「完整脚本」，
+    # 其余是教学片段，--check-only 对它们不适用 → 本作业为咨询性，不阻断合并。
+    if: github.event_name == 'workflow_dispatch' && inputs.godot_check == true
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 下载 Godot 4.3 headless
         run: |
-          python tools/fetch_godot_api.py
-          git diff --stat tools/godot_api_index.json || true
+          curl -sSL -o godot.zip \
+            https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip
+          unzip -q godot.zip
+          chmod +x Godot_v4.3-stable_linux.x86_64
+          echo "GODOT_BIN=$PWD/Godot_v4.3-stable_linux.x86_64" >> "$GITHUB_ENV"
+
+      - name: 用 --check-only 检查完整脚本块
+        run: python tools/check_gdscript_syntax.py --verbose

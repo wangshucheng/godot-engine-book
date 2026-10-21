@@ -374,9 +374,9 @@ print("上一帧 CPU 准备时间：%.2f ms" % (setup * 1000.0))
 ### 3.4 视口的渲染时间测量
 
 ```gdscript
-# 打开视口的渲染时间测量（4.3 签名：viewport、enable、measure_cpu_time、measure_gpu_time）
+# 打开视口的渲染时间测量（4.3 签名：viewport、enable）
 var vp_rid := get_viewport().get_viewport_rid()
-RenderingServer.viewport_set_measure_render_time(vp_rid, true, true, true)
+RenderingServer.viewport_set_measure_render_time(vp_rid, true)
 
 # 下一帧之后读数
 var cpu_ms := RenderingServer.viewport_get_measured_render_time_cpu() * 1000.0
@@ -385,7 +385,7 @@ var gpu_ms := RenderingServer.viewport_get_measured_render_time_gpu() * 1000.0
 
 | 接口 | 含义 |
 |------|------|
-| `RenderingServer.viewport_set_measure_render_time()` | 开关测量（可分别开关 CPU / GPU） |
+| `RenderingServer.viewport_set_measure_render_time()` | 开关测量（4.3 只有**一个** `enable` 开关；开启后下面两个读数才非 0） |
 | `RenderingServer.viewport_get_measured_render_time_cpu()` | CPU 侧渲染时间（秒） |
 | `RenderingServer.viewport_get_measured_render_time_gpu()` | GPU 侧渲染时间（秒） |
 

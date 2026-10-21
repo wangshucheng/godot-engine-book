@@ -277,11 +277,11 @@ emitter.process_material = process_material
 | `scale_over_velocity_curve` | 速度缩放系数 |
 | `directional_velocity_curve` | 方向速度 |
 | `radial_velocity_curve` | 径向速度 |
-| `velocity_limit_curve` | 速度上限 |
+| `velocity_limit_curve` | 生命期内的速度上限曲线（按 lifetime 取值，钳制最终速度的模长） |
 | `hue_variation_curve` | 色相变化 |
 | `anim_speed_curve` / `anim_offset_curve` | 贴图动画速度 / 偏移 |
 | `turbulence_influence_over_life` | 湍流影响力随生命变化 |
-| `emission_curve` | 发射相关曲线 |
+| `emission_curve` | 颜色随生命周期的渐变曲线（CurveTexture，乘在 COLOR 上；仅 unshaded 材质可见） |
 
 #### （5）湍流组
 
@@ -603,12 +603,9 @@ void process() {
 | `ACTIVE` | bool | 粒子是否存活；在 `process()` 里写 `ACTIVE = false` 立刻回收该粒子 |
 | `LIFETIME` | float | 剩余寿命 |
 | `DELTA` | float | 距上一帧的时间增量 |
-| `FLAG_DISABLE_Z` | bool | 锁定 Z 轴（对应过程材质的 `particle_flag_disable_z`） |
-| `FLAG_ROTATE_Y` | bool | 只绕 Y 轴旋转（对应 `particle_flag_rotate_y`） |
-| `FLAG_ALIGN_Y` | bool | Y 轴对齐速度方向（对应 `particle_flag_align_y`） |
-
-> 📌 三个 `FLAG_*` 与过程材质的 `particle_flag_*` 一一对应，它们反映的是**当前粒子系统的对齐配置**——
-> 自定义着色器不必重复实现对齐逻辑，读它们即可知道过程材质已经把粒子按哪种方式对齐过了。
+> ⚠️ `FLAG_DISABLE_Z` / `FLAG_ROTATE_Y` / `FLAG_ALIGN_Y` **不是粒子着色器内置量**——4.3 的 `particles` 着色器里没有它们（`servers/rendering/shader_types.cpp:359-363`、`:393-397` 只有 `FLAG_EMIT_*` 与 `RESTART_*`）。
+>
+> 它们是 `ParticleProcessMaterial` 上的**过程材质属性**：`particle_flag_disable_z` / `particle_flag_rotate_y` / `particle_flag_align_y`，对应枚举 `ParticleProcessMaterial.PARTICLE_FLAG_DISABLE_Z` / `_ROTATE_Y` / `_ALIGN_Y_TO_VELOCITY`——见本章过程材质一节。
 
 配套的 `GPUParticles3D` 侧常量（4.3 的类常量，描述 `start()` 里哪些输出会被写回粒子状态）：
 

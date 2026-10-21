@@ -167,6 +167,63 @@ def strip_strings(line: str) -> str:
     return "".join(out)
 
 
+def strip_code(code: str) -> str:
+    """整块地去掉**注释内容**与**字符串内容**，保留行数与列宽。
+
+    必须单遍扫描：注释与字符串会互相干扰（`#` 在字符串里不是注释，
+    而注释里的引号又不该开启字符串状态）。同时支持三引号多行串
+    （书稿里常见 `var t := ...` 的代码模板）。
+    """
+    out = []
+    i = 0
+    n = len(code)
+    state = None  # None | '"' | "'" | '"""' | "'''"
+    while i < n:
+        ch = code[i]
+        if state is None:
+            if code.startswith('"""', i) or code.startswith("'''", i):
+                state = code[i:i + 3]
+                out.append("   ")
+                i += 3
+                continue
+            if ch in "\"'":
+                state = ch
+                out.append(" ")
+                i += 1
+                continue
+            if ch == "#":
+                j = code.find("\n", i)
+                if j < 0:
+                    j = n
+                out.append(" " * (j - i))
+                i = j
+                continue
+            out.append(ch)
+            i += 1
+            continue
+        if len(state) == 3:
+            if code.startswith(state, i):
+                out.append("   ")
+                i += 3
+                state = None
+                continue
+        else:
+            if ch == "\\":
+                nxt = code[i + 1:i + 2]
+                out.append("\n" if nxt == "\n" else " ")
+                out.append("\n" if nxt == "\n" else " ")
+                i += 2
+                continue
+            if ch == state:
+                out.append(" ")
+                i += 1
+                state = None
+                continue
+        out.append("\n" if ch == "\n" else " ")
+        i += 1
+    return "".join(out)
+
+
 def strip_strings_and_comments(line: str) -> str:
     return strip_strings(strip_comment(line))
 
@@ -891,6 +948,166 @@ class ApiChecker:
 
 
 # --------------------------------------------------------------------------- #
+# 规则组：syntax —— GDScript 解析期错误（不需要 Godot 可执行文件）
+# --------------------------------------------------------------------------- #
+GDSCRIPT_KEYWORDS_STMT = {
+    "if", "elif", "else", "for", "while", "match", "when", "break", "continue",
+    "pass", "return", "await", "assert", "class", "class_name", "extends",
+    "signal", "enum", "const", "var", "func", "static", "export", "onready",
+    "tool", "rpc", "abstract",
+}
+IDENT_START = re.compile(r"^[A-Za-z_]\w*$")
+
+
+def _strip_blanks(code: str):
+    """返回去掉注释与空行后的 (行号, 文本) 序列（行号为 1-based，块内相对行）。"""
+    out = []
+    for i, raw in enumerate(code.split("\n"), 1):
+        line = strip_comment(raw).rstrip()
+        if not line.strip():
+            continue
+        out.append((i, line.strip()))
+    return out
+
+
+def rule_syntax(book: Book, articles, index):
+    """抓 GDScript 常见的**解析期**错误（脚本根本加载不了的那一类）。
+
+    覆盖：
+      ① 脚本级 extends 不是第一条语句 / 出现多次
+      ② 同一段完整脚本里 func 重名（只在「自称是完整脚本」时才报）
+      ③ 子类成员遮蔽父类属性（脚本会报 "Member xxx already exists in parent class"）
+      ④ 括号 / 方括号 / 花括号不配对
+      ⑤ 同一行缩进里 tab 与空格混用（GDScript 只认一种）
+
+    注意：书里的代码块多数是**教学片段**，所以判定必须按「列」区分作用域——
+    缩进的 `extends` 属于内层类，不算脚本级 extends；没有脚本级 extends 的块
+    视作片段，不做重复函数这类「整脚本级」判定。
+    """
+    for name, text in articles:
+        file_funcs = {}
+        for lang, code, start in split_blocks(text):
+            if lang != "gdscript":
+                continue
+            # 先把注释与字符串（含三引号多行串）内容清空，再做语法判定
+            code_nostr = strip_code(code)
+            raw_lines = code_nostr.split("\n")
+            base = start + 1  # 块内行号 → 文件行号
+
+            # 收集「语句级」信息：{行号: (缩进, 文本)}
+            stmts = []
+            for i, raw in enumerate(raw_lines, 1):
+                line = raw.rstrip()
+                if not line.strip():
+                    continue
+                indent = len(raw) - len(raw.lstrip())
+                stmts.append((i, indent, line.strip()))
+
+            # 脚本级 extends = 缩进为 0 的 extends
+            ext = [(i, l) for i, ind, l in stmts if ind == 0 and re.match(r"^extends\s+\w", l)]
+            if len(ext) > 1:
+                book.add("syntax", "warning", name, base + ext[1][0] - 1,
+                         f"同一代码块出现 {len(ext)} 条脚本级 extends——"
+                         f"若这些是备选模板可忽略，若当同一脚本则只能有一条")
+            if ext:
+                ext_idx, ext_line = ext[0]
+                for i, ind, l in stmts:
+                    if i >= ext_idx:
+                        break
+                    if l.startswith("class_name ") or l.startswith("@"):
+                        continue
+                    book.add("syntax", "warning", name, base + i - 1,
+                             f"extends 后面跟的类声明之前还有语句（{l[:40]}）——"
+                             f"若这是一份完整脚本，extends 必须是第一条语句")
+                    break
+                ext_cls = re.match(r"^extends\s+(\w+)", ext_line).group(1)
+            else:
+                ext_cls = None
+
+            # 顶层 func 重名（只在自称完整脚本的块里报）
+            if ext:
+                seen_func = {}
+                for i, ind, l in stmts:
+                    if ind != 0:
+                        continue
+                    m = re.match(r"^(?:static\s+)?func\s+([A-Za-z_]\w*)\s*\(", l)
+                    if not m:
+                        continue
+                    fn = m.group(1)
+                    if fn in seen_func:
+                        book.add("syntax", "warning", name, base + i - 1,
+                                 f"函数 `{fn}` 在同一段脚本里定义了两次"
+                                 f"（首次在第 {base + seen_func[fn] - 1} 行）")
+                    else:
+                        seen_func[fn] = i
+                    file_funcs.setdefault(fn, []).append(i)
+
+            # ③ 成员遮蔽父类属性
+            #   注意作用域：只有**类成员**（类体里的 var）才会让脚本加载失败；
+            #   函数内的局部变量与同名成员只是 GDScript 的 shadowed_variable 警告。
+            #   所以要先算出每条 var 声明「属于哪个作用域」。
+            openers = []  # [(header_indent, kind, base_class)]，kind ∈ {"class","func"}
+            if ext_cls:
+                openers.append((-1, "class", ext_cls))
+            for i, ind, l in stmts:
+                m = re.match(r"^class\s+([A-Za-z_]\w*)\s*(?:extends\s+(\w+))?", l)
+                if m:
+                    openers.append((ind, "class", m.group(2)))
+                    continue
+                m = re.match(r"^(?:static\s+)?func\s+([A-Za-z_]\w*)\s*\(", l)
+                if m:
+                    openers.append((ind, "func", None))
+                    continue
+                m = re.match(r"^(?:@export[^ ]*\s+)*var\s+([A-Za-z_]\w*)", l)
+                if not m:
+                    continue
+                # 所属作用域 = 最近一个 header_indent < ind 的开启者
+                owner = None
+                for h_ind, kind, owner_base in reversed(openers):
+                    if h_ind < ind:
+                        owner = (kind, owner_base)
+                        break
+                if owner is None or owner[0] != "class":
+                    continue  # 函数内的局部变量：只是 shadowed_variable 警告
+                base_cls = owner[1]
+                if not base_cls or not index.has_class(base_cls):
+                    continue
+                parent_props = index.property_types(base_cls)
+                vname = m.group(1)
+                if vname in parent_props:
+                    book.add("syntax", "error", name, base + i - 1,
+                             f"`var {vname}` 遮蔽了父类 {base_cls} 的同名属性"
+                             f"（声明类型 {parent_props[vname]}）——"
+                             f"脚本会报 \"Member {vname} already exists "
+                             f"in parent class\" 而加载失败")
+
+            # ④ 括号配对（注释与字符串都已清空，不会误判）
+            depth = {"(": 0, "[": 0, "{": 0}
+            pairs = {")": "(", "]": "[", "}": "{"}
+            orig_lines = code.split("\n")
+            for i, (raw_orig, raw) in enumerate(zip(orig_lines, raw_lines), 1):
+                s = raw
+                for ch in s:
+                    if ch in depth:
+                        depth[ch] += 1
+                    elif ch in pairs:
+                        depth[pairs[ch]] -= 1
+                        if depth[pairs[ch]] < 0:
+                            book.add("syntax", "error", name, base + i - 1,
+                                     f"括号不配对：多余的 `{ch}`")
+                            depth[pairs[ch]] = 0
+                # 缩进要看**原始行**：清空后的行里注释内容已变成空格，会误判成混用
+                indent = raw_orig[: len(raw_orig) - len(raw_orig.lstrip())]
+                if "\t" in indent and " " in indent:
+                    book.add("syntax", "error", name, base + i - 1,
+                             "缩进里 tab 与空格混用（GDScript 只认一种）")
+            for ch, n in depth.items():
+                if n > 0:
+                    book.add("syntax", "error", name, base,
+                             f"括号不配对：`{ch}` 多出 {n} 个")
+
+
+# --------------------------------------------------------------------------- #
 # 规则三：统计读数
 # --------------------------------------------------------------------------- #
 def rule_stats(book: Book, articles):
@@ -1039,6 +1256,14 @@ SELFTEST_CASES = [
      "Performance 常量名错", True),
     ("unknown_member", "var rs = ResourceSaver.new()\nrs.save_to_buffer(x)\n",
      "ResourceSaver.save_to_buffer 不存在", True),
+    ("syntax", "extends Node\n\n@export var name: StringName = &\"x\"\n",
+     "成员 var name 遮蔽父类 Node.name（脚本加载失败）", True),
+    ("syntax", "extends Node\n\nfunc _ready():\n\tvar name = get_name()\n\tprint(name)\n",
+     "函数内局部变量 name 遮蔽成员（只是 warning，不算错）", False),
+    ("syntax", "extends Area3D\n\n@export var gravity_direction: Vector3 = Vector3.DOWN\n",
+     "成员 var gravity_direction 遮蔽父类 Area3D 同名属性", True),
+    ("syntax", "extends Node\n\nfunc a():\n\tprint(1)\n",
+     "正常脚本（阳性对照，应通过）", False),
     ("unknown_member", "var l = DirectionalLight3D.new()\nl.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS\n",
      "directional_shadow_mode 存在（阳性对照，应通过）", False),
     ("unknown_member", "print(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)\n",
@@ -1065,6 +1290,9 @@ def run_selftest(index: ApiIndex, allow: Allowlist) -> int:
         book.finding_list = []
         scope = build_scope([("gdscript", code, 1)])
         checker.check_gdscript("selftest.md", code, 1, scope)
+        if rule == "syntax":
+            # 语法规则走独立的 rule_syntax（按整篇文件的代码块扫描）
+            rule_syntax(book, [("selftest.md", "```gdscript\n" + code + "```")], index)
         hits = [f for f in book.finding_list if f.rule == rule]
         if expect_hit and not hits:
             print(f"[FAIL] 判据无牙：{desc} —— 没报出 {rule}")
@@ -1084,7 +1312,7 @@ def run_selftest(index: ApiIndex, allow: Allowlist) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--rules", default="all",
-                    help="逗号分隔: structure,api,stats,perf")
+                    help="逗号分隔: structure,syntax,api,stats,perf")
     ap.add_argument("--selftest", action="store_true", help="只跑判据自检")
     ap.add_argument("--report", default="", help="把结果写入文件")
     ap.add_argument("--strict", action="store_true", help="warning 也算失败")
@@ -1099,7 +1327,7 @@ def main() -> int:
     if args.selftest:
         return run_selftest(index, allow)
 
-    rules = {"structure", "api", "stats", "perf"} if args.rules == "all" else set(
+    rules = {"structure", "syntax", "api", "stats", "perf"} if args.rules == "all" else set(
         r.strip() for r in args.rules.split(",")
     )
     articles = read_articles(ARTICLES)
@@ -1108,6 +1336,8 @@ def main() -> int:
 
     if "structure" in rules:
         rule_structure(book, articles)
+    if "syntax" in rules:
+        rule_syntax(book, articles, index)
     if "api" in rules:
         checker = ApiChecker(index, allow, book)
         checker.prepass(articles)

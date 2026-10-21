@@ -1,5 +1,10 @@
 # 第 5 篇：Godot 对象系统深度解析
 
+> **本章导读**：`Object` 是 Godot 所有对象的根，理解它等于理解引擎的另一半。
+> 本章基于 `core/object/object.h` 的真实实现，剖析对象的内存布局、两种所有权模型（手动 `free()` vs 引用计数）、删除流程（`_predelete` / `NOTIFICATION_PREDELETE` / `NOTIFICATION_POSTDELETE`）、以及 RTTI 与反射、属性元数据、通知机制这些「看不见但到处在用」的能力。
+> **前置知识**：第 4 篇《Godot 内存管理机制深度解析》
+> **难度**：进阶。
+
 > **摘要**：Object 类是 Godot 所有对象的基类，提供 RTTI、反射、通知、元数据等核心能力。本文基于 `core/object/object.h` 的真实实现，剖析对象的内存布局、两种所有权模型（手动释放 vs 引用计数）、删除流程（`_predelete`/`NOTIFICATION_PREDELETE`）、GDCLASS 宏生成的类型识别链、属性反射与 usage 标志，并与 Unity 的 Object 体系对比。
 
 ---

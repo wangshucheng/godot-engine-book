@@ -2,7 +2,7 @@
 
 > **本章导读**：
 > 这一章把 GDShader 从"能写"讲到"写对"。先把六种 `shader_type` 的入口函数摊开，再逐张列出每种类型的内置变量、可用 `render_mode`、类型转换规则与内置函数表。
-> 接着落到工程侧：`uniform` / `varying` / `group_uniforms`（UBO）的组织方式，`Shader` 与 `ShaderMaterial` 的运行时接口，以及 3.x → 4.x 的内置名迁移对照。
+> 接着落到工程侧：`uniform` / `varying` / `group_uniforms`（uniform 分组）的组织方式，`Shader` 与 `ShaderMaterial` 的运行时接口，以及 3.x → 4.x 的内置名迁移对照。
 > 读完你应该能拿着这份表逐条核对官方参考，而不是"抄一段能跑就算"。
 
 > **前置知识**：第 16 篇《材质系统》
@@ -96,7 +96,7 @@ Godot 着色器语言的**全局作用域**只允许出现：
 | `shader_type` | `shader_type spatial;` | 整份文件只能有一个，且必须在最前 |
 | `render_mode` | `render_mode cull_disabled;` | 可写多行 |
 | `uniform` | `uniform float speed;` | 可带 `instance` / `global` 限定符 |
-| `group_uniforms` | `group_uniforms MyGroup;` | 4.3 的 UBO 机制，见 2.7 |
+| `group_uniforms` | `group_uniforms MyGroup;` | 4.3 的 uniform 分组机制，见 2.7 |
 | `varying` | `varying vec2 v_uv;` | `particles` / `sky` / `fog` 不可用 |
 | `const` | `const float PI = 3.14159265;` | 编译期常量 |
 | `struct` | `struct Light { ... };` | 结构体 |
@@ -342,14 +342,20 @@ float result = sin(TIME);                              // TIME：着色器启动
 vec3 normalized = normalize(NORMAL);                    // 归一化
 float dot_product = dot(NORMAL, vec3(0.0, 0.0, 1.0));  // 点积
 
-// 纹理采样
-// spatial 着色器用内置采样器 TEXTURE（基础色）与 NORMAL_MAP（法线贴图），
-// 法线贴图的方向信息在 RGB、深度信息在 .a 通道
-vec4 color = texture(TEXTURE, UV);
-vec4 normal = texture(NORMAL_MAP, UV);
+// 纹理采样：Godot 4 的 spatial 着色器**没有**内置采样器，必须自己声明
+uniform sampler2D albedo_texture : source_color;
+uniform sampler2D normal_texture : hint_normal;
+
+void fragment() {
+    // 引擎按同名把 BaseMaterial3D 的贴图槽绑给这两个 uniform
+    ALBEDO = texture(albedo_texture, UV).rgb;
+    NORMAL_MAP = texture(normal_texture, UV).rgb;
+}
 ```
 
-> `texture(albedo_texture, UV)` / `texture(normal_texture, UV)` 是 **Godot 3.x** 的小写内置采样器名。4.x 里它们改名为 `TEXTURE` 与 `NORMAL_MAP`；如果确实要用自己的贴图，必须先 `uniform sampler2D` 声明再按变量名采样。
+> ⚠️ `albedo_texture` / `normal_texture` 是 **Godot 3.x** 的**内置**小写采样器名。4.x 把它们**彻底移除了**——spatial 着色器里**没有任何**内置纹理采样器，必须自己 `uniform sampler2D` 声明，再按变量名采样。
+>
+> 容易混的是：4.3 的 spatial 内置量里确实有一个 `NORMAL_MAP`，但它是 **`vec3`（法线贴图方向，可写）**，`NORMAL_MAP_DEPTH` 是 **`float`**（`servers/rendering/shader_types.cpp:121-122`）——**不是采样器，不能 `texture(NORMAL_MAP, UV)`**。
 
 ### 2.4 uniform 与 hint
 
@@ -427,16 +433,16 @@ const float weights[MAX_STEPS] = float[MAX_STEPS](0.125);
 
 > `PI` / `TAU` / `E` 这三个常量**内置**在每种 shader 类型里（`constants` 作用域），不需要自己声明。
 
-### 2.7 UBO：group_uniforms
+### 2.7 uniform 分组：group_uniforms
 
-4.3 提供了一个关键字，把若干 uniform **归到同一组**（group），由渲染后端据此决定是否把它们合并进**统一缓冲区（UBO）**，从而减少每次 draw call 的 uniform 绑定开销。
+4.3 提供了一个关键字，把若干 uniform **归到同一组**（group），让编辑器检查器把它们折叠成一块显示。
 
 关键词是 **`group_uniforms`**（不是 `uniform_group`）：
 
 ```glsl
 shader_type spatial;
 
-// 打开一个 UBO 组
+// 打开一个 uniform 分组
 group_uniforms Scene;
 uniform vec3 light_direction;
 uniform vec3 light_color;
@@ -639,7 +645,9 @@ void light() {
 
 > `canvas_item` 的 `TEXTURE` / `NORMAL_TEXTURE` / `SPECULAR_SHININESS_TEXTURE` 是**引擎注入的采样器**，在 `shader_types.cpp` 里被登记为 `TYPE_SAMPLER2D`。你**不需要**也不能重复声明它们，直接 `texture(TEXTURE, UV)` 即可。
 >
-> 而 spatial 的 `TEXTURE` / `NORMAL_MAP` 采样器**不**登记在 `shader_types.cpp` 的 `built_ins` 表里——那张表的 spatial 片元项下，`NORMAL_MAP` 登记的是一个 `vec3` 的 inout，那是**法线贴图方向**的输出，不是采样器。采样器 `TEXTURE` / `NORMAL_MAP` 由引擎另外提供，用法一样：直接采样，不要自己声明。
+> 而 **spatial 没有任何内置采样器**——`servers/rendering/shader_types.cpp` 的 spatial 段（:100-180）里只有一个 `NORMAL_MAP`，登记的是 **`vec3` 的 inout**（法线贴图方向，可写）和 `NORMAL_MAP_DEPTH`（`float`），**不是采样器**。`TEXTURE` / `NORMAL_TEXTURE` 这些采样器只存在于 `canvas_item` 段（:270-272、:317-318）。
+>
+> 所以 spatial 要用贴图，必须自己声明 `uniform sampler2D ...`，引擎再按**同名**把 `BaseMaterial3D` 的贴图槽绑给你（绑定逻辑在 `servers/rendering/renderer_rd/storage_rd/material_storage.cpp`）。
 
 #### 3.2.4 `light()` 输入与输出
 
@@ -1034,10 +1042,10 @@ Godot 3.x 的内置变量是小写下划线风格，4.x 改成了大写下划线
 
 | Godot 3.x（已移除） | Godot 4.3（真实写法） | 说明 |
 |---|---|---|
-| `albedo_texture` | `TEXTURE` | 基础色采样器 |
-| `normal_texture` | `NORMAL_MAP` | 法线采样器 |
-| `normal_texture_depth` | `NORMAL_MAP_DEPTH` | 法线深度 |
-| `specular_shininess_texture` | `SPECULAR_SHININESS_TEXTURE` | 高光贴图 |
+| `albedo_texture` | 需自行声明 `uniform sampler2D albedo_texture : source_color;` | 4.x 移除了内置基础色采样器 |
+| `normal_texture` | 需自行声明 `uniform sampler2D normal_texture : hint_normal;` | 4.x 移除了内置法线采样器 |
+| `normal_texture_depth` | `NORMAL_MAP_DEPTH`（`float`） | 4.3 的 spatial 内置量，是深度**标量**不是采样器 |
+| `specular_shininess_texture` | 需自行声明 | 4.x 移除了内置高光采样器 |
 | `VERTEX` / `NORMAL` / `UV` / `COLOR` | 同名保留 | 这几个名字没变 |
 | `screen_uv` | `SCREEN_UV` | 屏幕 UV |
 | `light_vertex` / `shadow_vertex` | `LIGHT_VERTEX` / `SHADOW_VERTEX` | 光照 / 阴影 pass 顶点 |
@@ -1062,10 +1070,10 @@ Godot 3.x 的内置变量是小写下划线风格，4.x 改成了大写下划线
 2. **全局作用域只允许** `shader_type` / `render_mode` / `uniform` / `group_uniforms` / `varying` / `const` / `struct` / 函数，裸变量声明是编译错误。
 3. **隐式类型转换只有 `int` → `float`**，其余（`float` → `int`、`vec2` → `vec3`）必须用构造函数显式转换，且可用重载是登记死的。
 4. **内置变量必须按 `shader_type` 对表查**：spatial 的输出是 `ALBEDO` / `ALPHA` / `METALLIC` / `ROUGHNESS` / `NORMAL` / `EMISSION`，`COLOR` 只属于 canvas_item。
-5. **内置采样器在 4.x 是大写**：`TEXTURE` / `NORMAL_MAP`（spatial）、`TEXTURE` / `NORMAL_TEXTURE`（canvas_item）；3.x 的小写名已移除。
+5. **内置采样器只有 `canvas_item` 有**：`TEXTURE` / `NORMAL_TEXTURE` / `SPECULAR_SHININESS_TEXTURE`；**spatial 一个都没有**，贴图必须自己声明 `uniform sampler2D`。3.x 的小写内置名已彻底移除。
 6. **不要把 uniform 命名为 `texture`**——它是 127 个全局内建函数之一，同名会被遮蔽。
 7. **`render_mode` 一共 35 条**（spatial 22 / canvas_item 5 / particles 4 / sky 4），带选项的写法是 `名字_选项`（`cull_disabled`、`depth_draw_opaque`、`blend_add`）。
-8. **UBO 用 `group_uniforms` 关键字**（不是 `uniform_group`），语法是 `group_uniforms Name;` … `group_uniforms;`。
+8. **`group_uniforms` 是 uniform 分组，不是 UBO**（关键字也不是 `uniform_group`），语法是 `group_uniforms Name;` … `group_uniforms;`；4.3 的 RD 着色器编译器里没有任何 group / uniform_buffer 相关代码，分组名最终只变成检查器的 `PROPERTY_USAGE_GROUP`，运行时这些 uniform 仍是各自独立的。
 
 ---
 

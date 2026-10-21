@@ -326,7 +326,7 @@ attrs.dof_blur_amount = 0.05         # 模糊强度（0-0.1）
 camera.attributes = attrs
 ```
 
-`CameraAttributesPractical` 的**全部**成员只有这 8 个：
+`CameraAttributesPractical` 的**全部**成员只有这 9 个：
 
 | 属性 | 说明 |
 |---|---|
@@ -337,8 +337,10 @@ camera.attributes = attrs
 | `CameraAttributesPractical.dof_blur_near_distance` | 近焦开始距离 |
 | `CameraAttributesPractical.dof_blur_near_transition` | 近焦过渡带宽度 |
 | `CameraAttributesPractical.dof_blur_amount` | 模糊总强度（0~0.1） |
+| `CameraAttributesPractical.auto_exposure_min_sensitivity` | 自动曝光的最低灵敏度 |
+| `CameraAttributesPractical.auto_exposure_max_sensitivity` | 自动曝光的最高灵敏度 |
 
-> 加上基类 `CameraAttributes` 的 5 个曝光属性，`CameraAttributesPractical` 一共 12 个成员。除此之外它**没有任何** `motion_blur_*`——4.3 根本没有运动模糊。
+> 加上基类 `CameraAttributes` 的 5 个曝光属性，`CameraAttributesPractical` 一共 **14** 个成员。除此之外它**没有任何** `motion_blur_*`——4.3 根本没有运动模糊。
 
 ### 6.2 景深效果
 
@@ -390,13 +392,16 @@ env.adjustment_color_correction = load("res://lut.png")   # Texture2D
 # 复杂 LUT 用 Texture3D：
 # env.adjustment_color_correction = load("res://lut_3d.tres")
 
-# 一维 LUT 时打开这个开关（4.4+ 引入，4.3 无此项）
-env.use_1d_color_correction = true
+# ⚠️ 4.x 的任何版本都不能手动设 use_1d_color_correction——它不是脚本属性
+# env.use_1d_color_correction = true   # ← 4.3 到 4.8 都会报 Invalid set index
+# 引擎按 adjustment_color_correction 的纹理类型自动决定走 2D LUT 还是 1D LUT
 ```
 
 > `adjustment_color_correction_lut` 与 `adjustment_color_correction_lut_scale` 在 4.3 **不存在**——`adjustment_color_correction` 本身就是那个 LUT 贴图，缩放由贴图本身的尺寸决定。
 >
-> ⚠️ **`use_1d_color_correction` 是 Godot 4.4 才加的属性**（4.4+ 引入，4.3 无此项）。在 4.3 上写 `env.use_1d_color_correction = true` 会报 `Invalid set index 'use_1d_color_correction'`。4.3 里如果给 `adjustment_color_correction` 喂一张 `GradientTexture1D`，引擎按 1D LUT 处理，不需要额外开关；4.4 之后新增这个开关是为了在 2D LUT 与 1D LUT 之间**显式**选择。
+> ⚠️ **`use_1d_color_correction` 从来就不是脚本可设的属性**。它是 `Environment` 的**内部成员**（`scene/resources/environment.h:220`），从 4.3 起就存在，但**从来没有**出现在 4.3 到 4.8 的类参考里。引擎根据 `adjustment_color_correction` 的纹理类型**自动派生**它：喂 `Texture2D` 走 2D LUT，喂 `GradientTexture1D` 走 1D LUT（`scene/resources/environment.cpp:1067-1072`）。
+>
+> 所以在 4.3 写 `env.use_1d_color_correction = true` 确实会报 `Invalid set index`——但**别以为 4.4 之后就能手动选了**，那一版起它同样不能手动设。
 
 ### 7.3 2D 叠加式调色（注意：这不是 3D 后处理）
 

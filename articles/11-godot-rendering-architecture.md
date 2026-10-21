@@ -620,9 +620,11 @@ RenderingServer.call_on_render_thread(func():
 )
 ```
 
-> ⚠️ **Godot 4.3 的 `RenderingServer` 没有 `force_sync()` 方法**。`servers/rendering_server.h` 里与同步相关的公开虚函数只有 `virtual void sync() = 0;`（第 1658 行）、`virtual bool has_changed() const = 0;` 与 `virtual void draw(bool p_swap_buffers = true, double frame_step = 0.0) = 0;`。需要"强制等待 GPU"的场景请用 `RenderingDevice.sync()`（**仅本地 RD 可用**，见第 12 篇），并注意它有明确的性能代价。
+> ⚠️ **C++ 侧与脚本侧的名字不一样**。`servers/rendering_server.h` 里与同步相关的公开虚函数是 `virtual void sync() = 0;`（第 1658 行）、`virtual bool has_changed() const = 0;` 与 `virtual void draw(bool p_swap_buffers = true, double frame_step = 0.0) = 0;`——**没有** `force_sync()` 这个虚函数。
 >
-> 📌 **勘误（脚本层补充）**：上面说的是 **C++ 头文件里的虚函数**。在 **4.3 的脚本类参考**里，`RenderingServer.force_sync()` 仍然作为 **deprecated** 方法存在（官方标注为"不做任何事"），所以在 GDScript 里调用它不会报错，但也不会产生同步效果。**结论不变**：真正能同步的是 `sync()`；需要等 GPU 请用 `RenderingDevice.sync()`（仅本地 RD 可用）。
+> 📌 **脚本侧却确实有** `RenderingServer.force_sync()`：它在 `servers/rendering_server.cpp:3437` 被绑定到 `RenderingServer::sync`（`ClassDB::bind_method(D_METHOD("force_sync"), &RenderingServer::sync);`），而且**没有**标记废弃。它的作用是**冲刷渲染命令队列**（`command_queue.sync()` / `flush_all()`），让主线程已经下发的渲染命令在渲染线程上跑完。
+>
+> ⚠️ 但它**不等 GPU 完成**——要等 GPU 仍需 `RenderingDevice.sync()`（**仅本地 RD 可用**，见第 12 篇）。两者都有明确的性能代价。
 
 ### 8.7 帧率与 VSync 属于哪一层
 
@@ -692,7 +694,7 @@ enum VSyncMode {
 | "调用 `RenderingServer.draw()` 会等这一帧画完" | 独立线程模式下只是入队（`command_queue.push(this, &RenderingServerDefault::_draw, ...)`），立即返回 |
 | "把 `thread_model` 改成 `UNSAFE` 帧率就更快" | `UNSAFE` 并不创建独立线程；它改变的是驱动层的线程安全档位，性能收益需实测，不能预设 |
 | "剔除是渲染线程做的" | 剔除与排序在**主线程**的 `RendererSceneCull` 里完成，渲染线程拿到的是已经筛好的列表 |
-| "`RenderingServer.force_sync()` 可以强制同步" | C++ 头文件里没有这个虚函数；4.3 的脚本类参考里它是 **deprecated 的空方法**，真正能同步的只有 `sync()` |
+| "`RenderingServer.force_sync()` 可以强制同步" | 脚本侧**存在**（绑定到 C++ 的 `sync()`），作用是冲刷渲染命令队列；C++ 侧没有同名虚函数，而且它**不等 GPU 完成** |
 
 ### 8.11 场景端剔除的并行边界
 
@@ -990,7 +992,7 @@ Compatibility 渲染器**完全绕开 `RenderingDevice`**：
 | 泛光（`Environment.glow_enabled`） | ✅ 可用 | 走 GL 后处理 |
 | 深度雾 / 高度雾 | ✅ 可用 | 走 GL 雾 |
 
-> 💡 **一条实用的判断法**：凡是**需要读回上一帧或深度缓冲做屏幕空间计算**的特性（SSR / SSIL / SSAO / 体积雾），在 Compatibility 下基本都没有对应实现；凡是**在 CPU 侧或单次绘制内就能算完**的特性（阴影、烘焙光照、雾、泛光），都还在。迁移到 Web 时，按这条线评估工作量最快。
+> 💡 **一条实用的判断法**：凡是**需要读回上一帧或深度缓冲做屏幕空间计算**的特性（SSR / SSIL / SSAO / 体积雾），在 Compatibility 下**完全没有**实现——`RasterizerSceneGLES3::environment_set_ssao_quality()` 在 4.3 是空函数体，SSAO / SSIL / SDFGI / 体积雾全部如此；凡是**在 CPU 侧或单次绘制内就能算完**的特性（阴影、烘焙光照、雾、泛光），都还在。迁移到 Web 时，按这条线评估工作量最快。
 
 ### 9.7 换渲染器时，哪些东西会变
 

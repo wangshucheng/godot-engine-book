@@ -238,7 +238,7 @@ void fragment() {
 | RID 级方法 | 作用 |
 |------------|------|
 | `multimesh_create()` | 创建一个多网格 RID |
-| `multimesh_allocate_data(multimesh, instances, transform_format, use_colors, use_custom_data)` | 分配 buffer |
+| `multimesh_allocate_data(multimesh, instances, transform_format, color_format, custom_data_format)` | 分配 buffer |
 | `multimesh_set_mesh(multimesh, mesh)` | 设置被实例化的网格 |
 | `multimesh_set_buffer(multimesh, data)` | 整块写入 buffer（批量更新最快） |
 | `multimesh_get_buffer(multimesh)` | 读回 buffer |
@@ -484,7 +484,9 @@ st.set_uv(Vector2(0, 0))
 st.add_vertex(Vector3(0, 0, 0))
 st.add_vertex(Vector3(1, 0, 0))
 st.add_vertex(Vector3(0, 1, 0))
-st.generate_lod(0.5, 0.8)      # 生成简化层级
+# generate_lod 在 4.3 已废弃（它不保留法线与 UV），官方建议改用 ImporterMesh.generate_lods。
+# 它只返回「各级 LOD 的索引数」，不会把 LOD 写进 Mesh；第二个参数是索引数上限（整数），不是比例。
+var lod_counts := st.generate_lod(0.5, 1000)   # 返回 PackedInt32Array
 var mesh_with_lod := st.commit()
 ```
 

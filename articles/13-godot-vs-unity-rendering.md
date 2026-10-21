@@ -1,3 +1,12 @@
+# 第 13 篇：Godot vs Unity 渲染对比
+
+> **本章导读**：两个引擎的渲染**机制**差异，远比 API 差异更值得先搞清楚——它决定了你从 Unity 迁移过来时哪些思路要整个换掉。
+> 本章给出三套渲染机制（Forward+ / Mobile / Compatibility）的逐项差异矩阵、GI 方案全景（LightmapGI / VoxelGI / LightmapProbe / ReflectionProbe / SDFGI / SSIL ↔ Unity 的 Lightmapping / Enlighten / Progressive Lightmapper / Light Probe Group / Adaptive Probe Volumes）、阴影与后处理全景、透明排序与剔除对照，最后收在**迁移清单、风险排序、执行顺序与坑位速查表**上。
+> **前置知识**：第 11 篇《Godot 渲染架构概述》、第 12 篇《Vulkan 渲染后端深度解析》。
+> **难度**：进阶。
+
+> **摘要**：本文从渲染架构、GI 方案、阴影、后处理、剔除、透明排序六个维度系统对比 Godot 与 Unity 的渲染机制，给出迁移到 Godot 时最容易踩的坑与可执行的切换顺序。
+
 ## 一、渲染架构对比
 
 ### 1.1 Godot 渲染架构

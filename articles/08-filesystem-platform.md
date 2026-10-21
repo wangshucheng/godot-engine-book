@@ -1,5 +1,10 @@
 # 第 8 篇：Godot 文件系统与跨平台架构
 
+> **本章导读**：文件读写在引擎里不是 `open()`/`read()` 那么简单：路径有三种空间、错误处理有一套约定、导出后还要从 PCK 里读。
+> 本章基于 `core/io/file_access.cpp` 与 `dir_access.cpp` 的真实实现，梳理 `res://` / `user://` / 绝对路径三种路径空间的适用边界，`FileAccess` 与 `DirAccess` 的完整 API、`FileAccess.ModeFlags` 与压缩加密、以及导出时的 PCK 打包如何影响你的文件访问。
+> **前置知识**：无（本章偏 API 参考，可独立阅读）
+> **难度**：入门。
+
 > **摘要**：Godot 的文件系统用三种路径前缀（`res://`、`user://`、绝对路径）统一了跨平台文件访问，导出时再把整个项目打包进 PCK。本文基于 `core/io/file_access.cpp` 与 `dir_access.cpp` 的真实实现，剖析 FileAccess 的工厂方法与 ModeFlags、DirAccess 的遍历协议、`make_dir` 与递归版的差异，以及平台抽象层与数据目录的真实布局。
 
 ---

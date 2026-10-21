@@ -925,7 +925,7 @@ func _compare_versions(a: String, b: String) -> int:
 ```
 
 > **机制说明**：`Engine.get_version_info()` 返回的是**字典**（含 `major` / `minor` /
-> `patch` / `status` / `hash` 五个键），不是版本号字符串。
+> `patch` / `hex` / `status` / `build` / `hash` / `timestamp` / `string` **九个键**），不是版本号字符串。
 > 要拼版本号请写：
 > `var v := Engine.get_version_info(); var ver := "%d.%d.%d" % [v.major, v.minor, v.patch]`。
 

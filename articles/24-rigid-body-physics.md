@@ -157,8 +157,12 @@ class_name GravityField
 
 extends Area3D
 
+# ⚠️ 成员名不能和父类同名：`Area3D` 已经有 `gravity_direction`（区域自身的重力方向），
+#    在子类里再声明一个同名成员，脚本会直接报
+#    "Member gravity_direction already exists in parent class" 而**加载失败**。
+#    所以这里叫 field_direction。
 @export var gravity_strength: float = 9.8
-@export var gravity_direction: Vector3 = Vector3.DOWN
+@export var field_direction: Vector3 = Vector3.DOWN
 
 func _ready():
     body_entered.connect(_on_body_entered)
@@ -166,7 +170,7 @@ func _ready():
 
 func _on_body_entered(body):
     if body is RigidBody3D:
-        body.apply_central_force(gravity_direction * gravity_strength * body.mass)
+        body.apply_central_force(field_direction * gravity_strength * body.mass)
 
 func _on_body_exited(body):
     if body is RigidBody3D:
