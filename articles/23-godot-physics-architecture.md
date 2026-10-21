@@ -65,7 +65,22 @@ PhysicsServer3D.body_set_space(body, space)
 # 设置物理属性
 PhysicsServer3D.body_set_mode(body, PhysicsServer3D.BODY_MODE_RIGID)
 PhysicsServer3D.body_set_state(body, PhysicsServer3D.BODY_STATE_TRANSFORM, Transform3D())
+
+# 必须给刚体挂上形状，否则它不会与任何东西碰撞
+var shape := PhysicsServer3D.sphere_shape_create()
+PhysicsServer3D.shape_set_data(shape, 0.5)   # 半径 0.5
+PhysicsServer3D.body_add_shape(body, shape, Transform3D())
 ```
+
+> ⚠️ **用服务器 API 还是节点 API？**
+>
+> | 场景 | 建议 |
+> |------|------|
+> | 常规游戏对象（会进场景树、要挂网格/碰撞形状子节点） | **节点 API**：`RigidBody3D` + `CollisionShape3D`。省掉手写 RID 生命周期与信号绑定 |
+> | 纯逻辑仿真、程序化生成海量简单体、网络同步层自己管状态 | **服务器 API**：`PhysicsServer3D`。绕过节点开销，直接操作 RID |
+> | 需要在 `_integrate_forces` 里读接触数据 | 两者都要：节点提供回调，服务器提供 `body_get_direct_state()` |
+>
+> 代价对比：服务器 API 要自己负责 `body_add_shape()`（漏掉刚体就永远不碰撞）、空间归属、状态同步回调与对象销毁；节点 API 替你做了这些，但每个对象多一层节点与信号开销。**默认用节点 API，只有在实测节点开销成为瓶颈时再下沉到服务器层。**
 
 ### 1.3 物理进程
 
@@ -108,7 +123,7 @@ PhysicsServer3D.body_set_state(body, PhysicsServer3D.BODY_STATE_TRANSFORM, Trans
 
 ### 2.1 Godot Physics（内置）
 
-Godot 4.x 默认使用自研的 Godot Physics 引擎；自 4.4 起，官方还把 Jolt Physics 作为内置模块一同分发，两者是相互独立的实现：
+Godot 4.x 自带两套 3D 物理实现：**Godot Physics**（引擎自研）与 **Jolt Physics**（4.4 起作为内置模块随引擎分发）。4.3 及以前默认使用 Godot Physics；**4.6 起新建 3D 项目默认使用 Jolt**（已有项目保持原设置不变）。两者是相互独立的实现：
 
 ```
 Godot Physics 特点:
@@ -137,7 +152,9 @@ Godot Physics 特点:
 ```gdscript
 # 项目设置中配置物理引擎：项目设置 → 物理 → 3D
 
-# 读取当前配置：返回 "DEFAULT"、"GodotPhysics3D" 或 "JoltPhysics3D"
+# 读取当前配置：返回 "DEFAULT"、"GodotPhysics3D" 或 "Jolt Physics"
+#   注意：4.4 内置 Jolt 模块注册到物理服务器时的名字是带空格的 "Jolt Physics"
+#   （见 modules/jolt_physics/register_types.cpp 的 register_server 调用）
 func get_physics_engine_name() -> String:
     return str(ProjectSettings.get_setting("physics/3d/physics_engine", "DEFAULT"))
 
@@ -145,7 +162,9 @@ func get_physics_engine_name() -> String:
 func check_physics_features() -> void:
     if PhysicsServer3D.has_method("body_set_ray_pickable"):
         print("支持射线拾取")
-    if PhysicsServer3D.has_method("body_set_continuous_collision_detection_mode"):
+    # 4.x 的 CCD 只有开/关两态，服务器层只有这一个开关接口，
+    # 不存在 "…_mode" 或 "…_threshold" 之类的变体。
+    if PhysicsServer3D.has_method("body_set_enable_continuous_collision_detection"):
         print("支持 CCD 连续碰撞检测")
 ```
 
@@ -238,7 +257,7 @@ func create_area():
     area.body_entered.connect(_on_body_entered)
     area.body_exited.connect(_on_body_exited)
     
-    return body
+    return area
 ```
 
 ---
@@ -249,23 +268,31 @@ func create_area():
 
 ```
 3D 碰撞形状:
-├── BoxShape3D          # 盒形
-├── SphereShape3D       # 球形
-├── CylinderShape3D     # 圆柱
-├── CapsuleShape3D      # 胶囊
-├── ConeShape3D         # 圆锥
-├── PlaneShape3D        # 平面
-├── RayShape3D          # 射线
-├── SegmentShape3D      # 线段
-└── ConvexPolygonShape3D # 凸多边形
+├── BoxShape3D             # 盒形
+├── SphereShape3D          # 球形
+├── CylinderShape3D        # 圆柱
+├── CapsuleShape3D         # 胶囊
+├── ConeShape3D            # 圆锥
+├── PlaneShape3D           # 平面
+├── RayShape3D             # 射线
+├── SegmentShape3D         # 线段
+├── ConvexPolygonShape3D   # 凸多边形
+├── ConcavePolygonShape3D  # 凹多边形（三角网格）——只能用于 StaticBody3D
+├── HeightMapShape3D       # 高度图——只能用于 StaticBody3D
+└── WorldBoundaryShape3D   # 世界边界（无限平面）
 
 2D 碰撞形状:
 ├── RectangleShape2D    # 矩形
 ├── CircleShape2D       # 圆形
+├── CapsuleShape2D      # 胶囊
 ├── SegmentShape2D      # 线段
 ├── RayShape2D          # 射线
-└── ConvexPolygonShape2D # 凸多边形
+├── WorldBoundaryShape2D # 世界边界
+├── ConvexPolygonShape2D # 凸多边形
+└── ConcavePolygonShape2D # 凹多边形（仅静态体）
 ```
+
+> **凹多边形与高度图只能挂在 `StaticBody3D` 上**：它们是三角形集合而非凸体，物理引擎无法对它们做动态刚体的接触求解，强行给 `RigidBody3D` 使用会报形状类型不受支持。需要动态凹形物体时，用若干凸多边形拼出近似形状。
 
 ### 4.2 碰撞形状选择指南
 
@@ -276,7 +303,7 @@ func create_area():
 | 胶囊 | 高 | 中 | 角色身体 |
 | 圆柱 | 中 | 中 | 柱子、管道 |
 | 凸多边形 | 低 | 高 | 复杂静态物体 |
-| 凹多边形 | 极低 | 极高 | 地形、复杂网格 |
+| 凹多边形 | 极低 | 极高 | 地形、复杂网格（仅 StaticBody3D） |
 
 ### 4.3 复合碰撞形状
 
@@ -313,13 +340,15 @@ func create_complex_collision():
 var physics_material = PhysicsMaterial.new()
 physics_material.friction = 0.8      # 摩擦力 (0-1)
 physics_material.bounce = 0.3        # 弹性 (0-1)
-physics_material.absorbent = 0.0     # 吸收性
-physics_material.bounce = 0.5   # 弹性（4.x 用 bounce 表达恢复系数）
+physics_material.absorbent = false    # 吸收性：布尔开关，语义是"相减对方的弹性而非相加"
+physics_material.rough = false        # false 时取双方较小的摩擦值
 
 # 应用到刚体
 var body = RigidBody3D.new()
 body.physics_material_override = physics_material
 ```
+
+> `absorbent` 是 **bool**（不是 0~1 的浮点）：置为 `true` 表示碰撞时**从对方的弹性里减去自己的弹性**，而不是把两者相加。详见第 26 篇。
 
 ### 5.2 物理材质预设
 
@@ -363,7 +392,9 @@ static func create_wood() -> PhysicsMaterial:
 func raycast_query(from: Vector3, to: Vector3, collision_mask: int = 1) -> Dictionary:
     var space_state = get_world_3d().direct_space_state
     var query = PhysicsRayQueryParameters3D.create(from, to, collision_mask)
-    query.exclude = [self]
+    # exclude 是 RID[] 类型：必须传节点的 get_rid()，不能直接传节点本身
+    # （get_rid() 由 CollisionObject3D 提供，所以这个脚本要挂在物理体或 Area3D 上）
+    query.exclude = [self.get_rid()]
     
     var result = space_state.intersect_ray(query)
     
@@ -491,14 +522,52 @@ func setup_collision_layers():
 ### 8.2 睡眠设置
 
 ```gdscript
-# 配置睡眠阈值
+# 刚体级只能开关"允许睡眠"与读取"当前是否在睡"
 var body = RigidBody3D.new()
-body.sleeping = false
-body.can_sleep = true
-body.sleep_threshold = 0.1  # 速度低于此值进入睡眠
-body.sleep_threshold_linear = 0.1
-body.sleep_threshold_angular = 0.1
+body.can_sleep = true    # 允许睡眠
+body.sleeping = false    # 强制唤醒
 ```
+
+> ⚠️ **4.x 里睡眠阈值不在刚体上**。`sleep_threshold` / `sleep_threshold_linear` / `sleep_threshold_angular` 都不是 `RigidBody3D` 的属性（3.x 的写法照搬过来会报"属性不存在"）。4.x 的睡眠阈值是**空间级 / 项目设置级**的：
+>
+> | 层级 | 位置 | 作用 |
+> |------|------|------|
+> | 项目设置 | `physics/3d/sleep_threshold_linear` | 低于此线速度（m/s）才允许入睡 |
+> | 项目设置 | `physics/3d/sleep_threshold_angular` | 低于此线角速度（rad/s）才允许入睡 |
+> | 项目设置 | `physics/3d/time_to_sleep` | 连续满足阈值多久后入睡（秒） |
+> | 服务器层 | `PhysicsServer3D.space_set_param(space, SPACE_PARAM_BODY_LINEAR_VELOCITY_SLEEP_THRESHOLD, v)` 等 | 按空间单独设置，优先级高于项目设置 |
+>
+> 刚体节点上唯一与睡眠相关的两个成员是 `can_sleep`（是否允许入睡）与 `sleeping`（当前是否在睡），外加 `sleeping_state_changed` 信号。
+
+### 8.3 求解器与关节
+
+关节多、链条长的场景卡顿，十有八九不是"碰撞检测慢"，而是**约束求解**吃掉了预算。Godot 的物理服务器为此提供了三个关键旋钮：
+
+```gdscript
+# 1) 关节两侧的物体默认不再互相碰撞（Joint3D.exclude_nodes_from_collision，默认 true）
+#    关节连的是同一副机械的两个零件时，关掉自碰撞能省下一整轮窄相位。
+var joint := HingeJoint3D.new()
+joint.exclude_nodes_from_collision = true
+
+# 2) 求解优先级：同一空间里多个关节互相影响时，先解哪个
+#    Joint3D.solver_priority 默认 1；数值越大越先被求解。
+joint.solver_priority = 10
+
+# 3) 服务器层的等价接口（servers/physics_server_3d.h）
+#    joint_set_solver_priority(RID joint, int priority)
+#    joint_disable_collisions_between_bodies(RID joint, bool disable)
+var j_rid := joint.get_rid()
+PhysicsServer3D.joint_disable_collisions_between_bodies(j_rid, true)
+PhysicsServer3D.joint_set_solver_priority(j_rid, 10)
+```
+
+| 旋钮 | 位置 | 典型用法 |
+|------|------|----------|
+| `exclude_nodes_from_collision` | `Joint3D` 节点属性（默认 `true`） | 机械连杆之间不需要自碰撞；保持默认即可 |
+| `solver_priority` | `Joint3D` 节点属性（默认 `1`） | 悬挂/底盘这类"基础"关节优先级调低，被动悬挂等调高 |
+| `joint_set_solver_priority()` / `joint_disable_collisions_between_bodies()` | `PhysicsServer3D` 服务器层 | 代码里统一调参、或在运行时批量改 |
+
+> 排查思路：关节多时先用 `Performance.get_monitor(Performance.PHYSICS_3D_COLLISION_PAIRS)` 与物理帧耗时区分"配对太多"（收窄碰撞掩码）与"求解太重"（降关节数量 / 调 `solver_priority` / 放松约束刚度）。第 32 篇给出完整流程。
 
 ---
 
@@ -510,7 +579,7 @@ Godot 4.4 起把 Jolt Physics 作为内置模块随引擎分发（由第三方�
 需要注意的是，4.4 的官方文档仍将内置 Jolt 模块标注为实验性、功能尚未完全对齐，选型前应先在自己的项目上实测。
 
 ```
-性能对比（示意数据，测试场景：1000 个活动刚体；请在目标平台自行复测）:
+性能对比（⚠️ 示意数据，未附测试环境；请在目标平台自行复测）:
 ┌─────────────────────────────────────────────────────────────┐
 │ 引擎             │ FPS    │ 物理耗时 (ms) │ 内存 (MB) │ 线程 │
 ├─────────────────────────────────────────────────────────────┤
@@ -522,7 +591,7 @@ Godot 4.4 起把 Jolt Physics 作为内置模块随引擎分发（由第三方�
 - CPU: AMD Ryzen 7 5800X
 - GPU: NVIDIA RTX 3080
 - RAM: 32GB
-- Godot 4.2
+- Godot 4.4（内置 Jolt 最早随 4.4 分发，4.2/4.3 需另装 godot-jolt 扩展）
 - 刚体数量：1000 个（盒体碰撞）
 - 场景：封闭房间，重力下落
 ```
@@ -530,7 +599,7 @@ Godot 4.4 起把 Jolt Physics 作为内置模块随引擎分发（由第三方�
 ### 9.2 不同场景下的性能表现
 
 ```
-场景性能对比:
+场景性能对比（⚠️ 示意数据，未附测试环境；仅用于说明趋势，数值须在目标平台复测）:
 ┌─────────────────────────────────────────────────────────────┐
 │ 场景类型          │ Godot Physics │ Jolt Physics │ 提升   │
 ├─────────────────────────────────────────────────────────────┤
@@ -563,7 +632,11 @@ Godot 4.4 起把 Jolt Physics 作为内置模块随引擎分发（由第三方�
 │ Web/WebAssembly   │ Godot Physics   │ 默认引擎，平台兼容性最稳妥 │
 │ 移动端            │ Godot Physics   │ 功耗更低             │
 └─────────────────────────────────────────────────────────────┘
+
+注：4.6 起新建 3D 项目默认就是 Jolt Physics，上表是"如果能选，怎么选"的建议。
 ```
+
+> 选型前请先读第 34 篇（Jolt 专章）与第 32 篇 8.8 节（Jolt 后端下的指标解读差异）。
 
 ### 9.4 配置 Jolt Physics
 
@@ -575,13 +648,20 @@ Godot 4.4 起把 Jolt Physics 作为内置模块随引擎分发（由第三方�
 
 # 通过代码确认当前引擎
 func get_physics_engine_info() -> Dictionary:
-    # 取值可能是 "DEFAULT"、"GodotPhysics3D" 或 "JoltPhysics3D"
+    # 取值可能是 "DEFAULT"、"GodotPhysics3D"，或 4.4 内置模块注册的 "Jolt Physics"
+    # （注册名带空格，见 modules/jolt_physics/register_types.cpp）
     var engine_name := str(ProjectSettings.get_setting("physics/3d/physics_engine", "DEFAULT"))
     return {
         "engine": engine_name,
-        "is_jolt": engine_name == "JoltPhysics3D",
+        # 用 contains 比较更稳健：不同版本/扩展的注册名可能带前缀或空格差异
+        "is_jolt": engine_name.contains("Jolt"),
         "physics_ticks_per_second": Engine.physics_ticks_per_second,
     }
+
+# 建议把实际取值打印出来，与项目设置里的选择对照一次
+func debug_physics_engine() -> void:
+    var info := get_physics_engine_info()
+    print("物理引擎设置值：", info["engine"], "  是否 Jolt：", info["is_jolt"])
 
 # Jolt 的调优项都是项目级配置，没有对应的运行时 API：
 #   项目设置 → Physics → Jolt Physics
@@ -589,6 +669,8 @@ func get_physics_engine_info() -> Dictionary:
 #   - Simulation / Use Enhanced Internal Edge Removal：内部边消除
 #   - Contacts / Max Contact Points：单对接触点上限
 ```
+
+> 注：`ProjectSettings.get_setting("physics/3d/physics_engine")` 读的是**项目设置里的选择值**，它可能仍是 `"DEFAULT"`（表示"跟随引擎默认"）而实际运行的是别的后端。要确认实际生效的后端，请打印上面 `debug_physics_engine()` 的输出，并注意 4.4 内置 Jolt 的注册名是**带空格的 `"Jolt Physics"`**——按 `"JoltPhysics3D"` 做等值比较会永远为假。
 
 ---
 
@@ -747,6 +829,15 @@ func adjust_physics_quality(elapsed_ms: float) -> void:
 
 ---
 
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+
+---
+
+**上一篇**: [第 22 篇：渲染调试工具](/articles/22-rendering-debug-tools.md)
+**下一篇**: [第 24 篇：刚体物理](/articles/24-rigid-body-physics.md)
+
+---
+
 ## 📋 下一章预告
 
 **第 24 篇：刚体物理**
@@ -760,7 +851,7 @@ func adjust_physics_quality(elapsed_ms: float) -> void:
 ---
 
 *写作时间：2026-03-20*  
-*字数：约 5,500 字*  
+*字数：约 1,900 字（不含代码块）（不含代码块）*  
 *状态：✅ 完成*
 
 ---

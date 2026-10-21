@@ -12,7 +12,12 @@
 
 Godot 提供了多种破坏系统，包括物理碎裂、爆炸效果、碎片动画和碰撞触发，每种方法都有其特定的用途和性能特点。
 
+> **本章定位：破坏系统是自研方案**。Godot **没有内置的破坏/碎裂求解器**——引擎原生提供的是 `SoftBody3D`（软体，见第 35 篇）、以及凸/凹/高度图这几类碰撞形状；碎片生成、断裂判定、应力累积都要你自己实现（可以用 GDExtension 插件加速）。第 29 篇的流体、第 30 篇的布料同样是自研方案。
+>
+> 本章的"爆炸效果"与"碎片动画"用的是 Godot 内置的**粒子系统**（`GPUParticles3D` / `CPUParticles3D`），那是引擎原生能力；但"碎裂"与"碰撞触发破坏"是脚本逻辑。
+
 ---
+
 
 ## 🎯 学习目标
 
@@ -21,6 +26,26 @@ Godot 提供了多种破坏系统，包括物理碎裂、爆炸效果、碎片�
 - 学会创建物体碎裂和爆炸效果
 - 熟悉碎片动画和碰撞触发
 - 能够优化破坏性能
+
+---
+
+## 粒子 API：3.x → 4.x 迁移对照
+
+本章原本使用的是 Godot 3.x 的粒子 API，4.x 里这些类与属性**全部不存在**。迁移对照：
+
+| 3.x | 4.x | 说明 |
+|-----|-----|------|
+| `ParticleSystem3D` | `GPUParticles3D` / `CPUParticles3D` | 4.x 拆成 GPU 与 CPU 两套实现 |
+| `emission_rate`（每秒发射率） | `amount`（同时存在的粒子总数） | **语义不同**，不是简单改名 |
+| — | `amount_ratio` | `amount` 的比例因子，用于按权重混合 |
+| `lifetime` | `lifetime` | 不变 |
+| `gravity` | `process_material.gravity` | 移到 `ParticleProcessMaterial` |
+| `shape` / `ParticleShape3D.SHAPES_SPHERE` | `process_material.emission_shape` = `EMISSION_SHAPE_SPHERE` | `ParticleShape3D` 类已不存在 |
+| `shape.radius` | `process_material.emission_sphere_radius` | 发射形状的尺寸参数 |
+| `material` / `ParticleTextureMaterial` | `draw_pass_1`（网格）+ 网格自身的材质 | `ParticleTextureMaterial` 已不存在 |
+| `velocity_overLifetime` / `LinearInterpolatedCurve2D` | 无直接对应 | 改用 `initial_velocity_min/max`、`radial_velocity_*`、`angular_velocity_*` 等 |
+| `get_process_mode() == PROCESS_MODE_INACTIVE` | `emitting == false` | 4.x 用 `emitting` 判断 |
+| `get_emitted_particle_count()` / `get_emitted_particle(i)` | 无 | 4.x 粒子数据在 GPU 侧，脚本读不到 |
 
 ---
 
@@ -88,55 +113,76 @@ func create_destruction_system():
 
 # 创建爆炸效果
 func create_explosion_effect():
-    var explosion = ParticleSystem3D.new()
+    # ⚠️ 4.x 的粒子节点是 GPUParticles3D / CPUParticles3D，没有 ParticleSystem3D
+    var explosion := GPUParticles3D.new()
     
-    # 设置爆炸参数
-    explosion.emission_rate = 2000  # 每秒发射 2000 个粒子
-    explosion.lifetime = 2.0  # 粒子寿命 2 秒
-    explosion.gravity = Vector3(0, -5, 0)  # 重力
+    # amount 是"同时存在的粒子总数"，不是"每秒发射率"
+    explosion.amount = 200
+    explosion.lifetime = 2.0            # 粒子寿命 2 秒
+    explosion.one_shot = true          # 一次性爆发
+    explosion.explosiveness = 1.0      # 全部粒子在同一帧发出
+    explosion.emitting = true
     
-    # 设置爆炸外观
-    var material = ParticleTextureMaterial.new()
-    material.color = Color(1.0, 0.5, 0.0, 0.7)  # 橙色半透明
-    explosion.material = material
+    # 过程材质：重力、发射形状、初速度都放在这里
+    # ⚠️ 4.x 没有 ParticleShape3D 这个类，emission_shape / emission_sphere_radius
+    #    由 ParticleProcessMaterial 承担
+    var process := ParticleProcessMaterial.new()
+    process.gravity = Vector3(0, -5, 0)
+    process.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+    process.emission_sphere_radius = 0.1  # 发射球半径
+    process.direction = Vector3(0, 1, 0)
+    process.spread = 180.0
+    process.initial_velocity_min = 8.0
+    process.initial_velocity_max = 20.0
+    process.scale_min = 0.2
+    process.scale_max = 0.6
+    explosion.process_material = process
     
-    # 设置粒子形状
-    explosion.shape = ParticleShape3D.new()
-    explosion.shape.shape = ParticleShape3D.SHAPES_SPHERE
-    explosion.shape.radius = 0.1  # 粒子半径
-    
-    # 设置粒子速度（爆炸向外扩散）
-    explosion.velocity_overLifetime = LinearInterpolatedCurve2D.new()
-    explosion.velocity_overLifetime.add_point(0, Vector3(0, 0, 0))
-    explosion.velocity_overLifetime.add_point(0.5, Vector3(20, 10, 20))
-    explosion.velocity_overLifetime.add_point(1, Vector3(0, 0, 0))
+    # 外观：4.x 用 draw_pass_1 挂网格，材质挂在网格上
+    # （GPUParticles3D 没有 material 属性，ParticleTextureMaterial 也已不存在）
+    var quad := QuadMesh.new()
+    quad.size = Vector2(0.2, 0.2)
+    var mat := StandardMaterial3D.new()
+    mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    mat.albedo_color = Color(1.0, 0.5, 0.0, 0.7)  # 橙色半透明
+    quad.material = mat
+    explosion.draw_pass_1 = quad
     
     return explosion
 
 # 创建碎片动画
 func create_fragment_animation():
-    var fragments = ParticleSystem3D.new()
+    var fragments := GPUParticles3D.new()
     
-    # 设置碎片参数
-    fragments.emission_rate = 50  # 每秒发射 50 个碎片
+    # 碎片参数
+    fragments.amount = 60
     fragments.lifetime = 5.0  # 碎片寿命 5 秒
-    fragments.gravity = Vector3(0, -9.8, 0)  # 重力
+    fragments.randomness = 0.3
     
-    # 设置碎片外观
-    var material = ParticleTextureMaterial.new()
-    material.color = Color(0.8, 0.8, 0.8, 0.6)  # 灰色半透明
-    fragments.material = material
+    # 过程材质：重力、发射形状、飞散方向
+    var process := ParticleProcessMaterial.new()
+    process.gravity = Vector3(0, -9.8, 0)
+    process.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+    process.emission_sphere_radius = 0.2  # 发射球半径
+    process.direction = Vector3(0, 1, 0)
+    process.spread = 45.0
+    process.initial_velocity_min = 5.0
+    process.initial_velocity_max = 15.0
+    # 自旋：用角速度代替 3.x 的 velocity_overLifetime 曲线
+    process.angular_velocity_min = -180.0
+    process.angular_velocity_max = 180.0
+    fragments.process_material = process
     
-    # 设置碎片形状
-    fragments.shape = ParticleShape3D.new()
-    fragments.shape.shape = ParticleShape3D.SHAPES_CUBE
-    fragments.shape.radius = 0.2  # 碎片半径
-    
-    # 设置碎片速度（碎片向不同方向飞散）
-    fragments.velocity_overLifetime = LinearInterpolatedCurve2D.new()
-    fragments.velocity_overLifetime.add_point(0, Vector3(0, 0, 0))
-    fragments.velocity_overLifetime.add_point(0.5, Vector3(10, 15, 10))
-    fragments.velocity_overLifetime.add_point(1, Vector3(0, 0, 0))
+    # 碎片外观：小方块网格
+    var box := BoxMesh.new()
+    box.size = Vector3(0.1, 0.1, 0.1)
+    var mat := StandardMaterial3D.new()
+    mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    mat.albedo_color = Color(0.8, 0.8, 0.8, 0.6)  # 灰色半透明
+    box.material = mat
+    fragments.draw_pass_1 = box
     
     return fragments
 
@@ -434,30 +480,37 @@ func _ready():
 ```gdscript
 # 创建基础爆炸效果
 func create_basic_explosion(position: Vector3):
-    # 创建爆炸粒子系统
-    var explosion = ParticleSystem3D.new()
+    # 创建爆炸粒子系统（4.x：GPUParticles3D）
+    var explosion := GPUParticles3D.new()
     explosion.position = position
     
     # 设置爆炸参数
-    explosion.emission_rate = 2000  # 每秒发射 2000 个粒子
-    explosion.lifetime = 2.0  # 粒子寿命 2 秒
-    explosion.gravity = Vector3(0, -5, 0)  # 重力
+    explosion.amount = 200        # 同时存在的粒子数（4.x 不是"每秒发射率"）
+    explosion.lifetime = 2.0      # 粒子寿命 2 秒
+    explosion.one_shot = true
+    explosion.explosiveness = 1.0
+    explosion.emitting = true
     
-    # 设置爆炸外观
-    var material = ParticleTextureMaterial.new()
-    material.color = Color(1.0, 0.5, 0.0, 0.7)  # 橙色半透明
-    explosion.material = material
+    # 过程材质（重力、发射形状、初速度）
+    var process := ParticleProcessMaterial.new()
+    process.gravity = Vector3(0, -5, 0)
+    process.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+    process.emission_sphere_radius = 0.1
+    process.direction = Vector3(0, 1, 0)
+    process.spread = 180.0
+    process.initial_velocity_min = 8.0
+    process.initial_velocity_max = 20.0
+    explosion.process_material = process
     
-    # 设置粒子形状
-    explosion.shape = ParticleShape3D.new()
-    explosion.shape.shape = ParticleShape3D.SHAPES_SPHERE
-    explosion.shape.radius = 0.1  # 粒子半径
-    
-    # 设置粒子速度（爆炸向外扩散）
-    explosion.velocity_overLifetime = LinearInterpolatedCurve2D.new()
-    explosion.velocity_overLifetime.add_point(0, Vector3(0, 0, 0))
-    explosion.velocity_overLifetime.add_point(0.5, Vector3(20, 10, 20))
-    explosion.velocity_overLifetime.add_point(1, Vector3(0, 0, 0))
+    # 设置爆炸外观（4.x：网格挂在 draw_pass_1 上，材质挂在网格上）
+    var quad := QuadMesh.new()
+    quad.size = Vector2(0.2, 0.2)
+    var mat := StandardMaterial3D.new()
+    mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    mat.albedo_color = Color(1.0, 0.5, 0.0, 0.7)  # 橙色半透明
+    quad.material = mat
+    explosion.draw_pass_1 = quad
     
     # 添加到场景
     add_child(explosion)
@@ -482,7 +535,9 @@ func create_basic_explosion(position: Vector3):
     
     # 在 _process 中调用
     func _process(delta):
-        if explosion.get_process_mode() == ParticleSystem3D.PROCESS_MODE_INACTIVE:
+        # ⚠️ 4.x 没有 ParticleSystem3D.PROCESS_MODE_INACTIVE，
+        #    "已经发完"用 emitting 判断（one_shot 的粒子放完后会自动置 false）
+        if not explosion.emitting:
             apply_explosion_force()
             explosion.queue_free()
     
@@ -498,30 +553,37 @@ func _ready():
 ```gdscript
 # 创建可配置爆炸效果
 func create_configurable_explosion(position: Vector3, force: float = 1000, radius: float = 5.0):
-    # 创建爆炸粒子系统
-    var explosion = ParticleSystem3D.new()
+    # 创建爆炸粒子系统（4.x：GPUParticles3D）
+    var explosion := GPUParticles3D.new()
     explosion.position = position
     
     # 设置爆炸参数
-    explosion.emission_rate = 2000  # 每秒发射 2000 个粒子
-    explosion.lifetime = 2.0  # 粒子寿命 2 秒
-    explosion.gravity = Vector3(0, -5, 0)  # 重力
+    explosion.amount = 200        # 同时存在的粒子数
+    explosion.lifetime = 2.0
+    explosion.one_shot = true
+    explosion.explosiveness = 1.0
+    explosion.emitting = true
     
-    # 设置爆炸外观
-    var material = ParticleTextureMaterial.new()
-    material.color = Color(1.0, 0.5, 0.0, 0.7)  # 橙色半透明
-    explosion.material = material
+    # 过程材质（重力、发射形状、初速度）
+    var process := ParticleProcessMaterial.new()
+    process.gravity = Vector3(0, -5, 0)
+    process.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+    process.emission_sphere_radius = 0.1
+    process.direction = Vector3(0, 1, 0)
+    process.spread = 180.0
+    process.initial_velocity_min = 8.0
+    process.initial_velocity_max = 20.0
+    explosion.process_material = process
     
-    # 设置粒子形状
-    explosion.shape = ParticleShape3D.new()
-    explosion.shape.shape = ParticleShape3D.SHAPES_SPHERE
-    explosion.shape.radius = 0.1  # 粒子半径
-    
-    # 设置粒子速度（爆炸向外扩散）
-    explosion.velocity_overLifetime = LinearInterpolatedCurve2D.new()
-    explosion.velocity_overLifetime.add_point(0, Vector3(0, 0, 0))
-    explosion.velocity_overLifetime.add_point(0.5, Vector3(20, 10, 20))
-    explosion.velocity_overLifetime.add_point(1, Vector3(0, 0, 0))
+    # 设置爆炸外观（4.x：网格挂在 draw_pass_1 上）
+    var quad := QuadMesh.new()
+    quad.size = Vector2(0.2, 0.2)
+    var mat := StandardMaterial3D.new()
+    mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    mat.albedo_color = Color(1.0, 0.5, 0.0, 0.7)  # 橙色半透明
+    quad.material = mat
+    explosion.draw_pass_1 = quad
     
     # 添加到场景
     add_child(explosion)
@@ -541,7 +603,8 @@ func create_configurable_explosion(position: Vector3, force: float = 1000, radiu
     
     # 在 _process 中调用
     func _process(delta):
-        if explosion.get_process_mode() == ParticleSystem3D.PROCESS_MODE_INACTIVE:
+        # 4.x 用 emitting 判断"是否已经发完"
+        if not explosion.emitting:
             apply_explosion_force()
             explosion.queue_free()
     
@@ -556,22 +619,28 @@ func _ready():
 
 ```gdscript
 # 爆炸效果性能优化
-func optimize_explosion(explosion: ParticleSystem3D):
-    # 减少发射率（如果性能不足）
-    if explosion.emission_rate > 1500:
-        explosion.emission_rate = 1500
+func optimize_explosion(explosion: GPUParticles3D):
+    # 减少粒子数量（4.x 的 amount 是同时存在的粒子数）
+    if explosion.amount > 150:
+        explosion.amount = 150
     
     # 减少粒子寿命（如果性能不足）
     if explosion.lifetime > 1.5:
         explosion.lifetime = 1.5
     
-    # 减少粒子数量（如果性能不足）
-    if explosion.shape.radius > 0.08:
-        explosion.shape.radius = 0.08
+    # 缩小发射球（发射形状与半径在过程材质里）
+    var process := explosion.process_material as ParticleProcessMaterial
+    if process:
+        if process.emission_shape == ParticleProcessMaterial.EMISSION_SHAPE_SPHERE \
+                and process.emission_sphere_radius > 0.08:
+            process.emission_sphere_radius = 0.08
     
-    # 调整粒子颜色（降低亮度）
-    if explosion.material:
-        explosion.material.color = explosion.material.color * 0.8
+    # 调整粒子颜色（降低亮度）——颜色在 draw_pass_1 的网格材质上
+    var mesh := explosion.draw_pass_1
+    if mesh:
+        var mat := mesh.material as StandardMaterial3D
+        if mat:
+            mat.albedo_color = mat.albedo_color * 0.8
 
 # 在游戏开始时调用
 func _ready():
@@ -589,73 +658,81 @@ func _ready():
 ```gdscript
 # 创建基础碎片动画
 func create_basic_fragment_animation():
-    # 创建粒子系统
-    var fragments = ParticleSystem3D.new()
+    # 创建粒子系统（4.x：GPUParticles3D）
+    var fragments := GPUParticles3D.new()
     
     # 设置碎片参数
-    fragments.emission_rate = 50  # 每秒发射 50 个碎片
+    fragments.amount = 60
     fragments.lifetime = 5.0  # 碎片寿命 5 秒
-    fragments.gravity = Vector3(0, -9.8, 0)  # 重力
+    fragments.randomness = 0.3
     
-    # 设置碎片外观
-    var material = ParticleTextureMaterial.new()
-    material.color = Color(0.8, 0.8, 0.8, 0.6)  # 灰色半透明
-    fragments.material = material
+    # 过程材质（重力、发射形状、飞散方向）
+    var process := ParticleProcessMaterial.new()
+    process.gravity = Vector3(0, -9.8, 0)
+    process.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+    process.emission_sphere_radius = 0.2
+    process.direction = Vector3(0, 1, 0)
+    process.spread = 45.0
+    process.initial_velocity_min = 5.0
+    process.initial_velocity_max = 15.0
+    # 碎片自旋：4.x 没有 velocity_overLifetime 曲线，用角速度表达
+    process.angular_velocity_min = -180.0
+    process.angular_velocity_max = 180.0
+    fragments.process_material = process
     
-    # 设置碎片形状
-    fragments.shape = ParticleShape3D.new()
-    fragments.shape.shape = ParticleShape3D.SHAPES_CUBE
-    fragments.shape.radius = 0.2  # 碎片半径
-    
-    # 设置碎片速度（碎片向不同方向飞散）
-    fragments.velocity_overLifetime = LinearInterpolatedCurve2D.new()
-    fragments.velocity_overLifetime.add_point(0, Vector3(0, 0, 0))
-    fragments.velocity_overLifetime.add_point(0.5, Vector3(10, 15, 10))
-    fragments.velocity_overLifetime.add_point(1, Vector3(0, 0, 0))
+    # 设置碎片外观（4.x：网格挂在 draw_pass_1 上）
+    var box := BoxMesh.new()
+    box.size = Vector3(0.1, 0.1, 0.1)
+    var mat := StandardMaterial3D.new()
+    mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    mat.albedo_color = Color(0.8, 0.8, 0.8, 0.6)  # 灰色半透明
+    box.material = mat
+    fragments.draw_pass_1 = box
     
     # 添加到场景
     add_child(fragments)
     
     # 碎片动画函数
     func animate_fragments():
-        # 在每帧更新时调用
-        var time = Time.get_ticks_msec() * 0.001
-        
-        # 模拟碎片旋转
-        for i in range(fragments.get_emitted_particle_count()):
-            var particle = fragments.get_emitted_particle(i)
-            particle.rotation = particle.rotation * 0.99  # 缓慢旋转
+        # ⚠️ 4.x 的 GPUParticles3D / CPUParticles3D 都不提供
+        #    get_emitted_particle_count() / get_emitted_particle()（那是 3.x 的 API），
+        #    粒子数据在 GPU 侧，脚本读不到。
+        #    自旋请交给过程材质的 angular_velocity_min/max（见上），
+        #    或整体旋转整个粒子节点：
+        fragments.rotate_y(0.01)
     
-    # 添加到场景
-    add_child(fragments)
-    
-    return fragments
-
-# 在 _process 中调用
-func _process(delta):
-    animate_fragments()
+    # 在 _process 中调用
+    func _process(delta):
+        animate_fragments()
 ```
 
 ### 4.2 碎片动画优化
 
 ```gdscript
 # 碎片动画性能优化
-func optimize_fragment_animation(fragments: ParticleSystem3D):
-    # 减少发射率（如果性能不足）
-    if fragments.emission_rate > 30:
-        fragments.emission_rate = 30
+func optimize_fragment_animation(fragments: GPUParticles3D):
+    # 减少粒子数量（4.x 的 amount 是同时存在的粒子数）
+    if fragments.amount > 40:
+        fragments.amount = 40
     
     # 减少粒子寿命（如果性能不足）
     if fragments.lifetime > 4:
         fragments.lifetime = 4
     
-    # 减少粒子数量（如果性能不足）
-    if fragments.shape.radius > 0.15:
-        fragments.shape.radius = 0.15
+    # 缩小发射球（发射形状与半径在过程材质里）
+    var process := fragments.process_material as ParticleProcessMaterial
+    if process:
+        if process.emission_shape == ParticleProcessMaterial.EMISSION_SHAPE_SPHERE \
+                and process.emission_sphere_radius > 0.15:
+            process.emission_sphere_radius = 0.15
     
-    # 调整粒子颜色（降低亮度）
-    if fragments.material:
-        fragments.material.color = fragments.material.color * 0.7
+    # 调整粒子颜色（降低亮度）——颜色在 draw_pass_1 的网格材质上
+    var mesh := fragments.draw_pass_1
+    if mesh:
+        var mat := mesh.material as StandardMaterial3D
+        if mat:
+            mat.albedo_color = mat.albedo_color * 0.7
 
 # 在游戏开始时调用
 func _ready():
@@ -668,62 +745,46 @@ func _ready():
 
 ```gdscript
 # 创建碎片动画混合
+# ⚠️ 4.x 没有 AnimationState / AnimationNodeCurve 这两个类（3.x 遗留），
+#    AnimationMixer 也没有 add_state() 方法——"状态"是 3.x AnimationPlayer 的概念。
+#    4.x 里粒子之间的混合用 amount_ratio 表达：
+#    它是 amount 的比例因子（0.0~1.0），按权重缩放实际发射的粒子数。
 func create_fragment_animation_mixing():
     # 创建粒子系统
-    var fragments = ParticleSystem3D.new()
+    var fragments := GPUParticles3D.new()
     
     # 设置碎片参数
-    fragments.emission_rate = 50  # 每秒发射 50 个碎片
-    fragments.lifetime = 5.0  # 碎片寿命 5 秒
-    fragments.gravity = Vector3(0, -9.8, 0)  # 重力
+    fragments.amount = 60
+    fragments.lifetime = 5.0
+    fragments.amount_ratio = 0.0   # 初始权重 0（不发射）
     
-    # 设置碎片外观
-    var material = ParticleTextureMaterial.new()
-    material.color = Color(0.8, 0.8, 0.8, 0.6)  # 灰色半透明
-    fragments.material = material
+    # 过程材质
+    var process := ParticleProcessMaterial.new()
+    process.gravity = Vector3(0, -9.8, 0)
+    process.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+    process.emission_sphere_radius = 0.2
+    process.direction = Vector3(0, 1, 0)
+    process.spread = 45.0
+    process.initial_velocity_min = 5.0
+    process.initial_velocity_max = 15.0
+    fragments.process_material = process
     
-    # 设置碎片形状
-    fragments.shape = ParticleShape3D.new()
-    fragments.shape.shape = ParticleShape3D.SHAPES_CUBE
-    fragments.shape.radius = 0.2  # 碎片半径
-    
-    # 设置粒子速度（碎片向不同方向飞散）
-    fragments.velocity_overLifetime = LinearInterpolatedCurve2D.new()
-    fragments.velocity_overLifetime.add_point(0, Vector3(0, 0, 0))
-    fragments.velocity_overLifetime.add_point(0.5, Vector3(10, 15, 10))
-    fragments.velocity_overLifetime.add_point(1, Vector3(0, 0, 0))
+    # 碎片外观
+    var box := BoxMesh.new()
+    box.size = Vector3(0.1, 0.1, 0.1)
+    var mat := StandardMaterial3D.new()
+    mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    mat.albedo_color = Color(0.8, 0.8, 0.8, 0.6)
+    box.material = mat
+    fragments.draw_pass_1 = box
     
     # 添加到场景
     add_child(fragments)
     
-    # 创建动画混合器
-    var animation_mixer = AnimationMixer.new()
-    add_child(animation_mixer)
-    
-    # 创建动画状态
-    var animation = AnimationState.new()
-    animation_mixer.add_state("fragment_animation", animation)
-    
-    # 添加动画曲线
-    var curve = Curve2D.new()
-    curve.add_point(0, Vector3(0, 0, 0))
-    curve.add_point(1, Vector3(0, 0.2, 0))
-    curve.add_point(2, Vector3(0, 0, 0))
-    curve.add_point(3, Vector3(0, -0.2, 0))
-    curve.add_point(4, Vector3(0, 0, 0))
-    
-    # 添加动画节点
-    var node = AnimationNodeCurve.new()
-    node.curve = curve
-    animation.add_track(AnimationNodeCurve.TRACK_POSITION, node)
-    
-    # 设置动画混合权重
+    # 设置混合权重（0~1 之间摆动）
     func animate_mixing():
-        # 在每帧更新时调用
-        animation_mixer["fragment_animation"].track(0).value = sin(Time.get_ticks_msec() * 0.002) * 0.5  # 0-0.5 之间变化
-    
-    # 添加到场景
-    add_child(fragments)
+        fragments.amount_ratio = 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.002)
     
     return fragments
 
@@ -846,14 +907,14 @@ func trigger_small_destruction(body):
         # 创建小型爆炸效果
         var explosion = create_explosion_effect()
         explosion.position = body.global_transform.origin
-        explosion.emission_rate = 1000  # 更小的爆炸
+        explosion.amount = 100  # 更小的爆炸（4.x：amount 是粒子总数）
         explosion.lifetime = 1.5  # 更短的寿命
         add_child(explosion)
         
         # 创建小型碎片动画
         var fragments = create_fragment_animation()
         fragments.position = body.global_transform.origin
-        fragments.emission_rate = 30  # 更小的碎片
+        fragments.amount = 30  # 更小的碎片
         fragments.lifetime = 3  # 更短的寿命
         add_child(fragments)
         
@@ -900,69 +961,75 @@ func _ready():
 ### 6.1 碎片动画混合
 
 ```gdscript
-# 创建碎片动画混合
+# 爆炸与碎片的双系统混合
+# 4.x 里"粒子混合"用 amount_ratio 表达：两个粒子系统各自设好 amount，
+# 再用互补的 amount_ratio 分配权重，就能得到"爆炸逐渐让位给碎片飞散"的过渡。
 func create_fragment_animation_mixing():
-    # 创建粒子系统
-    var fragments = ParticleSystem3D.new()
+    # 爆炸粒子系统
+    var explosion := GPUParticles3D.new()
+    explosion.amount = 80
+    explosion.lifetime = 1.2
+    explosion.one_shot = true
+    explosion.explosiveness = 1.0
+    explosion.amount_ratio = 1.0
     
-    # 设置碎片参数
-    fragments.emission_rate = 50  # 每秒发射 50 个碎片
-    fragments.lifetime = 5.0  # 碎片寿命 5 秒
-    fragments.gravity = Vector3(0, -9.8, 0)  # 重力
+    var explosion_process := ParticleProcessMaterial.new()
+    explosion_process.gravity = Vector3(0, -5, 0)
+    explosion_process.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+    explosion_process.emission_sphere_radius = 0.2
+    explosion_process.direction = Vector3(0, 1, 0)
+    explosion_process.spread = 180.0
+    explosion_process.initial_velocity_min = 8.0
+    explosion_process.initial_velocity_max = 20.0
+    explosion.process_material = explosion_process
     
-    # 设置碎片外观
-    var material = ParticleTextureMaterial.new()
-    material.color = Color(0.8, 0.8, 0.8, 0.6)  # 灰色半透明
-    fragments.material = material
+    var quad := QuadMesh.new()
+    quad.size = Vector2(0.2, 0.2)
+    var quad_mat := StandardMaterial3D.new()
+    quad_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    quad_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    quad_mat.albedo_color = Color(1.0, 0.5, 0.0, 0.7)
+    quad.material = quad_mat
+    explosion.draw_pass_1 = quad
+    add_child(explosion)
     
-    # 设置碎片形状
-    fragments.shape = ParticleShape3D.new()
-    fragments.shape.shape = ParticleShape3D.SHAPES_CUBE
-    fragments.shape.radius = 0.2  # 碎片半径
+    # 碎片粒子系统
+    var fragments := GPUParticles3D.new()
+    fragments.amount = 60
+    fragments.lifetime = 5.0
+    fragments.amount_ratio = 0.0
     
-    # 设置粒子速度（碎片向不同方向飞散）
-    fragments.velocity_overLifetime = LinearInterpolatedCurve2D.new()
-    fragments.velocity_overLifetime.add_point(0, Vector3(0, 0, 0))
-    fragments.velocity_overLifetime.add_point(0.5, Vector3(10, 15, 10))
-    fragments.velocity_overLifetime.add_point(1, Vector3(0, 0, 0))
+    var fragment_process := ParticleProcessMaterial.new()
+    fragment_process.gravity = Vector3(0, -9.8, 0)
+    fragment_process.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+    fragment_process.emission_sphere_radius = 0.2
+    fragment_process.direction = Vector3(0, 1, 0)
+    fragment_process.spread = 45.0
+    fragment_process.initial_velocity_min = 5.0
+    fragment_process.initial_velocity_max = 15.0
+    fragments.process_material = fragment_process
     
-    # 添加到场景
+    var box := BoxMesh.new()
+    box.size = Vector3(0.1, 0.1, 0.1)
+    var box_mat := StandardMaterial3D.new()
+    box_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    box_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    box_mat.albedo_color = Color(0.8, 0.8, 0.8, 0.6)
+    box.material = box_mat
+    fragments.draw_pass_1 = box
     add_child(fragments)
     
-    # 创建动画混合器
-    var animation_mixer = AnimationMixer.new()
-    add_child(animation_mixer)
+    # 混合权重：0 = 全是爆炸，1 = 全是碎片
+    func animate_mixing(weight: float) -> void:
+        var w := clamp(weight, 0.0, 1.0)
+        explosion.amount_ratio = 1.0 - w
+        fragments.amount_ratio = w
     
-    # 创建动画状态
-    var animation = AnimationState.new()
-    animation_mixer.add_state("fragment_animation", animation)
-    
-    # 添加动画曲线
-    var curve = Curve2D.new()
-    curve.add_point(0, Vector3(0, 0, 0))
-    curve.add_point(1, Vector3(0, 0.2, 0))
-    curve.add_point(2, Vector3(0, 0, 0))
-    curve.add_point(3, Vector3(0, -0.2, 0))
-    curve.add_point(4, Vector3(0, 0, 0))
-    
-    # 添加动画节点
-    var node = AnimationNodeCurve.new()
-    node.curve = curve
-    animation.add_track(AnimationNodeCurve.TRACK_POSITION, node)
-    
-    # 设置动画混合权重
-    func animate_mixing():
-        # 在每帧更新时调用
-        animation_mixer["fragment_animation"].track(0).value = sin(Time.get_ticks_msec() * 0.002) * 0.5  # 0-0.5 之间变化
-    
-    # 添加到场景
-    add_child(fragments)
-    
-    return fragments
+    return explosion, fragments
 
 # 在 _process 中调用
 func _process(delta):
-    animate_mixing()
+    animate_mixing(0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.002))
 ```
 
 ### 6.2 碎片收集系统
@@ -1061,63 +1128,47 @@ func _ready():
 ### 6.3 碎片动画混合
 
 ```gdscript
-# 创建碎片动画混合
+# 由玩法驱动的混合权重
+# amount_ratio 不只用来做正弦摆动——它更常见的用法是直接由游戏逻辑驱动：
+# 爆炸进度、车辆速度、材质强度、玩家操作……都可以映射到 0~1 的权重上。
+@export var mix_weight: float = 0.0  # 0 = 几乎没有碎片，1 = 满屏碎片
+
 func create_fragment_animation_mixing():
     # 创建粒子系统
-    var fragments = ParticleSystem3D.new()
+    var fragments := GPUParticles3D.new()
     
     # 设置碎片参数
-    fragments.emission_rate = 50  # 每秒发射 50 个碎片
-    fragments.lifetime = 5.0  # 碎片寿命 5 秒
-    fragments.gravity = Vector3(0, -9.8, 0)  # 重力
+    fragments.amount = 60
+    fragments.lifetime = 5.0
+    fragments.amount_ratio = clamp(mix_weight, 0.0, 1.0)
     
-    # 设置碎片外观
-    var material = ParticleTextureMaterial.new()
-    material.color = Color(0.8, 0.8, 0.8, 0.6)  # 灰色半透明
-    fragments.material = material
+    # 过程材质
+    var process := ParticleProcessMaterial.new()
+    process.gravity = Vector3(0, -9.8, 0)
+    process.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+    process.emission_sphere_radius = 0.2
+    process.direction = Vector3(0, 1, 0)
+    process.spread = 45.0
+    process.initial_velocity_min = 5.0
+    process.initial_velocity_max = 15.0
+    fragments.process_material = process
     
-    # 设置碎片形状
-    fragments.shape = ParticleShape3D.new()
-    fragments.shape.shape = ParticleShape3D.SHAPES_CUBE
-    fragments.shape.radius = 0.2  # 碎片半径
-    
-    # 设置粒子速度（碎片向不同方向飞散）
-    fragments.velocity_overLifetime = LinearInterpolatedCurve2D.new()
-    fragments.velocity_overLifetime.add_point(0, Vector3(0, 0, 0))
-    fragments.velocity_overLifetime.add_point(0.5, Vector3(10, 15, 10))
-    fragments.velocity_overLifetime.add_point(1, Vector3(0, 0, 0))
-    
-    # 添加到场景
-    add_child(fragments)
-    
-    # 创建动画混合器
-    var animation_mixer = AnimationMixer.new()
-    add_child(animation_mixer)
-    
-    # 创建动画状态
-    var animation = AnimationState.new()
-    animation_mixer.add_state("fragment_animation", animation)
-    
-    # 添加动画曲线
-    var curve = Curve2D.new()
-    curve.add_point(0, Vector3(0, 0, 0))
-    curve.add_point(1, Vector3(0, 0.2, 0))
-    curve.add_point(2, Vector3(0, 0, 0))
-    curve.add_point(3, Vector3(0, -0.2, 0))
-    curve.add_point(4, Vector3(0, 0, 0))
-    
-    # 添加动画节点
-    var node = AnimationNodeCurve.new()
-    node.curve = curve
-    animation.add_track(AnimationNodeCurve.TRACK_POSITION, node)
-    
-    # 设置动画混合权重
-    func animate_mixing():
-        # 在每帧更新时调用
-        animation_mixer["fragment_animation"].track(0).value = sin(Time.get_ticks_msec() * 0.002) * 0.5  # 0-0.5 之间变化
+    # 碎片外观
+    var box := BoxMesh.new()
+    box.size = Vector3(0.1, 0.1, 0.1)
+    var mat := StandardMaterial3D.new()
+    mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    mat.albedo_color = Color(0.8, 0.8, 0.8, 0.6)
+    box.material = mat
+    fragments.draw_pass_1 = box
     
     # 添加到场景
     add_child(fragments)
+    
+    # 每次玩法变化时刷新权重
+    func animate_mixing() -> void:
+        fragments.amount_ratio = clamp(mix_weight, 0.0, 1.0)
     
     return fragments
 
@@ -1125,10 +1176,6 @@ func create_fragment_animation_mixing():
 func _process(delta):
     animate_mixing()
 ```
-
----
-
-## 📝 本章总结
 
 ### 核心要点
 
@@ -1159,6 +1206,15 @@ func _process(delta):
 
 ---
 
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+
+---
+
+**上一篇**: [第 30 篇：布料模拟](/articles/30-cloth-simulation.md)
+**下一篇**: [第 32 篇：物理性能优化](/articles/32-physics-performance-optimization.md)
+
+---
+
 ## 📋 下一章预告
 
 **第 32 篇：物理性能优化**
@@ -1173,7 +1229,7 @@ func _process(delta):
 ---
 
 *写作时间：2026-03-20*  
-*字数：约 9,000 字*  
+*字数：约 1,000 字（不含代码块）（不含代码块）*  
 *状态：✅ 完成*
 
 ---

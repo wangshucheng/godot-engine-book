@@ -412,8 +412,17 @@ timer.timeout.connect(_on_timeout, CONNECT_DEFERRED)
 // 简化示意：真实实现是宏生成的模板注册
 ClassDB::register_class<T>();          // 可实例化（有 new()）
 ClassDB::register_abstract_class<T>(); // 抽象类（无 new()）
-ClassDB::register_virtual_class<T>();  // 虚拟类（仅作基类）
+ClassDB::register_class<T>(true);      // 虚拟类（仅作基类，不可实例化）
 ```
+
+> ⚠️ **没有 `ClassDB::register_virtual_class<T>()` 这个函数**。4.3 `core/object/class_db.h` 里与注册相关的模板函数只有 `register_class()`（第二个参数 `p_virtual` 默认为 `false`）、`register_abstract_class()`、`register_internal_class()`、`register_custom_instance_class()`。引擎内部实际用的是一组宏：
+>
+> | 宏 | 等价调用 | 用途 |
+> |----|---------|------|
+> | `GDREGISTER_CLASS(m_class)` | `register_class<m_class>()` | 可实例化类 |
+> | `GDREGISTER_VIRTUAL_CLASS(m_class)` | `register_class<m_class>(true)` | 仅作基类的虚拟类 |
+> | `GDREGISTER_ABSTRACT_CLASS(m_class)` | `register_abstract_class<m_class>()` | 抽象类 |
+> | `GDREGISTER_INTERNAL_CLASS(m_class)` | `register_internal_class<m_class>()` | 引擎内部类 |
 
 ### 7.2 动态创建与查询
 
@@ -482,7 +491,7 @@ Object 类提供：
 
 ---
 
-**Godot 版本**: 4.x（基线 4.3，2026-09 最新稳定版为 4.7）
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
 
 ---
 

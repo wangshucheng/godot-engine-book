@@ -13,15 +13,16 @@ Godot 的核心设计哲学可以用一句话概括：**组合优于继承**（C
 在 Godot 中，复杂的功能不是通过深层继承实现的，而是通过**节点组合**：
 
 ```
-Player (CharacterBody3D)
+Player (CharacterBody3D) [player.gd]
 ├── Mesh (MeshInstance3D)      # 3D 模型
 ├── Camera (Camera3D)          # 摄像机
 ├── Collision (CollisionShape3D) # 碰撞体
-├── Script (GDScript)          # 脚本逻辑
 └── Audio (AudioStreamPlayer3D) # 音频
 ```
 
 每个子节点负责单一功能，通过组合实现完整的玩家对象。
+
+> 方括号里的 `player.gd` 是**挂在 Player 节点上的脚本**，不是独立节点。Godot 的脚本是节点的属性（`Node.set_script()`），不会作为子节点出现在场景树中；`MonoBehaviour` 才是 Unity 里与组件同级的那一层。
 
 **为什么选择组合？**
 
@@ -104,23 +105,25 @@ func _exit_tree():
 **源码位置**: `scene/main/node.h`
 
 ```cpp
-// Godot 源码简化版
+// Godot 源码简化版（Godot 4.3，scene/main/node.h）
 class Node : public Object {
     // 节点树相关
     Node *parent = nullptr;
-    Vector<Node *> children;
-    
-    // 生命周期
-    virtual void _enter_tree();
-    virtual void _ready();
-    virtual void _process(double p_delta);
-    virtual void _physics_process(double p_delta);
-    virtual void _exit_tree();
-    
+    HashMap<StringName, Node *> children;        // 按节点名索引
+    mutable LocalVector<Node *> children_cache;   // 保序缓存（惰性重建）
+    SceneTree *tree = nullptr;
+
+    // 生命周期：4.x 用 GDVIRTUAL 宏声明（无 C++ 虚函数体，由脚本侧转发）
+    GDVIRTUAL0(_enter_tree);
+    GDVIRTUAL0(_ready);
+    GDVIRTUAL0(_exit_tree);
+    GDVIRTUAL1(_process, double);
+    GDVIRTUAL1(_physics_process, double);
+
     // 节点操作
-    void add_child(Node *p_child);
+    void add_child(Node *p_child, bool p_force_readable_name = false, InternalMode p_internal = INTERNAL_MODE_DISABLED);
     void remove_child(Node *p_child);
-    Node *get_node(const NodePath &p_path);
+    Node *get_node(const NodePath &p_path) const;
 };
 ```
 
@@ -189,7 +192,7 @@ public class PlayerController : MonoBehaviour
 | **组织方式** | 场景树（父子） | Transform 层级 |
 | **访问方式** | `get_node("Path")` | `GetComponent<T>()` |
 | **生命周期** | `_enter_tree` → `_ready` → `_process` | `Awake` → `Start` → `Update` |
-| **内存管理** | 引用计数（自动释放） | 垃圾回收（GC） |
+| **内存管理** | 节点：随父节点释放（`queue_free()`）<br/>资源：引用计数 | 垃圾回收（GC） |
 | **继承关系** | 较浅（Node 派生） | 较深（MonoBehaviour 派生） |
 
 ### 2.4 代码对比：创建相同功能的对象
@@ -248,22 +251,41 @@ player.AddComponent<PlayerController>();
 **源码位置**: `scene/main/scene_tree.h`
 
 ```cpp
-// Godot 源码简化版
+// Godot 源码简化版（Godot 4.3，scene/main/scene_tree.h）
 class SceneTree : public MainLoop {
-    // 场景树根节点
-    Node *root = nullptr;
-    
-    // 当前场景
-    PackedScene *current_scene = nullptr;
-    
+    // 场景树根节点（4.x 根节点是 Window）
+    Window *root = nullptr;
+
+    // 当前场景（已挂载的节点实例，不是资源）
+    Node *current_scene = nullptr;
+    Node *pending_new_scene = nullptr;   // 待挂载的新场景
+    Node *prev_scene = nullptr;
+
+    // 场景组
+    struct Group {
+        Vector<Node *> nodes;
+        bool changed = false;
+    };
+    HashMap<StringName, Group> group_map;
+
+    // 状态
+    bool paused = false;
+    int64_t current_frame = 0;
+
     // 场景切换
-    Error change_scene_to_packed(PackedScene *packed_scene);
+    Error change_scene_to_file(const String &p_path);
+    Error change_scene_to_packed(const Ref<PackedScene> &p_scene);
     Error reload_current_scene();
-    
+
     // 场景管理
-    void quit(int exit_code = 0);
+    void quit(int p_exit_code = EXIT_SUCCESS);
 };
 ```
+
+> ⚠️ 两个容易踩坑的细节：
+> 1. `current_scene` 是**节点实例**（`Node *`），不是 `PackedScene` 资源——想拿资源要另外保存；
+> 2. `change_scene_to_packed()` 的形参是 `const Ref<PackedScene> &`（4.x 用 `Ref<T>` 智能指针，3.x 是裸指针 `PackedScene *`）；
+> 3. **场景切换是延迟的**：调用后旧场景立即从根节点摘下，但新场景要到本帧末才由 `_flush_scene_change()` 挂载（详见第 3 篇）。
 
 **场景的核心特性**：
 
@@ -292,7 +314,7 @@ Main.tscn (主场景)
 get_tree().change_scene_to_file("res://levels/level_2.tscn")
 
 # 方式 2：通过资源
-var level_2 = load("res://levels/level_2.tscn")
+var level_2: PackedScene = load("res://levels/level_2.tscn")
 get_tree().change_scene_to_packed(level_2)
 
 # 方式 3：重新加载当前场景
@@ -345,12 +367,12 @@ DontDestroyOnLoad(gameObject);
 |------|-------------|-------------|
 | **文件格式** | `.tscn`（文本） | `.unity`（二进制/YAML） |
 | **场景本质** | PackedScene 资源 | Scene Asset |
-| **嵌套能力** | 强（场景可嵌套） | 弱（Prefab 嵌套有限） |
+| **嵌套能力** | 强（场景可嵌套，实例即一棵独立节点树） | 支持（2018.3+ 嵌套 Prefab 与 Prefab Variant，但变体语义与 Godot 不同） |
 | **实例化** | 资源引用，轻量 | Prefab 实例，较重 |
 | **跨场景** | 自然支持（通过节点树） | 需要 `DontDestroyOnLoad` |
 | **加载方式** | `change_scene_to_packed()` | `SceneManager.LoadScene()` |
 | **多场景** | 支持（通过节点添加） | 支持（Additive 模式） |
-| **内存管理** | 引用计数，自动释放 | 垃圾回收，需手动卸载 |
+| **内存管理** | 节点：随父节点释放（`queue_free()`）<br/>资源：引用计数 | 垃圾回收，需手动卸载 |
 
 ### 3.4 场景嵌套 vs Prefab 嵌套
 
@@ -366,7 +388,7 @@ BossFight.tscn
 └── ArenaHazards (Node3D)
 ```
 
-**Unity Prefab 嵌套**（2019+ 支持）：
+**Unity Prefab 嵌套**（Unity 2018.3 起支持嵌套 Prefab 与 Prefab Variant）：
 
 ```
 BossFight.unity
@@ -380,8 +402,8 @@ BossFight.unity
 
 **差异**：
 
-- **Godot**：场景嵌套更自然，每个场景都是完整的节点树
-- **Unity**：Prefab 嵌套较复杂，需要理解 Prefab 变体系统
+- **Godot**：场景嵌套更自然，每个场景都是完整的节点树，实例化后各实例相互独立
+- **Unity**：2018.3 起已支持嵌套 Prefab 与 Prefab Variant，并非"能力弱"；但**变体（Variant）语义**与 Godot 的场景实例化不同——Unity 的变体记录的是对基础 Prefab 的属性覆盖，Godot 则只有一种"场景实例"，覆盖要靠实例自身的属性或再包一层场景
 
 ---
 
@@ -444,7 +466,7 @@ func _on_health_depleted():
 1. **Python 风格语法**：易学易用
 2. **动态类型 + 静态类型**：可以混合使用
 3. **内置引擎 API**：与 Godot API 深度集成
-4. **热重载**：修改后无需重启游戏
+4. **热重载**：修改脚本后无需重启游戏，但**实例状态不保留**——热重载会重建脚本实例，已挂载节点的成员变量回到默认值
 5. **信号系统**：内置观察者模式实现
 
 ### 4.2 Unity 脚本系统
@@ -521,8 +543,8 @@ public class PlayerController : MonoBehaviour
 | **附加方式** | 脚本是节点的属性 | 脚本是组件 |
 | **节点/组件访问** | `$NodePath` 语法 | `GetComponent<T>()` |
 | **通信机制** | 信号（Signal） | UnityEvent/Delegate |
-| **执行顺序** | 可配置（通过优先级） | 固定（Awake→Start→Update） |
-| **热重载** | 完全支持 | 部分支持 |
+| **执行顺序** | 可配置（`Node.process_priority` / `physics_process_priority`） | 可配置（`[DefaultExecutionOrder]`） |
+| **热重载** | 支持脚本热重载，但**不保留实例状态** | 支持脚本热重载（2019+ 默认开启域重载） |
 | **学习曲线** | 较低（语法简单） | 中等（C# 要求高） |
 
 ### 4.4 信号系统对比
@@ -582,9 +604,14 @@ healthComponent.HealthChanged -= OnHealthChanged;
 
 ## 五、内存管理对比
 
-### 5.1 Godot 内存管理：引用计数
+### 5.1 Godot 内存管理：两种所有权模型
 
-Godot 使用 **引用计数（Reference Counting）** 管理内存。
+Godot 有**两套**内存管理机制，区分清楚很关键：
+
+- **节点（Node）**：不参与引用计数，**随父节点一起释放**（`queue_free()`）
+- **资源（Resource）**：使用 **引用计数（Reference Counting）** 管理内存
+
+下面这段引用计数原理讲的是**资源**这一侧。
 
 **引用计数原理**：
 
@@ -655,6 +682,8 @@ GC 运行时 → 回收垃圾对象
 
 ```csharp
 // Unity - 内存管理示例
+using UnityEngine;
+using System.Text;   // StringBuilder 所在命名空间
 
 // 1. GameObject 销毁
 GameObject player = new GameObject("Player");
@@ -665,41 +694,43 @@ DestroyImmediate(player);  // 立即销毁（仅编辑器）
 Resources.UnloadUnusedAssets();  // 卸载未使用资源
 
 // 3. GC 优化
-// ❌ 不好：每帧分配新对象
+// ❌ 不好：每帧产生托管堆分配
 void Update()
 {
-    string msg = "Health: " + health;  // 字符串分配
-    Vector3 pos = new Vector3(1, 2, 3);  // 结构体分配
+    string msg = "Health: " + health;      // 字符串拼接 → 每次都分配新的托管字符串
+    var list = new List<int>();            // 每次都分配新的托管对象
 }
 
 // ✅ 好：复用对象
-private StringBuilder sb = new StringBuilder();
-private Vector3 cachedPos;
+private readonly StringBuilder sb = new StringBuilder();
+private Vector3 cachedPos;                // struct 字段，值类型，挂在对象内联存储
 
 void Update()
 {
     sb.Clear();
     sb.Append("Health: ");
-    sb.Append(health);  // 无分配
-    
-    cachedPos.Set(1, 2, 3);  // 无分配
+    sb.Append(health);                     // 不再产生新的托管字符串
+
+    cachedPos = new Vector3(1, 2, 3);       // Vector3 是 struct：栈上构造，不产生 GC 压力
 }
 ```
+
+> ⚠️ 常见误区：`Vector3`、`Quaternion`、`Color` 等都是 **struct（值类型）**，`new Vector3(...)` 在栈上完成构造，**不会**给 GC 制造压力；真正产生托管堆分配的是字符串拼接、装箱、`new` 出来的引用类型（`List<T>`、`string`、数组等）。`Vector3` 也没有 `Set()` 方法——`x` / `y` / `z` 是公有字段，直接赋值即可。
 
 ### 5.3 核心差异对比
 
 | 维度 | Godot | Unity |
 |------|-------|-------|
-| **管理机制** | 引用计数 | 垃圾回收（GC） |
-| **释放时机** | 确定性（引用计数为 0 时） | 非确定性（GC 运行时） |
-| **性能影响** | 稳定（无 GC 峰值） | GC 峰值（可能卡顿） |
+| **管理机制** | 节点：父子释放<br/>资源：引用计数 | 垃圾回收（GC） |
+| **释放时机** | 节点：帧末统一释放<br/>资源：确定性（引用计数为 0 时） | 非确定性（GC 运行时） |
+| **性能影响** | 稳定（无 GC 峰值） | GC 峰值被摊平（2019.3+ 默认增量 GC），但仍需控制分配量 |
 | **循环引用** | 需手动处理 | 自动处理 |
 | **内存泄漏** | 较少 | 需注意（事件订阅等） |
 | **优化重点** | 避免循环引用 | 减少 GC 分配 |
 
 ### 5.4 实际影响
 
-**Godot 引用计数的优势**：
+**Godot 内存管理的优势**：
 
 - ✅ 释放时机确定，易于调试
 - ✅ 无 GC 峰值，帧率稳定
@@ -770,7 +801,7 @@ GPU 执行渲染
 
 | 管线 | 适用平台 | 特性 |
 |------|---------|------|
-| **Built-in** | 所有平台 | 传统管线，已废弃 |
+| **Built-in** | 所有平台 | 传统管线，2022 LTS 中仍受支持（Unity 6 起默认 URP） |
 | **URP** | 所有平台 | 通用管线，性能优化 |
 | **HDRP** | PC、主机 | 高清管线，画质最好 |
 
@@ -826,7 +857,7 @@ GPU 执行渲染
 | **调试器** | 内置调试器 | Visual Studio 集成 |
 | **断点** | 支持 | 支持 |
 | **变量查看** | 支持 | 支持 |
-| **热重载** | 完全支持 | 部分支持 |
+| **热重载** | 支持脚本热重载，但不保留实例状态 | 支持脚本热重载（2019+ 默认开启域重载） |
 | **性能分析** | 内置 Profiler | Unity Profiler |
 
 ### 7.3 学习曲线
@@ -843,7 +874,7 @@ GPU 执行渲染
 
 | 维度 | Godot | Unity |
 |------|-------|-------|
-| **版本控制** | 文本格式（友好） | 混合（部分二进制） |
+| **版本控制** | 场景与资源均为文本格式（`.tscn` / `.tres`），友好 | 场景与 Prefab 同为文本（YAML），但需额外管理 `Library/` 的忽略规则 |
 | **协作工具** | 基础 | 成熟（Plastic SCM 等） |
 | **适合团队** | 小型（<10 人） | 大型（>50 人） |
 
@@ -867,13 +898,13 @@ GPU 执行渲染
 
 **Godot**：
 - ✅ 轻量级，启动快
-- ✅ 引用计数，无 GC 峰值
+- ✅ 资源用引用计数，无 GC 峰值
 - ❌ 高级渲染特性较少
 
 **Unity**：
 - ✅ 优化空间大（SRP 可定制）
 - ✅ 主机平台优化好
-- ❌ GC 可能导致卡顿
+- ⚠️ GC 分配会带来卡顿，但 2019.3 起默认启用**增量 GC**，峰值被摊平
 
 ### 8.3 对扩展性的影响
 
@@ -899,7 +930,7 @@ GPU 执行渲染
 | **基本单元** | Node（节点） | GameObject + Component |
 | **组织方式** | 场景树 | Transform 层级 |
 | **脚本系统** | GDScript + 信号 | C# + UnityEvent |
-| **内存管理** | 引用计数 | 垃圾回收 |
+| **内存管理** | 节点随父节点释放 / 资源引用计数 | 垃圾回收 |
 | **渲染架构** | RenderingServer | SRP |
 
 ### 各自的优势场景
@@ -935,10 +966,18 @@ GPU 执行渲染
 
 ---
 
+## 🔗 延伸阅读
+
+- **官方文档**: [Godot 架构概览](https://docs.godotengine.org/en/stable/about/getting_started/step_by_step/architecture.html)、[Unity 与 Godot 的差异](https://docs.godotengine.org/en/stable/tutorials/best_practices/project_organization.html)
+- **类参考**: [Node](https://docs.godotengine.org/en/stable/classes/class_node.html)、[Object](https://docs.godotengine.org/en/stable/classes/class_object.html)、[SceneTree](https://docs.godotengine.org/en/stable/classes/class_scenetree.html)
+- **源码位置**: `core/object/object.h`、`core/object/node.h`、`scene/main/scene_tree.h`
+
+---
+
 **作者**: wangshucheng
 **首发平台**: 微信公众号  
 **写作时间**: 2026 年 3 月  
-**Godot 版本**: 4.x（基线 4.3，2026-09 最新稳定版为 4.7）  
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）  
 **Unity 对比版本**: 2022 LTS
 
 ---

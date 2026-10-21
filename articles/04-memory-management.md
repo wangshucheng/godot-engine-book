@@ -1,6 +1,6 @@
 # 第 4 篇：Godot 内存管理机制深度解析
 
-> **摘要**：Godot 使用引用计数（Reference Counting）管理内存，与 Unity 的垃圾回收（GC）机制形成鲜明对比。本文将深入分析 Godot 的引用计数原理、节点树自动释放机制、资源系统内存管理，并与 Unity GC 进行全方位对比。
+> **摘要**：Godot 有两套内存管理模型：节点（Node）随父节点一起释放，资源（Resource）使用引用计数（Reference Counting），与 Unity 的垃圾回收（GC）机制形成鲜明对比。本文将深入分析 Godot 的引用计数原理、节点树自动释放机制、资源系统内存管理，并与 Unity GC 进行全方位对比。
 
 ---
 
@@ -16,7 +16,7 @@
 - 释放时机：引用计数为 0 时立即释放
 
 **2. 垃圾回收（Garbage Collection）**
-- 代表：Unity（C#）、Java、C#、Go
+- 代表：Unity（C#）、Java、Go
 - 原理：定期扫描内存，找出不再使用的对象并释放
 - 释放时机：GC 运行时（非确定性）
 
@@ -67,39 +67,54 @@ Godot 内存模型
 **源码位置**: `core/object/ref_counted.h`
 
 ```cpp
-// Godot 源码 - core/object/ref_counted.h
+// Godot 源码 - core/object/ref_counted.h（Godot 4.3）
 class RefCounted : public Object {
-    // 引用计数
-    SafeNumeric<uint32_t> refcount;
-    
-    // 增加引用
-    void ref() {
-        refcount.increment();
-    }
-    
-    // 减少引用
-    bool unref() {
-        if (refcount.decrement() == 0) {
-            // 引用计数为 0，释放对象
-            notification(NOTIFICATION_PREDELETE);
-            return true;
-        }
-        return false;
-    }
-    
-    // 获取引用计数
-    uint32_t get_refcount() const {
-        return refcount.get();
-    }
+	GDCLASS(RefCounted, Object);
+	SafeRefCount refcount;
+	SafeRefCount refcount_init;
+
+protected:
+	static void _bind_methods();
+
+public:
+	_FORCE_INLINE_ bool is_referenced() const { return refcount_init.get() != 1; }
+	bool init_ref();
+	bool reference();   // 返回 false 表示计数已为 0，无法再增加
+	bool unreference();
+	int get_reference_count() const;
+
+	RefCounted();
+	~RefCounted() {}
 };
 ```
 
+> ⚠️ 3.x 的 `ref()` / `unref()` / `get_refcount()` 在 4.x 里**已经不存在**，取而代之的是 `init_ref()` / `reference()` / `unreference()` / `get_reference_count()`。脚本侧对应的方法名是 `init_ref()`、`reference()`、`unreference()`、`get_reference_count()`。
+
 **核心机制**：
 
-1. **创建时**：引用计数 = 1
-2. **被引用时**：引用计数 +1
-3. **引用释放时**：引用计数 -1
-4. **计数为 0 时**：立即释放对象
+1. **创建时**：`init_ref()` 把引用计数置为 1
+2. **被引用时**：`reference()` 让计数 +1
+3. **引用释放时**：`unreference()` 让计数 -1，返回 `true` 表示计数归零
+4. **计数为 0 时**：由 `Ref<T>` 智能指针的 `unref()` 执行 `memdelete(reference)` 真正释放对象
+
+> ⚠️ **析构通知不是 `unreference()` 发的**。`unreference()` 只负责维护计数并返回"是否该销毁了"；真正的 `NOTIFICATION_PREDELETE` 通知由 `Object::predelete_handler()` → `Object::_predelete()` 发出：
+>
+> ```cpp
+> // core/object/object.cpp（Godot 4.3）
+> bool predelete_handler(Object *p_object) {
+>     return p_object->_predelete();
+> }
+>
+> bool Object::_predelete() {
+>     _predelete_ok = 1;
+>     notification(NOTIFICATION_PREDELETE, true);
+>     if (_predelete_ok) {
+>         _class_name_ptr = nullptr;
+>         notification(NOTIFICATION_PREDELETE_CLEANUP, true);
+>     }
+>     return _predelete_ok;
+> }
+> ```
 
 ### 2.2 引用计数增减时机
 
@@ -198,93 +213,126 @@ func cleanup():
     # 现在引用计数会正确归零
 ```
 
-**方案 3：使用节点树（推荐）**
+**方案 3：让弱引用一方不持有强引用（推荐）**
 
 ```gdscript
-# ✅ 使用节点树，自动管理
-var parent = Node.new()
-var child_a = A.new()
-var child_b = B.new()
+# ✅ 让 A 持有 B（强引用），B 持有 A（弱引用）
+class A:
+    extends Node
+    var b: B
 
-parent.add_child(child_a)
-parent.add_child(child_b)
+class B:
+    extends Node
+    var a: WeakRef
 
-# 释放 parent 时，所有子节点自动释放
-parent.queue_free()
+func create_safe():
+    var a = A.new()
+    var b = B.new()
+
+    a.b = b          # 强引用：B 的计数 +1
+    b.a = weakref(a) # 弱引用：不增加 A 的计数
+
+    # 外部引用消失时，A 仍能正常释放
 ```
+
+> ⚠️ 这里要分清两件事：
+> - **节点树解决的是"释放时机"问题**：父节点 `queue_free()` 时，子节点随之被释放；
+> - **它并不解决"引用计数"问题**：如果 A 和 B 互相持有**强引用**（都是 `RefCounted` 资源或普通对象），放进节点树也不会打破循环——节点树只管"谁负责 delete 谁"，管不了"谁还引用着谁"。
+> - 因此真正能打破循环的是**让其中一方只持弱引用**（`WeakRef` / `weakref()`），节点树只负责随父节点一起释放。
+>
+> 另外注意 `add_child()` 的形参是 `Node *`——要挂进节点树的对象必须 `extends Node`。默认继承 `RefCounted` 的类（如 `class A:`）传进去会报 `Expected argument 1 of type 'Node' but got 'RefCounted'`。
 
 ### 2.4 源码分析：引用计数实现
 
 ```cpp
-// Godot 源码 - core/object/ref_counted.cpp
+// Godot 源码 - core/object/ref_counted.cpp（Godot 4.3，节选）
+
+// 初始化引用：计数置 1
+bool RefCounted::init_ref() {
+	if (reference()) {
+		if (!is_referenced() && refcount_init.unref()) {
+			unreference(); // first referencing is already 1, so compensate for the ref above
+		}
+		return true;
+	} else {
+		return false;
+	}
+}
 
 // 增加引用
-void RefCounted::ref() {
-    refcount.increment();
+bool RefCounted::reference() {
+	uint32_t rc_val = refcount.refval();
+	bool success = rc_val != 0;
+
+	if (success && rc_val <= 2 /* higher is not relevant */) {
+		if (get_script_instance()) {
+			get_script_instance()->refcount_incremented();
+		}
+		if (_get_extension() && _get_extension()->reference) {
+			_get_extension()->reference(_get_extension_instance());
+		}
+	}
+	return success;
 }
 
-// 减少引用
-bool RefCounted::unref() {
-    // 原子操作减少计数
-    if (refcount.decrement() == 0) {
-        // 引用计数为 0，准备释放
-        
-        // 发送预删除通知
-        notification(NOTIFICATION_PREDELETE);
-        
-        // 调用析构函数
-        _notification(NOTIFICATION_PREDELETE);
-        
-        return true;  // 需要释放
-    }
-    return false;  // 还有引用，不释放
+// 减少引用：返回 true 表示计数归零，应当销毁
+bool RefCounted::unreference() {
+	uint32_t rc_val = refcount.unrefval();
+	bool die = rc_val == 0;
+
+	if (rc_val <= 1 /* higher is not relevant */) {
+		if (get_script_instance()) {
+			bool script_ret = get_script_instance()->refcount_decremented();
+			die = die && script_ret;
+		}
+		if (_get_extension() && _get_extension()->unreference) {
+			_get_extension()->unreference(_get_extension_instance());
+		}
+	}
+	return die;
 }
 
-// 智能指针 Ref<T> 的实现
+// 读取当前计数
+int RefCounted::get_reference_count() const {
+	return refcount.get();
+}
+```
+
+**智能指针 `Ref<T>` 的关键片段**（`core/object/ref_counted.h`）：
+
+```cpp
 template <typename T>
 class Ref {
-    T *reference = nullptr;
-    
+	T *reference = nullptr;
+
+	// 增加引用
+	void ref(const Ref &p_from) {
+		if (p_from.reference == reference) {
+			return;
+		}
+		unref();
+		reference = p_from.reference;
+		if (reference) {
+			reference->reference();
+		}
+	}
+
 public:
-    // 构造函数
-    Ref(T *p_ref = nullptr) {
-        reference = p_ref;
-        if (reference) {
-            reference->ref();  // 增加引用
-        }
-    }
-    
-    // 析构函数
-    ~Ref() {
-        if (reference) {
-            if (reference->unref()) {  // 减少引用
-                memdelete(reference);  // 释放对象
-            }
-            reference = nullptr;
-        }
-    }
-    
-    // 赋值操作符
-    Ref &operator=(const Ref &p_ref) {
-        if (this == &p_ref) return *this;
-        
-        // 先增加新对象的引用
-        if (p_ref.reference) {
-            p_ref.reference->ref();
-        }
-        
-        // 再减少旧对象的引用
-        if (reference) {
-            if (reference->unref()) {
-                memdelete(reference);
-            }
-        }
-        
-        reference = p_ref.reference;
-        return *this;
-    }
+	// 析构：计数归零就 memdelete
+	void unref() {
+		if (reference && reference->unreference()) {
+			memdelete(reference);
+		}
+		reference = nullptr;
+	}
+
+	~Ref() {
+		unref();
+	}
 };
 ```
+
+> **要点**：`unreference()` 只管计数；真正"通知对象即将被销毁 + 释放内存"的是 `Ref::unref()` 里的 `memdelete(reference)`，而 `NOTIFICATION_PREDELETE` 通知由 `Object::predelete_handler()` 发出（见 2.1 节）。
 
 ---
 
@@ -325,28 +373,45 @@ parent.queue_free()
 **源码位置**: `scene/main/node.cpp`
 
 ```cpp
-// Godot 源码 - scene/main/node.cpp
+// Godot 源码 - scene/main/node.cpp（Godot 4.3）
 void Node::queue_free() {
-    // 1. 标记为待释放
-    data.blocking = true;
-    
-    // 2. 添加到释放队列
-    MessageQueue::get_singleton()->push_call(
-        get_path(),
-        SceneStringNames::get_singleton()->free,
-        nullptr,
-        0
-    );
-    
-    // 3. 在当前帧结束时真正释放
+	// 优先用节点自己所属的 SceneTree（有些项目会创建多个场景树）
+	if (is_inside_tree()) {
+		get_tree()->queue_delete(this);
+	} else {
+		SceneTree *tree = SceneTree::get_singleton();
+		ERR_FAIL_NULL_MSG(tree, "Can't queue free a node when no SceneTree is available.");
+		tree->queue_delete(this);
+	}
+}
+
+// Godot 源码 - scene/main/scene_tree.cpp（Godot 4.3）
+void SceneTree::queue_delete(Object *p_object) {
+	_THREAD_SAFE_METHOD_
+	ERR_FAIL_NULL(p_object);
+	p_object->_is_queued_for_deletion = true;
+	delete_queue.push_back(p_object->get_instance_id());   // 只记 ObjectID
+}
+
+void SceneTree::_flush_delete_queue() {
+	_THREAD_SAFE_METHOD_
+	while (delete_queue.size()) {
+		Object *obj = ObjectDB::get_instance(delete_queue.front()->get());
+		if (obj) {
+			memdelete(obj);        // 真正释放
+		}
+		delete_queue.pop_front();
+	}
 }
 ```
+
+**释放时机**：`SceneTree::process()`（以及 `physics_process()`）在每帧末尾调用 `_flush_delete_queue()`，把队列里的对象逐个 `memdelete`。所以 `queue_free()` 的准确说法是：**由 SceneTree 的删除队列在帧末统一 `memdelete`**，而不是"发一条消息到帧末执行 free"。队列里存的是 `ObjectID` 而不是裸指针，因此即使对象在排队期间已经失效，flush 时也能安全地跳过。
 
 **queue_free() vs free()**：
 
 | 方法 | 释放时机 | 安全性 | 使用场景 |
 |------|---------|--------|---------|
-| `queue_free()` | 当前帧结束 | 安全 | 推荐，大多数场景 |
+| `queue_free()` | 帧末由 SceneTree 删除队列统一 `memdelete` | 安全 | 推荐，大多数场景 |
 | `free()` | 立即 | 危险 | 仅用于独立对象 |
 
 **为什么使用 queue_free()**：
@@ -372,49 +437,58 @@ func _process(delta):
 ```
 调用 queue_free()
     ↓
-添加到释放队列
+加入 SceneTree 的 delete_queue（只记 ObjectID）
     ↓
-当前帧结束
+——本帧结束——
     ↓
-调用 _exit_tree()（如果在场景树中）
+SceneTree::_flush_delete_queue() → memdelete(node)
     ↓
-递归释放所有子节点
+Object::predelete_handler() → NOTIFICATION_PREDELETE
     ↓
-断开所有信号连接
+Node 的 PREDELETE 处理：从父节点移除（触发 _exit_tree()）→ 递归 memdelete 子节点
     ↓
-从父节点移除
-    ↓
-调用析构函数
+Object 析构：断开全部信号连接、ObjectDB 注销
     ↓
 内存释放
 ```
 
-**源码分析**：
+**源码分析**（Godot 4.3，`scene/main/node.cpp`）：
 
 ```cpp
-// Godot 源码 - scene/main/node.cpp
-void Node::_notification(int p_notification) {
-    switch (p_notification) {
-        case NOTIFICATION_PREDELETE: {
-            // 1. 释放所有子节点
-            while (data.children.size() > 0) {
-                Node *child = data.children[0];
-                child->set_parent(nullptr);
-                memdelete(child);
-            }
-            
-            // 2. 断开所有信号连接
-            _disconnect_all_signals();
-            
-            // 3. 从父节点移除
-            if (data.parent) {
-                data.parent->remove_child(this);
-            }
-            
-        } break;
+case NOTIFICATION_PREDELETE: {
+    // 在场景树中的节点不允许从其他线程释放
+    if (data.inside_tree && !Thread::is_main_thread()) {
+        cancel_free();
+        ERR_PRINT("Attempted to free a node that is currently added to the SceneTree from a thread. "
+                  "This is not permitted, use queue_free() instead. Node has not been freed.");
+        return;
     }
-}
+
+    if (data.owner) {
+        _clean_up_owner();
+    }
+
+    while (!data.owned.is_empty()) {
+        Node *n = data.owned.back()->get();
+        n->_clean_up_owner();   // 这里会修改 data.owned，不能按常规方式遍历
+    }
+
+    if (data.parent) {
+        data.parent->remove_child(this);   // 触发 _exit_tree()
+    }
+
+    // 尽可能干净地释放子节点
+    while (data.children.size()) {
+        Node *child = data.children.last()->value;  // 从尾部开始，更快也更符合创建顺序
+        memdelete(child);
+    }
+} break;
 ```
+
+> ⚠️ 3.x 时代的伪代码（`data.children[0]` + `set_parent(nullptr)` + `_disconnect_all_signals()`）在 4.x 里**站不住脚**：
+> - `data.children` 是 `HashMap<StringName, Node *>`，**不能**用下标 `[]` 取元素，也没有 `size()` 语义上的"第一个"——只能 `last()->value` / `getptr(name)`；
+> - `Node` **没有** `set_parent()` 这个方法，解除父子关系只能通过 `parent->remove_child(this)`；
+> - 信号连接的清理发生在 `Object` 的析构流程里，不在 `Node` 的 PREDELETE 分支中。
 
 ### 3.4 节点释放示例
 
@@ -452,27 +526,48 @@ func _exit_tree():
 
 **Resource** 是所有资源类的基类，继承自 `RefCounted`。
 
-**源码位置**: `core/resource.h`
+**源码位置**: `core/io/resource.h`
 
 ```cpp
-// Godot 源码 - core/resource.h
+// Godot 源码 - core/io/resource.h（Godot 4.3，节选）
 class Resource : public RefCounted {
-    // 资源路径
-    String path;
-    
-    // 资源唯一 ID
-    String uid;
-    
-    // 本地化资源
-    HashMap<String, Ref<Resource>> localizations;
-    
-    // 资源可以保存到文件
-    Error save_to_file(const String &p_path);
-    
-    // 从文件加载
-    static Ref<Resource> load_from_file(const String &p_path);
+	GDCLASS(Resource, RefCounted);
+
+private:
+	String name;                 // 资源名（脚本侧属性名是 resource_name）
+	String path_cache;           // 资源在缓存中的路径
+	String scene_unique_id;
+	bool local_to_scene = false;
+	Node *local_scene = nullptr;
+
+public:
+	// 变更通知
+	void emit_changed();
+	void connect_changed(const Callable &p_callable, uint32_t p_flags = 0);
+	void disconnect_changed(const Callable &p_callable);
+
+	void set_name(const String &p_name);
+	String get_name() const;
+
+	virtual void set_path(const String &p_path, bool p_take_over = false);
+	String get_path() const;
+
+	virtual Ref<Resource> duplicate(bool p_subresources = false) const;
+	virtual Error copy_from(const Ref<Resource> &p_resource);
+	virtual void reload_from_file();
+	// ...
 };
 ```
+
+> ⚠️ **保存 / 加载资源不在 `Resource` 上**，而是在两个独立的单例里：
+>
+> | 操作 | 正确写法 | 说明 |
+> |------|---------|------|
+> | 保存 | `ResourceSaver.save(res, "res://x.tres")` | 返回 `Error` |
+> | 加载 | `ResourceLoader.load("res://x.tres")` | 返回 `Resource` |
+> | 存字节 | `var_to_bytes(res)` + `FileAccess.store_buffer()` | 内存中的二进制 |
+>
+> `Resource` 上**没有** `save_to_file()` / `load_from_file()` 这两个方法。
 
 **常见资源类型**：
 
@@ -557,9 +652,9 @@ const PlayerTexture: Texture2D = preload("res://player.png")
 
 | 维度 | Godot（引用计数） | Unity（垃圾回收） |
 |------|-----------------|------------------|
-| **释放时机** | 确定性（计数为 0 时） | 非确定性（GC 运行时） |
-| **性能影响** | 稳定，无峰值 | GC 峰值，可能卡顿 |
-| **内存开销** | 每个对象额外 4-8 字节 | GC 需要额外内存池 |
+| **释放时机** | 资源：确定性（计数为 0 时）<br/>节点：帧末由删除队列统一释放 | 非确定性（GC 运行时） |
+| **性能影响** | 稳定，无峰值 | GC 峰值被摊平（2019.3+ 默认增量 GC） |
+| **内存开销** | ⚠️ 示意数据：每个对象额外 4–8 字节（`SafeRefCount` 为 4 字节，`RefCounted` 内含 `refcount` + `refcount_init` 两个计数） | GC 需要额外内存池 |
 | **循环引用** | 需手动处理 | 自动处理 |
 | **实时性** | 好（适合游戏） | 一般（需优化） |
 | **调试难度** | 容易（立即释放） | 较难（延迟释放） |
@@ -588,7 +683,7 @@ const PlayerTexture: Texture2D = preload("res://player.png")
 ✅ 批量释放效率高
 
 缺点：
-❌ GC 峰值可能导致卡顿
+❌ GC 峰值可能导致卡顿（2019.3 起默认启用增量 GC，峰值被摊平）
 ❌ 释放时机不确定
 ❌ 需要手动优化（对象池等）
 ```
@@ -711,8 +806,8 @@ func cleanup():
 # 使用 Godot 内置的内存分析器
 # 菜单：Debugger → Memory → Take Snapshot
 
-# 查看引用计数
-print(ref_counted.get_refcount())
+# 查看引用计数（4.x 的方法名是 get_reference_count，不是 3.x 的 get_refcount）
+print(texture.get_reference_count())
 
 # 查看场景树节点数
 print(get_tree().get_node_count())
@@ -724,19 +819,19 @@ print(get_tree().get_node_count())
 
 ### 核心要点
 
-1. **Godot 使用引用计数**管理内存，而非垃圾回收
+1. **Godot 有两套所有权模型**：节点随父节点释放（`queue_free()`），资源用引用计数
 2. **节点树自动释放**：父节点释放时，子节点自动释放
-3. **RefCounted 类**是所有引用计数对象的基类
-4. **循环引用**是引用计数的弱点，需使用 WeakRef 避免
-5. **queue_free()** 是安全的节点释放方法
+3. **RefCounted 类**是所有引用计数对象的基类，4.x 的接口是 `init_ref()` / `reference()` / `unreference()` / `get_reference_count()`
+4. **循环引用**是引用计数的弱点，需使用 WeakRef 避免（节点树只解决释放时机，不解决引用计数）
+5. **queue_free()** 是安全的节点释放方法：由 SceneTree 的删除队列在帧末统一 `memdelete`
 
 ### 与 Unity GC 对比
 
 | 特性 | Godot | Unity |
 |------|-------|-------|
-| 机制 | 引用计数 | 垃圾回收 |
-| 确定性 | ✅ 是 | ❌ 否 |
-| 性能稳定 | ✅ 是 | ❌ 有峰值 |
+| 机制 | 节点：父子释放<br/>资源：引用计数 | 垃圾回收 |
+| 确定性 | ✅ 是（资源侧） | ❌ 否 |
+| 性能稳定 | ✅ 是 | ⚠️ 有峰值（2019.3+ 默认增量 GC） |
 | 循环引用 | ⚠️ 需手动 | ✅ 自动 |
 
 ### 最佳实践
@@ -755,10 +850,18 @@ print(get_tree().get_node_count())
 
 ---
 
+## 🔗 延伸阅读
+
+- **官方文档**: [内存使用](https://docs.godotengine.org/en/stable/tutorials/performance/using_servers.html)、[优化内存使用](https://docs.godotengine.org/en/stable/tutorials/performance/optimizing_memory_usage.html)
+- **类参考**: [RefCounted](https://docs.godotengine.org/en/stable/classes/class_refcounted.html)、[WeakRef](https://docs.godotengine.org/en/stable/classes/class_weakref.html)、[Resource](https://docs.godotengine.org/en/stable/classes/class_resource.html)
+- **源码位置**: `core/object/ref_counted.h`、`core/object/weak_ref.h`
+
+---
+
 **作者**: wangshucheng
 **首发平台**: 微信公众号  
 **写作时间**: 2026 年 3 月  
-**Godot 版本**: 4.x（基线 4.3，2026-09 最新稳定版为 4.7）
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
 
 ---
 

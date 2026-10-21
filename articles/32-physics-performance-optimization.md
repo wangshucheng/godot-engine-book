@@ -355,50 +355,14 @@ func reduce_rigid_body_size():
 
 ### 3.2 刚体池
 
+> **刚体对象池的实现见第 24 篇 9.2 节**（`RigidBodyPool`，含 `_init(scene, initial_count)` 的完整实现）。本章不再重复贴同一份代码——对象池的写法与语言无关，物理卷里只应有一份权威实现。
+
 ```gdscript
-# 刚体对象池
-class_name PhysicsRigidBodyPool
+# 第 24 篇 9.2 节的 RigidBodyPool 在此直接复用
+var pool = RigidBodyPool.new($BodyScene, 64)
 
-var pool = []
-var body_scene: PackedScene
-
-func _init(scene: PackedScene, initial_count: int):
-    body_scene = scene
-    for i in range(initial_count):
-        var body = body_scene.instantiate()
-        body.set_process(false)
-        pool.append(body)
-
-func get_rigid_body(position: Vector3) -> RigidBody3D:
-    var body: RigidBody3D
-    
-    if pool.size() > 0:
-        body = pool.pop_back()
-    else:
-        body = body_scene.instantiate()
-    
-    body.global_transform.origin = position
-    body.sleeping = true
-    body.set_process(true)
-    return body
-
-func return_rigid_body(body: RigidBody3D):
-    body.set_process(false)
-    body.sleeping = true
-    body.linear_velocity = Vector3.ZERO
-    body.angular_velocity = Vector3.ZERO
-    
-    if pool.size() < 100:  # 最大池大小
-        pool.append(body)
-    else:
-        body.queue_free()
-
-func cleanup_pool():
-    # 清理过期的刚体
-    for body in pool:
-        if body.global_transform.origin.y < -10:
-            pool.erase(body)
-            body.queue_free()
+func spawn_at(position: Vector3) -> RigidBody3D:
+    return pool.get_body(position)
 ```
 
 ---
@@ -870,6 +834,16 @@ func create_optimized_scene():
 │ 物理引擎      │ Godot Physics / Jolt Physics                │
 └─────────────────────────────────────────────────────────────┘
 
+⚠️ **关于这组数字的前提**（必读）：
+1. 本节数据为 **⚠️ 示意数据（未附完整测试环境与逐项测量记录）**，
+   只能用于说明趋势与量级，**不可作为选型依据**，必须在目标平台复测；
+2. **Godot 4.2.1 里还没有内置 Jolt**——Jolt 作为内置模块随引擎分发是
+   **4.4** 才有的事（4.0–4.3 需自行安装 godot-jolt 扩展）。
+   表中 "Jolt Physics" 一列若在 4.2 上测得，实际用的是扩展版扩展，
+   其线程模型与调优项与 4.4+ 内置版并不完全等价；
+3. 要横向比较两个引擎，必须在**同一个引擎版本**上分别切换后端重测
+   （项目设置 → 物理 → 3D → 物理引擎），不能跨版本混用数据。
+
 测试场景:
 1. 刚体下落：1000 个刚体从高处下落
 2. 复杂关节：100 个铰链关节连接的物体
@@ -882,6 +856,8 @@ func create_optimized_scene():
 
 ```
 测试场景：封闭房间内刚体下落（盒体碰撞）
+⚠️ 示意数据（未附逐项测量记录）：仅用于说明量级与趋势，数值随硬件、
+场景与引擎版本变化很大，必须在目标平台复测后再引用。
 ┌─────────────────────────────────────────────────────────────┐
 │ 刚体数量 │ FPS   │ 物理耗时 (ms) │ 内存 (MB) │ 状态       │
 ├─────────────────────────────────────────────────────────────┤
@@ -904,6 +880,9 @@ func create_optimized_scene():
 
 ```
 测试场景：单个刚体，不同碰撞形状，1000 次碰撞检测
+⚠️ 示意数据（未附逐项测量记录）：形状之间的【相对】排序比绝对值可靠，
+但排序本身也会随引擎版本与后端变化——Godot 内置物理与 Jolt 的窄相位
+实现不同（见第 25 篇 1.3 节），凹多边形在两者上的相对开销并不相同。
 ┌─────────────────────────────────────────────────────────────┐
 │ 形状类型          │ 单次检测 (μs) │ 相对性能 │ 推荐度   │
 ├─────────────────────────────────────────────────────────────┤
@@ -926,6 +905,8 @@ func create_optimized_scene():
 
 ```
 测试场景：500 个活动刚体，不同物理更新频率
+⚠️ 示意数据（未附逐项测量记录）：物理耗时与频率近似成正比这个趋势是可靠的，
+绝对数值必须在目标平台实测。
 ┌─────────────────────────────────────────────────────────────┐
 │ 频率 (Hz) │ 帧时间 (ms) │ 物理耗时 (ms) │ CPU 负载  │ 流畅度 │
 ├─────────────────────────────────────────────────────────────┤
@@ -952,6 +933,9 @@ func create_optimized_scene():
 
 ```
 测试场景：开放世界 demo（5km²，包含建筑、植被、NPC、车辆）
+
+⚠️ 示意数据（未附逐项测量记录）：下面这组"优化前后"对比是演示性读数，
+用于说明"优化能改善哪些指标"的量级关系，不是某次真实项目的实测报告。
 
 优化前:
 ┌─────────────────────────────────────────────────────────────┐
@@ -988,6 +972,8 @@ func create_optimized_scene():
 
 ```
 测试设备：iPhone 14 Pro / Samsung S23 Ultra
+⚠️ 示意数据（未附逐项测量记录）：移动端数字受发热降频、系统版本与
+测量时长影响极大，只能作为"数量级参考"，不可作为设备选型依据。
 
 测试场景：中等规模场景（100 个刚体）
 ┌─────────────────────────────────────────────────────────────┐
@@ -1033,6 +1019,29 @@ Web 优化建议:
 - 使用简单碰撞形状
 - 积极睡眠
 ```
+
+### 8.8 Jolt 后端下的指标解读差异
+
+切换到 Jolt（4.4+ 内置模块，见第 34 篇）之后，**第 8.2–8.7 节的数字不能直接沿用**：两个后端的实现不同，同样的场景读数含义也不一样。下面是解读时必须注意的差异。
+
+| 指标 | Godot Physics 3D | Jolt Physics | 解读要点 |
+|------|------------------|--------------|----------|
+| `Performance.TIME_PHYSICS_PROCESS` | 单线程求解，耗时线性随关节/接触数增长 | 多线程任务系统，**主线程耗时 ≠ 总求解耗时** | Jolt 下主线程可能只看到"提交任务"的时间，**求解开销被摊到工作线程上**。只看主线程耗时容易误判"物理不费钱" |
+| `PHYSICS_3D_ACTIVE_OBJECTS` | 活动体计数 | 同名指标，语义基本一致 | 可直接横向比较 |
+| `PHYSICS_3D_COLLISION_PAIRS` | 宽相位配对数 | 同名指标，配对策略略有差异 | 数量接近不代表开销相同，**配对数相同但窄相位代价不同** |
+| `PHYSICS_3D_ISLAND_COUNT` | 岛数量（可并行求解的分组） | 概念相同但切分策略不同 | Jolt 的岛划分更激进，岛数可能更高而单岛更小 |
+| 堆叠稳定性 | 容易抖动、堆叠高度漂移 | 工业级求解器，堆叠更稳 | 同样"掉帧"表现下，Jolt 的可用性更好，但**不要据此认为可以少做优化** |
+| 接触点开销 | 接触点记录成本较高 | 内部边缘消除（Enhanced Internal Edge Removal）减少冗余接触 | 开启该选项后碰撞对数可能下降而**接触点质量上升**，需复测 |
+| 休眠阈值 | `physics/3d/sleep_threshold_*` | 阈值语义相近但**不逐一等价** | 迁移后要重新观察哪些物体"以前睡现在不睡" |
+
+**换后端后的复测清单**（与第 34 篇的迁移检查清单互补）：
+
+1. **先测后端，再测场景**：在同一台机器、同一引擎版本上分别切到两个后端重跑 8.2–8.7 的场景；
+2. **同时看主线程与总耗时**：Jolt 是多线程的，只盯 `TIME_PHYSICS_PROCESS` 会低估总成本；
+3. **关节多的场景单独测**：Jolt 的优势主要在约束求解与大规模堆叠，角色控制器这类轻量场景两者差异很小；
+4. **不要跨版本比数据**：4.2 的扩展版 godot-jolt 与 4.4+ 内置 Jolt 不是同一份代码，调优项也不同。
+
+> 一句话：**指标名称相同，含义不同**。换后端后，所有历史基线都作废，必须重新建立。
 
 ---
 
@@ -1174,6 +1183,8 @@ func _find_mesh_instance(node: Node) -> MeshInstance3D:
 
 ```
 关键性能指标（在固定测试环境中测量，仅供横向比较）:
+⚠️ 示意数据（未附逐项测量记录）：下表是"目标值/预算"性质的参考区间，
+用于给自己的项目定一个大致期望，不是任何硬件上的实测值。
 ┌─────────────────────────────────────────────────────────────┐
 │ 场景类型          │ 推荐刚体数 │ 物理频率 │ 物理耗时  │
 ├─────────────────────────────────────────────────────────────┤
@@ -1194,6 +1205,15 @@ func _find_mesh_instance(node: Node) -> MeshInstance3D:
 - **Performance 类参考**: <https://docs.godotengine.org/en/stable/classes/class_performance.html>
 - **源码位置**: `servers/physics_3d/`
 - **编辑器调试**: Debug → Visible Collision Shapes 的代码等价物是 `SceneTree.debug_collisions_hint`
+
+---
+
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+
+---
+
+**上一篇**: [第 31 篇：破坏系统](/articles/31-destruction-systems.md)
+**下一篇**: [第 33 篇：2D 物理系统](/articles/33-2d-physics.md)
 
 ---
 

@@ -12,6 +12,8 @@
 
 Godot 提供了多种布料模拟方法，包括基于物理的质点弹簧系统、基于关节的布料模拟、以及使用着色器的视觉布料效果。本章将深入探讨这些技术的实现和优化。
 
+> **本章定位：布料模拟是自研方案**。Godot **没有内置布料求解器**——引擎原生只提供 `SoftBody3D`（软体，见第 35 篇）以及凸/凹/高度图这几类碰撞形状。下面的质点弹簧、PBD、撕裂与风力全部需要你自己实现（可以用 GDExtension 插件加速）。第 29 篇的流体同样是自研方案，可对照阅读。
+
 ---
 
 ## 🎯 学习目标
@@ -65,7 +67,10 @@ class_name ClothParticle
 
 extends RigidBody3D
 
-@export var mass: float = 0.1
+# ⚠️ 不能声明 @export var mass：RigidBody3D 已经有 mass 这个成员，
+#    GDScript 4 会在解析期报 "Member 'mass' already exists in parent class"，
+#    脚本根本加载不了。改名成 particle_mass，或直接用继承来的 mass。
+@export var particle_mass: float = 0.1
 @export var is_pinned: bool = false  # 是否固定
 
 var original_position: Vector3
@@ -73,19 +78,25 @@ var forces: Vector3 = Vector3.ZERO
 var neighbors = []
 
 func _ready():
+    # 继承自 RigidBody3D 的质量属性
+    mass = particle_mass
     if is_pinned:
-        mode = MODE_STATIC
+        # ⚠️ 4.x 的 RigidBody3D 没有 mode 属性，也没有 MODE_STATIC / MODE_RIGID 枚举。
+        #    对应能力是 freeze + freeze_mode。
+        freeze = true
+        freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
     else:
-        mode = MODE_RIGID
+        freeze = false
         linear_damp = 0.01
         angular_damp = 0.01
 
 func set_pinned(pinned: bool):
     is_pinned = pinned
     if pinned:
-        mode = MODE_STATIC
+        freeze = true
+        freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
     else:
-        mode = MODE_RIGID
+        freeze = false
 
 func add_force(force: Vector3):
     if not is_pinned:
@@ -96,12 +107,21 @@ func clear_forces():
 
 func update_position(delta: float):
     if not is_pinned:
-        # Verlet 积分
-        var acceleration = forces / mass
-        var new_velocity = linear_velocity + acceleration * delta
-        linear_velocity = new_velocity
-        apply_central_impulse(forces * delta)
+        # 把积累的力交给引擎积分（只做一次，不要重复施加）
+        # ⚠️ 早期写法在同一帧里既手动改 linear_velocity、又调用
+        #    apply_central_impulse(forces * delta)，等效受力翻倍。
+        #    这里二选一：交给引擎积分。
+        apply_central_force(forces)
 ```
+
+> **两种积分方式只能选一种**：
+>
+> | 方式 | 写法 | 说明 |
+> |------|------|------|
+> | 交给引擎积分（推荐） | `apply_central_force(forces)` | 引擎负责 Verlet/半隐式积分与碰撞响应，行为可预期 |
+> | 纯手动位置积分 | `custom_integrator = true` + 在 `_integrate_forces` 里写 `state.transform` | 完全自己控制，但要自己处理碰撞与阻尼 |
+>
+> 两者的力**不要同时生效**。`apply_central_force()` 是"持续力"（每物理帧自动施加），`apply_central_impulse()` 是"瞬时冲量"（只作用一次）——把持续力当冲量用，或在同一帧里既手动积分又加冲量，都会让实际受力偏离预期。
 
 ### 2.2 弹簧类
 
@@ -189,7 +209,8 @@ func create_cloth():
     for y in range(height):
         for x in range(width):
             var particle = ClothParticle.new()
-            particle.mass = 0.1
+            # 用自定义的 particle_mass（父类的 mass 会在 _ready() 里由它同步）
+            particle.particle_mass = 0.1
             
             # 位置
             var pos = Vector3(
@@ -1217,6 +1238,10 @@ func blend_materials(material_a: Dictionary, material_b: Dictionary,
 
 ```
 布料模拟性能（1000 个质点）:
+⚠️ 示意数据（未附测试环境）：以下数值随质点数、迭代次数、碰撞体数量、
+求解器后端（Godot Physics / Jolt）与硬件变化极大，只能用于说明趋势，
+必须在目标平台上实测后再引用。
+
 ┌─────────────────────────────────────────────────────────────┐
 │ 材质    │ FPS   │ 物理耗时 (ms) │ 迭代次数 │ 推荐质量   │
 ├─────────────────────────────────────────────────────────────┤
@@ -1346,6 +1371,15 @@ func on_frozen():
 - **物理教程总览**: <https://docs.godotengine.org/en/stable/tutorials/physics/index.html>
 - **说明**: Godot 的布料通常用质点弹簧/PBD 自行实现，SoftBody3D 适合软体而非布料
 - **源码位置**: `scene/3d/physics_body_3d.cpp`, `servers/physics_3d/`
+
+---
+
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+
+---
+
+**上一篇**: [第 29 篇：流体模拟](/articles/29-fluid-simulation.md)
+**下一篇**: [第 31 篇：破坏系统](/articles/31-destruction-systems.md)
 
 ---
 

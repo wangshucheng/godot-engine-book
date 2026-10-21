@@ -1,7 +1,7 @@
-# 第 42 篇：粒子系统
+# 第 42 篇：动画性能优化
 
-> **本卷定位**: 第四卷 动画系统（8 篇）  
-> **前置知识**: 第 41 章 动画曲线  
+> **本卷定位**: 第四卷 动画系统（8 篇，卷末收尾）  
+> **前置知识**: 第 44 篇 骨骼动画  
 > **难度等级**: ⭐⭐⭐⭐⭐ 专家级
 
 ---
@@ -267,88 +267,78 @@ GPU 蒙皮优势:
 ```
 
 ```gdscript
-# GPU 蒙皮设置
-func setup_gpu_skinning(mesh_instance: MeshInstance3D):
-    # 启用 GPU 蒙皮
-    mesh_instance.skinning = MeshInstance3D.SKINNING_GPU
-    
-    # 设置骨骼纹理
-    var skeleton = mesh_instance.skeleton
-    if skeleton:
-        _update_bone_texture(skeleton)
+# Godot 4 的 GPU 蒙皮是引擎内建能力，脚本不负责构造骨骼纹理
+# 1) 导入时由导入器为网格生成 skin（骨骼调色板 + 初始姿态）
+# 2) 运行时 Skeleton3D 每帧更新骨骼全局姿态，MeshInstance3D 自动读取
 
-func _update_bone_texture(skeleton: Skeleton3D):
-    var bone_count = skeleton.get_bone_count()
-    
-    # 创建骨骼数据纹理
-    var bone_data = PackedFloat32Array()
-    
-    for i in range(bone_count):
-        var pose = skeleton.get_bone_global_pose(i)
-        
-        # 添加变换矩阵（4x4）
-        for j in range(4):
-            for k in range(4):
-                bone_data.append(pose[j][k])
-    
-    # 创建纹理
-    var texture = ImageTexture.create_from_image(
-        Image.create_from_data(
-            4, bone_count, false, Image.FORMAT_RGBAF, bone_data
-        )
-    )
-    
-    # 应用到材质
-    _apply_bone_texture_to_materials(texture)
+@export var skeleton_path: NodePath
+
+func _ready() -> void:
+    # 绑定：MeshInstance3D 的 skeleton 指向 Skeleton3D，即启用骨骼驱动
+    var mesh_instance := $MeshInstance3D as MeshInstance3D
+    var skeleton := $Skeleton3D as Skeleton3D
+    mesh_instance.skeleton = skeleton.get_path()
+
+    # 覆盖蒙皮（可选）：运行时替换为另一套 Skin 资源
+    # mesh_instance.skin = load("res://characters/hero_skin.tres")
+
+    # 蒙皮质量与网格 LOD 由 GeometryInstance3D 控制
+    # mesh_instance.lod_bias = 1.0
 ```
+
+> **要点**：Godot 内部确实把每骨 4×4 变换打包进纹理供 GPU 采样，但那是**引擎内部实现**，脚本既没有对应 API，也不该干预。骨骼纹理的数据量与格式由引擎保证；手工构造骨骼纹理的写法在 Godot 4 中不存在对应接口。
+> 真正影响 GPU 蒙皮成本的是**每帧被更新的骨骼数**与**同时可见的角色数**——前者用 `Skeleton3D` 的骨骼剔除（`Skeleton3D.set_bone_enabled`）与 LOD 降级来压，后者用 `MeshInstance3D.visibility_range_*` + `lod_bias` 控制。
 
 ### 3.2 计算着色器动画
 
-```gdscript
-# 使用计算着色器更新骨骼
-class_name ComputeShaderAnimation
+Godot 4 **没有** `@compute_shader` 注解，也**没有** `ComputeShader` 资源类。计算着色器只能走 `RenderingDevice` 这条**低层路径**：
 
+- 着色器必须预先编译为 **SPIR-V** 字节码（Godot 不提供 GLSL→SPIR-V 的在线编译）；
+- 必须由 `RenderingDevice` 手动创建管线、绑定缓冲、提交计算列表；
+- **Compatibility 渲染器与 headless 模式下 `RenderingDevice` 不可用**（官方类参考明确说明）。
+
+官方类参考给出的计算列表用法如下（可直接照此模式改写）：
+
+```gdscript
 extends Node
 
-@compute_shader("res://shaders/bone_update.cs")
-var bone_update_shader: ComputeShader
 
-@export var bone_buffer: RID
-@export var thread_count: int = 64
+@export_file("*.spv") var compute_spirv_path: String = ""
 
-func _ready():
-    _setup_compute_pipeline()
+var _rd: RenderingDevice
+var _pipeline: RID
 
-func _setup_compute_pipeline():
-    # 创建计算管线
-    var pipeline = RenderingServer.compute_pipeline_create()
-    RenderingServer.compute_pipeline_set_compute_shader(pipeline, bone_update_shader.get_rid())
-    
-    # 创建缓冲区
-    bone_buffer = RenderingServer.storage_buffer_create(
-        1024 * 64,  # 最大 64 个骨骼
-        PackedByteArray()
-    )
+func _ready() -> void:
+    # 全局 RenderingDevice；Compatibility 渲染器 / headless 下为 null
+    _rd = RenderingServer.get_rendering_device()
+    if _rd == null:
+        push_warning("当前渲染方法不支持 RenderingDevice（Compatibility 渲染器与 headless 模式不可用）")
+        return
 
-func update_bones(delta: float, bones: Array):
-    # 更新骨骼数据到缓冲区
-    _upload_bone_data(bones)
-    
-    # 分发计算任务
-    var dispatch_count = (bones.size() + thread_count - 1) / thread_count
-    RenderingServer.compute_dispatch(pipeline, dispatch_count, 1, 1)
-    
-    # 读取结果
-    _download_bone_data()
+    var spirv := FileAccess.get_file_as_bytes(compute_spirv_path)
+    if spirv.is_empty():
+        push_error("计算着色器读取失败：%s" % compute_spirv_path)
+        return
 
-func _upload_bone_data(bones: Array):
-    var data = PackedByteArray()
-    for bone in bones:
-        # 序列化骨骼数据
-        data.append_array(_serialize_bone(bone))
-    
-    RenderingServer.buffer_update(bone_buffer, 0, data.size(), data)
+    # SPIR-V → 着色器 RID → 计算管线 RID
+    var shader: RID = _rd.shader_create_from_spirv(spirv)
+    _pipeline = _rd.compute_pipeline_create(shader)
+
+func dispatch(group_x: int, group_y: int, group_z: int) -> void:
+    # 官方类参考中的计算列表模式：
+    #   compute_list_begin() 返回一个列表句柄，后续 compute_list_* 都要传它
+    var compute_list: int = _rd.compute_list_begin()
+    _rd.compute_list_bind_compute_pipeline(compute_list, _pipeline)
+    # 资源（纹理/存储缓冲）通过 uniform set 绑定：
+    # _rd.compute_list_bind_uniform_set(compute_list, my_uniform_set, 0)
+    _rd.compute_list_dispatch(compute_list, group_x, group_y, group_z)
+    _rd.compute_list_end()
+    _rd.submit()
 ```
+
+> **前置条件提醒**：`RenderingDevice` 要求读者已具备 Vulkan/D3D12/Metal 级别的图形 API 知识（官方文档的原话是"assumes intermediate knowledge of modern graphics APIs"）。如果你的目标只是"让骨骼动得快一点"，正解是 **LOD + 骨骼剔除 + 动画压缩**，而不是自己上计算着色器。
+> 完整示例见官方教程 `docs/tutorials/shaders/compute_shaders.html`。
+
 
 ---
 
@@ -590,5 +580,22 @@ func _cleanup_cache():
 ---
 
 *写作时间：2026-03-21*  
-*字数：约 6,000 字*  
+*字数：约 700 字（不含代码块）（不含代码块）（不含代码块）*  
 *状态：✅ 完成*
+
+---
+
+## 🔗 延伸阅读
+
+- **官方文档**: [2D 粒子](https://docs.godotengine.org/en/stable/tutorials/2d/2d_particles.html)、[粒子材质](https://docs.godotengine.org/en/stable/tutorials/2d/2d_particles.html)
+- **类参考**: [GPUParticles2D](https://docs.godotengine.org/en/stable/classes/class_gpuparticles2d.html)、[CPUParticles2D](https://docs.godotengine.org/en/stable/classes/class_cpuparticles2d.html)、[ParticleProcessMaterial](https://docs.godotengine.org/en/stable/classes/class_particleprocessmaterial.html)
+- **源码位置**: `scene/2d/gpu_particles2d.cpp`、`scene/resources/particle_process_material.cpp`
+
+---
+
+---
+
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+
+**上一篇**: [第 44 篇：骨骼动画](/articles/44-skeletal-animation.md)
+**下一篇**: [第 45 篇：音频系统](/articles/45-audio-system.md)

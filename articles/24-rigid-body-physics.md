@@ -43,13 +43,19 @@ body.angular_damp = 0.1
 
 # 重力缩放
 body.gravity_scale = 1.0
-
-# 最大线性速度
-body.max_linear_velocity = 100.0
-
-# 最大角速度
-body.max_angular_velocity = 20.0
 ```
+
+> ⚠️ **4.x 的 `RigidBody3D` 没有 `max_linear_velocity` / `max_angular_velocity`**（3.x 的属性照搬过来会报"属性不存在"）。速度上限要自己在 `_integrate_forces` 里夹：
+>
+> ```gdscript
+> func _integrate_forces(state: PhysicsDirectBodyState3D):
+>     var max_speed := 100.0
+>     state.linear_velocity = state.linear_velocity.limit_length(max_speed)
+>     var max_angular := 20.0
+>     state.angular_velocity = state.angular_velocity.limit_length(max_angular)
+> ```
+>
+> `Vector3.limit_length(length)` 在长度超过 `length` 时返回等长的同向向量，否则原样返回——正是"限速"要的语义。
 
 ### 1.2 运动状态查询
 
@@ -102,7 +108,9 @@ func apply_forces(body: RigidBody3D):
     body.apply_torque(Vector3(0, 10, 0))
     
     # 在局部坐标系施加力
-    body.apply_central_force(body.transform.basis * Vector3(0, 0, -100))
+    # 注意：apply_force 的 position 参数是"相对刚体原点的全局偏移"，
+    # 若要沿刚体自身的前方向施力，必须用 global_transform.basis 转到全局系。
+    body.apply_central_force(body.global_transform.basis * Vector3(0, 0, -100))
 ```
 
 ### 2.2 施加冲量
@@ -218,7 +226,8 @@ func set_mass_from_volume(body: RigidBody3D, density: float):
 
 ```gdscript
 # 设置惯性张量
-body.custom_inertia_vector = Vector3(1, 1, 1)
+# 4.x 的真实属性名是 inertia（Vector3）；零值表示"由引擎按质量与形状自动计算"
+body.inertia = Vector3(1, 1, 1)
 
 # 计算盒体的惯性张量
 func calculate_box_inertia(mass: float, size: Vector3) -> Vector3:
@@ -236,10 +245,12 @@ func calculate_sphere_inertia(mass: float, radius: float) -> Vector3:
 func setup_inertia(body: RigidBody3D, shape_type: String, mass: float, size: Vector3):
     match shape_type:
         "box":
-            body.custom_inertia_vector = calculate_box_inertia(mass, size)
+            body.inertia = calculate_box_inertia(mass, size)
         "sphere":
-            body.custom_inertia_vector = calculate_sphere_inertia(mass, size.x)
+            body.inertia = calculate_sphere_inertia(mass, size.x)
 ```
+
+> ⚠️ 3.x 的属性名是 `custom_inertia_vector`，4.x 改名为 **`inertia`**。写成 `custom_inertia_vector` 会报"属性不存在"。另外注意：`inertia` 被显式赋值后就**不再随质量与形状自动更新**，读取引擎自动算出的值要用 `PhysicsServer3D.body_get_direct_state(body.get_rid()).inverse_inertia.inverse()`。
 
 ---
 
@@ -328,14 +339,10 @@ func _ready():
 func _on_body_entered(other_body):
     print("Collision with: ", other_body.name)
     
-    # 获取碰撞信息
-    var contact_count = $RigidBody3D.get_contact_count()
-    for i in range(contact_count):
-        var contact_pos = $RigidBody3D.get_contact_local_position(i)
-        var contact_normal = $RigidBody3D.get_contact_local_normal(i)
-        var contact_collider = $RigidBody3D.get_contact_collider(i)
-        
-        print("Contact ", i, ": ", contact_pos, " Normal: ", contact_normal)
+    # RigidBody3D 节点上只有 get_contact_count() / get_colliding_bodies()，
+    # 接触点与法线属于"直接体状态"，只能在 _integrate_forces 里读。
+    print("Contact count: ", $RigidBody3D.get_contact_count())
+    print("Colliding bodies: ", $RigidBody3D.get_colliding_bodies())
 
 # 碰撞退出
 func _on_body_exited(other_body):
@@ -345,18 +352,30 @@ func _on_body_exited(other_body):
 ### 5.2 碰撞响应
 
 ```gdscript
-# 自定义碰撞响应
+# 自定义碰撞响应：在 _integrate_forces 里读接触数据
 func _integrate_forces(state: PhysicsDirectBodyState3D):
     # 获取碰撞信息
     for i in range(state.get_contact_count()):
-        var collider = state.get_contact_collider(i)
-        var velocity = state.get_contact_local_velocity(i)
+        # get_contact_collider 返回的是 RID；想要节点对象要用 get_contact_collider_object
+        var collider_rid := state.get_contact_collider(i)
+        var collider := state.get_contact_collider_object(i) as Node
+        # 正确的速度查询方法是 get_contact_local_velocity_at_position
+        var velocity := state.get_contact_local_velocity_at_position(i)
         
         # 根据碰撞速度做出反应
         if velocity.length() > 5.0:
             # 高速碰撞，播放效果
             _play_impact_effect(collider, velocity)
 ```
+
+> **API 速查（`PhysicsDirectBodyState3D`）**
+>
+> | 想做的事 | 正确方法 |
+> |----------|----------|
+> | 拿碰撞体的 RID | `get_contact_collider(i)` |
+> | 拿碰撞体的**节点对象** | `get_contact_collider_object(i)` |
+> | 拿接触点（**全局坐标**） | `get_contact_local_position(i)` |
+> | 拿接触点在本体上的速度 | `get_contact_local_velocity_at_position(i)` |
 
 ---
 
@@ -368,8 +387,14 @@ func _integrate_forces(state: PhysicsDirectBodyState3D):
 # 睡眠设置
 body.can_sleep = true  # 允许睡眠
 body.sleeping = false  # 强制唤醒
-body.sleep_threshold = 0.1  # 睡眠阈值
 ```
+
+> ⚠️ **睡眠阈值不是刚体属性**。4.x 里 `sleep_threshold` / `sleep_threshold_linear` / `sleep_threshold_angular` 都不在 `RigidBody3D` 上，它们是**空间级 / 项目设置级**的：
+>
+> - 项目设置：`physics/3d/sleep_threshold_linear`、`physics/3d/sleep_threshold_angular`、`physics/3d/time_to_sleep`
+> - 服务器层：`PhysicsServer3D.space_set_param(space, PhysicsServer3D.SPACE_PARAM_BODY_LINEAR_VELOCITY_SLEEP_THRESHOLD, v)`（以及 `..._ANGULAR_VELOCITY_...`、`..._TIME_TO_SLEEP`）
+>
+> 刚体上只能开/关 `can_sleep`、读写 `sleeping`，并监听 `sleeping_state_changed` 信号。
 
 ### 6.2 睡眠状态监控
 
@@ -394,14 +419,14 @@ func wake_up_body(body: RigidBody3D):
 ### 7.1 CCD 配置
 
 ```gdscript
-# 启用 CCD
-body.cd_mode = RigidBody3D.CCD_MODE_CAST_RAY
-# body.cd_mode = RigidBody3D.CCD_MODE_CAST_SHAPE
-# body.cd_mode = RigidBody3D.CCD_MODE_DISABLED
+# 启用 CCD：4.x 只有布尔属性 continuous_cd，没有模式枚举也没有运动阈值
+body.continuous_cd = true
 
-# CCD 运动阈值
-body.ccd_motion_threshold = 0.01
+# 服务器层等价接口（servers/physics_server_3d.h）
+PhysicsServer3D.body_set_enable_continuous_collision_detection(body.get_rid(), true)
 ```
+
+> ⚠️ 3.x 的 `cd_mode` / `RigidBody3D.CCD_MODE_CAST_RAY` / `CCD_MODE_CAST_SHAPE` / `ccd_motion_threshold` 在 4.x **全部不存在**（写上去会报"属性不存在"或"常量不存在"）。4.x 的 CCD **只有开/关两态**：开启后引擎在物体高速运动时做连续扫掠以减少穿透，代价是窄相位计算量上升——所以只给真正高速的小物体开。
 
 ### 7.2 CCD 使用场景
 
@@ -461,8 +486,17 @@ func release():
 
 func _physics_process(delta):
     if is_held:
-        global_transform.origin = held_position
-        global_transform.basis = Basis(held_rotation)
+        # ⚠️ 冻结中的刚体不要在 _physics_process 里直接写 global_transform：
+        # 那是在和物理服务器抢同一个状态的写入权，下一帧会被覆盖甚至抖动。
+        # 正确做法二选一：
+        #   1) 用 AnimatableBody3D 代替本类——它本就是"由脚本驱动但参与碰撞"的刚体；
+        #   2) 保持在 _integrate_forces 里写 state.transform（见下）。
+        pass
+
+# 方案 2：把"持有"状态写进物理状态里
+func _integrate_forces(state: PhysicsDirectBodyState3D):
+    if is_held:
+        state.transform = Transform3D(Basis(held_rotation), held_position)
 ```
 
 ### 8.2 多米诺骨牌
@@ -594,22 +628,19 @@ func return_body(body: RigidBody3D):
 ### 10.1 插值模式
 
 ```gdscript
-# 刚体插值配置
-var body = RigidBody3D.new()
+# 物理插值由项目设置开关控制，不是节点属性
+# 项目设置 → 通用 → 物理 → 物理插值（physics/common/physics_interpolation）
+# ⚠️ Godot 4.x 默认是【关闭】的，需要显式开启
+```
 
-# 插值模式
-body.physics_material_override = null
+> ⚠️ **4.x 默认不启用物理插值**。插值由项目设置 `physics/common/physics_interpolation` 控制，默认值是 `false`。未开启时，渲染帧率高于物理帧率（或反之）就会出现位置抖动。
 
-# Godot 4.x 插值设置
-# 默认启用插值，使视觉表现更平滑
+```gdscript
+# 检查插值是否开启（读项目设置，不要硬编码 true）
+func is_interpolation_enabled() -> bool:
+    return bool(ProjectSettings.get_setting("physics/common/physics_interpolation", false))
 
-# 检查插值状态
-func is_interpolation_enabled(body: RigidBody3D) -> bool:
-    # 在 Godot 4.x 中，插值自动处理
-    # 可通过 _process 和 _physics_process 的差异观察
-    return true
-
-# 手动插值（可选）
+# 手动插值（引擎插值关闭时，自己在视觉层做平滑）
 var previous_transform: Transform3D
 var current_transform: Transform3D
 var interpolation_alpha: float = 0.0
@@ -644,9 +675,11 @@ func reduce_jitter(body: RigidBody3D):
     body.angular_damp = 0.5
 
 # 解决方案 2：降低睡眠阈值
+# ⚠️ 4.x 的睡眠阈值在项目设置/空间级，不是刚体属性：
+#    项目设置 → 物理 → 3D → Sleep Threshold Linear / Angular、Time To Sleep
 func enable_aggressive_sleep(body: RigidBody3D):
-    body.sleep_threshold = 0.05  # 更低的阈值
     body.can_sleep = true
+    # 更激进的阈值请改项目设置 physics/3d/sleep_threshold_linear 等
 
 # 解决方案 3：使用 AnimatableBody
 # 对于需要脚本控制但又要物理交互的物体
@@ -680,10 +713,10 @@ func _ready():
     if not is_owner:
         # 远程物体：禁用物理模拟
         freeze = true
-    freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
-        physics_material_override = PhysicsMaterial.new()
-        physics_material_override.friction = 0.0
-        physics_material_override.bounce = 0.0
+        freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+    physics_material_override = PhysicsMaterial.new()
+    physics_material_override.friction = 0.0
+    physics_material_override.bounce = 0.0
 
 func _physics_process(delta):
     if is_owner:
@@ -767,9 +800,9 @@ func _integrate_forces(state: PhysicsDirectBodyState3D):
         # 处理碰撞
         _handle_contact(local_pos, local_normal, collider_id)
     
-    # 6. 获取施加的力
-    var total_force = state.total_applied_force
-    var total_torque = state.total_applied_torque
+    # 6. 获取已施加的常驻力/力矩（PhysicsDirectBodyState3D 没有 total_applied_force）
+    var constant_force = state.get_constant_force()
+    var constant_torque = state.get_constant_torque()
     
     # 7. 修改物理状态（可选）
     # state.linear_velocity = Vector3.ZERO  # 停止线性运动
@@ -832,23 +865,21 @@ func _integrate_forces(state: PhysicsDirectBodyState3D):
     var contact_count = state.get_contact_count()
     
     for i in range(contact_count):
-        # 碰撞点（局部坐标）
-        var local_pos = state.get_contact_local_position(i)
+        # 碰撞点：⚠️ get_contact_local_position 返回的已经是【全局坐标】，
+        # 方法名里的 "local" 只是历史命名，不要再乘一次 state.transform。
+        var contact_pos = state.get_contact_local_position(i)
         
-        # 碰撞法线（局部坐标）
+        # 碰撞法线（相对本体的局部法线）
         var local_normal = state.get_contact_local_normal(i)
-        
-        # 碰撞点（全局坐标）
-        var global_pos = state.transform * local_pos
         
         # 碰撞物体 ID
         var collider_id = state.get_contact_collider_id(i)
         
-        # 碰撞物体（如果可访问）
-        var collider = instance_from_id(collider_id)
+        # 碰撞物体节点对象（RID 用 get_contact_collider，节点用 get_contact_collider_object）
+        var collider = state.get_contact_collider_object(i) as Node
         
         # 碰撞点的相对速度
-        var relative_velocity = state.get_contact_local_velocity(i)
+        var relative_velocity = state.get_contact_local_velocity_at_position(i)
         
         # 碰撞冲量
         var impulse = state.get_contact_impulse(i)
@@ -858,8 +889,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D):
         
         # 处理碰撞
         _process_collision({
-            "local_position": local_pos,
-            "global_position": global_pos,
+            "position": contact_pos,
             "normal": local_normal,
             "collider_id": collider_id,
             "collider": collider,
@@ -873,14 +903,17 @@ func _process_collision(data: Dictionary):
     # 高速碰撞检测
     if data.impulse.length() > 10.0:
         print("High impact collision!")
-        _play_impact_sound(data.global_position)
-        _spawn_particles(data.global_position)
+        _play_impact_sound(data.position)
+        _spawn_particles(data.position)
     
     # 根据碰撞物体类型响应
-    if data.collider and data.collider.is_in_group("destructible"):
+    var collider = data.collider
+    if collider is Node and collider.is_in_group("destructible"):
         var damage = data.impulse.length() * 0.1
-        data.collider.take_damage(damage)
+        collider.take_damage(damage)
 ```
+
+> **接触点 ≠ 局部点**：`get_contact_local_position(i)` 的官方文档写的是 "Returns the position of the contact point on the body **in the global coordinate system**"——名字里的 "local" 是历史遗留，**不要**再乘 `state.transform`。写成 `state.transform * local_pos` 会得到一个被二次变换的错误坐标。
 
 ### 11.4 状态修改
 
@@ -903,8 +936,14 @@ func _integrate_forces(state: PhysicsDirectBodyState3D):
         state.angular_velocity = Vector3.ZERO
     
     # 示例 4：修改重力
-    var custom_gravity = Vector3(0, -20, 0)  # 2 倍重力
-    state.total_gravity = custom_gravity
+    # ⚠️ total_gravity 是【只读】属性（PhysicsDirectBodyState3D.xml 里 setter 为空），
+    #    赋值会直接报错。
+    #    重力由 gravity_scale 与项目设置 physics/3d/default_gravity 共同决定；
+    #    想做"自定义重力"，用反向的中央力去抵消：
+    var custom_gravity := Vector3(0, -20, 0)  # 目标：2 倍重力
+    var engine_gravity := state.total_gravity          # 引擎当前施加的总重力（只读）
+    # F = m * Δa，而 state.inverse_mass = 1/m，所以 F = Δa / inverse_mass
+    state.apply_central_force((custom_gravity - engine_gravity) / state.inverse_mass)
     
     # 示例 5：添加持续力
     state.apply_central_force(Vector3(0, 10, 0))  # 持续向上的力
@@ -924,11 +963,26 @@ _integrate_forces 性能提示:
 │ 简单数学运算            │ 文件 I/O                        │
 └─────────────────────────────────────────────────────────────┘
 
-性能对比:
+性能对比（⚠️ 示意数据，未附测试环境；数值随刚体数量、形状、脚本内容与硬件变化极大，
+请在目标平台上自行测量后再引用）:
 - 简单 _integrate_forces: ~0.01ms/刚体
 - 复杂 _integrate_forces: ~0.1ms/刚体
 - 包含场景访问：~1.0ms/刚体（避免！）
 ```
+
+### 11.6 接触数 ≠ 碰撞数
+
+`max_contacts_reported` 控制的是**接触点（contact）数量**，不是**碰撞对（collision）数量**。官方文档明确写道：两条平行边相撞会产生 2 个接触点，两张平行面相撞会产生 4 个接触点（每个角一个）。
+
+因此：
+
+| 场景 | 建议 `max_contacts_reported` |
+|------|------------------------------|
+| 只需要知道"撞到了没有" | `1`（配合 `contact_monitor = true`） |
+| 需要单个接触点做特效（贴花、音效） | `2` ~ `4` |
+| 需要完整接触manifold（多点贴合、车辆轮胎） | `8` ~ `16` |
+
+注意这个值越大，物理服务器每帧要记录的接触数据越多，内存与带宽开销随之上升。多数情况下 `4` 足够；把它当成"碰撞对数量"来调是常见的误解来源。
 
 ---
 
@@ -962,6 +1016,15 @@ _integrate_forces 性能提示:
 
 ---
 
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+
+---
+
+**上一篇**: [第 23 篇：Godot 物理架构概述](/articles/23-godot-physics-architecture.md)
+**下一篇**: [第 25 篇：碰撞检测](/articles/25-collision-detection.md)
+
+---
+
 ## 📋 下一章预告
 
 **第 25 篇：碰撞检测**
@@ -975,7 +1038,7 @@ _integrate_forces 性能提示:
 ---
 
 *写作时间：2026-03-20*  
-*字数：约 6,000 字*  
+*字数：约 1,300 字（不含代码块）（不含代码块）*  
 *状态：✅ 完成*
 
 ---

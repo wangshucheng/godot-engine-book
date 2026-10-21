@@ -3,6 +3,14 @@
 *.bak
 *.swp
 *~
+.audit-tmp/
+
+# 评审过程文档（作者留存件，不随内容仓发布）
+reviews/
+
+# Python 缓存（tools/ 下的门禁脚本）
+__pycache__/
+*.pyc
 
 # 编辑器
 .vscode/

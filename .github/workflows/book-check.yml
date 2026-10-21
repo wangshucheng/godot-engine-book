@@ -1,0 +1,37 @@
+name: 书稿门禁
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: 类参考比对 + 结构检查 + 读数校验
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 判据自检（阳性对照）
+        run: python tools/verify_book.py --selftest
+
+      - name: 全量门禁
+        run: python tools/verify_book.py --report gate-report.txt
+
+      - name: 门禁报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-report
+          path: gate-report.txt
+
+      - name: 类参考索引是否与官方一致（可选，联网时开启）
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          python tools/fetch_godot_api.py
+          git diff --stat tools/godot_api_index.json || true

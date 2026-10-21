@@ -276,9 +276,13 @@ scons custom_modules=../modules
 
 我们的 `Summator` 类就是在 `register_module_types()` 阶段被注册的。理解这个顺序很重要：如果你想让模块中的某些类型**早于**引擎内置类型注册（比如要覆盖引擎自身的回调、或满足单例依赖），就需要用到预注册钩子（见 3.4 节）。
 
+> **关于图中的 `preregister_module_types()`**：预注册阶段属于较新的引擎分支才有的扩展点——在本书基线 4.3 与 4.4 上，模块的注册只有 `register_module_types()` 这一个入口（构建脚本也只生成 `initialize_<模块名>_module` / `uninitialize_<模块名>_module` 两类调用）。具体可用性见 3.4 节的版本限定。
+
 ### 3.2 register_types.h / register_types.cpp
 
 Godot 4.x 中，模块通过一对名为 `initialize_<模块名>_module` / `uninitialize_<模块名>_module` 的函数完成注册与反注册。构建系统会根据模块目录名自动生成调用代码，因此**函数名中间的词必须与模块文件夹名完全一致**。
+
+> **占位符约定**：本章用尖括号 `<模块名>` 表示「需要你替换成实际模块目录名」的占位符——例如模块目录叫 `summator` 时，真实函数名是 `initialize_summator_module` / `uninitialize_summator_module`。尖括号不是 C++ 语法的一部分，实际编码时不要保留。
 
 这两个文件必须放在模块的顶层目录（与 `SCsub`、`config.py` 同级），否则模块无法被正确注册。
 
@@ -334,9 +338,19 @@ void uninitialize_summator_module(ModuleInitializationLevel p_level) {
 
 `ClassDB::register_class<Summator>()` 是注册的核心：它把类的构造方法、`_bind_methods()` 中绑定的方法/属性/信号录入 ClassDB 数据库，之后脚本系统、编辑器、序列化系统才能「看见」这个类。
 
-### 3.4 预注册钩子：preregister_XXX_types
+### 3.4 预注册钩子：preregister_<模块名>_types（⚠️ 新版分支才有，4.3/4.4 不调用）
 
 如果模块需要在**一切内置类型注册之前**行动——典型场景是满足单例运行时依赖、或抢在引擎自身赋值之前覆盖某个方法回调——可以定义可选的预注册函数。
+
+> **⚠️ 版本限定（务必先读）**
+>
+> 这个钩子**不在本书基线（4.3）的能力范围内**。经核对引擎构建脚本：
+>
+> - Godot **4.3** 与 **4.4** 的 `modules/SCsub` 只生成两类调用——`initialize_<模块名>_module(p_level)` 与 `uninitialize_<模块名>_module(p_level)`；
+> - Godot **4.4** 的 `SConstruct` 中检索不到 `PREREGISTER` 字样；
+> - 4.5 及以后分支把生成逻辑挪进了 `modules/modules_builders.py`，但该文件里同样**没有**预注册调用的生成代码。
+>
+> 也就是说：在 4.3 / 4.4 上照下面写，你的 `preregister_<模块名>_types()` 函数**会被静默忽略**——不报错、也不执行，看起来「配了但没用」。该机制在更新的官方文档（4.7 文档页）中才有明确描述；**使用前请以你所用引擎分支的 `modules/SCsub` / `modules/modules_builders.py` 是否确实生成了预注册调用为准**，不要只看宏有没有定义。
 
 这需要显式声明一个宏，告诉构建系统在编译期生成对应的调用代码：
 
@@ -381,8 +395,8 @@ void uninitialize_summator_module(ModuleInitializationLevel p_level) {
 要点：
 
 - 宏名规则是 `MODULE_<模块名大写>_HAS_PREREGISTER`，模块名必须转为大写；
-- 与其他注册函数不同，预注册不会自动生成——必须显式定义这个宏，构建系统才知道要包含相关调用；
-- 预注册函数不带初始化级别参数，它只在 `preregister_module_types()` 阶段被调用一次。
+- 预注册函数不带初始化级别参数，它只在预注册阶段被调用一次；
+- **定义宏 ≠ 会被调用**：除定义宏之外，还要求所用引擎分支的构建系统确实会为它生成调用代码——4.3 / 4.4 不生成（见上方版本限定）。
 
 ---
 
@@ -763,36 +777,52 @@ void initialize_mymodule_module(ModuleInitializationLevel p_level) {
 
 ```cpp
 #ifdef TOOLS_ENABLED
+#include "editor/import/editor_import_plugin.h"
+
 class MyImportPlugin : public EditorImportPlugin {
     GDCLASS(MyImportPlugin, EditorImportPlugin);
+
+protected:
+    static void _bind_methods() {}
 
 public:
     // 实现各虚函数：声明导入器名称、识别的扩展名、
     // 资源类型、导入选项，以及真正的 import() 导入逻辑
-    virtual String _get_importer_name() const override;
-    virtual String _get_visible_name() const override;
-    virtual void _get_recognized_extensions(List<String> *p_extensions) const override;
-    virtual String _get_resource_type() const override;
-    virtual String _get_save_extension() const override;
-    virtual Error _import(const String &p_source_file, const String &p_save_path,
+    virtual String get_importer_name() const override;
+    virtual String get_visible_name() const override;
+    virtual void get_recognized_extensions(List<String> *p_extensions) const override;
+    virtual String get_resource_type() const override;
+    virtual String get_save_extension() const override;
+    virtual bool can_import_threaded() const override;
+    virtual Error import(const String &p_source_file, const String &p_save_path,
             const HashMap<StringName, Variant> &p_options,
-            List<String> *p_platform_variants, List<String> *p_gen_files,
-            Variant *r_metadata) override;
-    // ... 其余必需虚函数略
+            List<String> *r_platform_variants, List<String> *r_gen_files,
+            Variant *r_metadata = nullptr) override;
 };
 #endif
 ```
 
-注册时在 `EDITOR` 级别用 `ClassDB::register_class` 注册该类，并在插件初始化处调用 `add_import_plugin()` 挂入导入管线。此后把 `.mymesh` 文件拖进项目，编辑器就会自动调用你的导入逻辑，将其转换为引擎原生资源。
+> **注意这里没有下划线前缀**。`EditorImportPlugin` 里同时存在两套虚函数：
+>
+> | 体系 | 命名 | 典型签名 |
+> |------|------|----------|
+> | **C++ 侧可覆写**（模块要用的就是这一套） | 无前缀 | `get_recognized_extensions(List<String> *)` / `import(const String &, const String &, const HashMap<StringName, Variant> &, List<String> *, List<String> *, Variant *)` |
+> | 脚本侧 `GDVIRTUAL` | 带 `_` 前缀 | `GDVIRTUAL0RC(Vector<String>, _get_recognized_extensions)` / `GDVIRTUAL5RC(Error, _import, ...)` |
+>
+> 写成 `_get_recognized_extensions(List<String> *)` 或 `_import(...)` 既不是 C++ 侧签名、也不是脚本侧的 `GDVIRTUAL` 参数表，**两边都对不上，编译必然失败**。
+>
+> **4.4+ 的差异**：引擎侧 `import()` 的第一个参数新增了 `ResourceUID::ID p_source_id`，4.4 的声明是
+> `virtual Error import(ResourceUID::ID p_source_id, const String &p_source_file, const String &p_save_path, const HashMap<StringName, Variant> &p_options, List<String> *r_platform_variants, List<String> *r_gen_files, Variant *r_metadata = nullptr) override;`
+> —— 面向 4.3 写的模块升级到 4.4 时，这一个参数需要补上。
 
-> **提示**：`EditorImportPlugin` 的虚函数签名随引擎版本演进，实现时请以你所用引擎版本的 `editor/import/editor_import_plugin.h` 头文件为准。
+注册时在 `EDITOR` 级别用 `ClassDB::register_class` 注册该类，并在插件初始化处调用 `add_import_plugin()` 挂入导入管线。此后把 `.mymesh` 文件拖进项目，编辑器就会自动调用你的导入逻辑，将其转换为引擎原生资源。
 
 ### 6.5 新增 Server 子系统
 
 最深度的集成是仿照 `PhysicsServer`、`RenderingServer` 添加自己的 Server。要点：
 
 - 在 `MODULE_INITIALIZATION_LEVEL_SERVERS` 级别注册类型与单例；
-- 参考 3.4 节的预注册钩子，如果你的 Server 需要早于内置类型就位；
+- 参考 3.4 节的预注册钩子，如果你的 Server 需要早于内置类型就位——**注意该钩子在 4.3 / 4.4 上不会被构建系统调用**（见 3.4 节的版本限定）；
 - Server 基类通常设计成「抽象接口 + 具体实现」两层，便于不同平台替换实现——这是 `servers/` 目录下所有官方 Server 的统一架构。
 
 这一层面已接近引擎核心开发，建议先通读 `servers/` 下某个简单 Server（如 `camera_server`）的完整实现再动手。
@@ -862,7 +892,7 @@ scons platform=windows target=editor tests=yes -j8
 
 **（5）多重继承禁区。** 暴露给 Godot 的类不能用多重继承，`GDCLASS` 宏不支持。内部辅助类不受此限。
 
-**（6）善用增量编译。** 首次全量编译后，日常迭代只重编译改动的模块（几十秒级）。只有当改动了引擎核心头文件或升级引擎版本时才会触发大规模重编。
+**（6）善用增量编译。** 首次全量编译后，日常迭代只重编译改动的模块（几十秒级，⚠️ 示意数据，未附测试环境——实际耗时取决于机器与改动范围）。只有当改动了引擎核心头文件或升级引擎版本时才会触发大规模重编。
 
 **（7）版本升级要合并。** 模块代码与引擎源码深度耦合，升级引擎版本（如 4.2 → 4.3）时引擎内部 API 可能有破坏性变更，模块需要相应调整。这也是官方建议「优先 GDExtension」的原因之一。
 
@@ -877,7 +907,7 @@ scons platform=windows target=editor tests=yes -j8
 1. **模块是引擎的一等扩展机制**：GDScript、GridMap 都是模块，自定义模块与它们机制平级，静态编译进引擎二进制
 2. **模块与 GDExtension 的本质区别在于链接方式**：静态 vs 动态、无 API 边界 vs 受 API 约束、定制引擎 vs 官方引擎
 3. **六文件构成最小模块**：`config.py`、`SCsub`、业务类、`register_types.h/.cpp`，文件名与目录名有严格约定
-4. **注册机制基于初始化级别**：`initialize_XXX_module()` 按 `ModuleInitializationLevel` 分阶段调用，常规类在 `SCENE` 级别注册
+4. **注册机制基于初始化级别**：`initialize_<模块名>_module()` 按 `ModuleInitializationLevel` 分阶段调用，常规类在 `SCENE` 级别注册
 5. **基类决定编辑器集成度**：继承 Node 出现在「添加节点」对话框，继承 Resource 可序列化，编辑器类用 `TOOLS_ENABLED` 隔离
 6. **模块可挂接引擎全部子系统**：单例、编辑器插件、导入器乃至新的 Server，但代价是必须为每个平台重编译导出模板
 
@@ -891,7 +921,8 @@ scons platform=windows target=editor tests=yes -j8
 | `env.add_source_files` | 把源文件加入模块构建列表的 SCons 方法 |
 | `env.modules_sources` | 全局模块源文件汇总列表 |
 | register_types.h/.cpp | 模块注册入口文件，必须位于模块顶层目录 |
-| `initialize_XXX_module` | 模块初始化函数，XXX 必须与目录名一致 |
+| `initialize_<模块名>_module` | 模块初始化函数；尖括号内是占位符，需替换为模块目录名（如模块目录为 `summator` 时写作 `initialize_summator_module`） |
+| `<模块名>` 占位符 | 本书的命名模板约定：尖括号内是「需要你替换的实际名称」，并非 C++ 语法，编码时不要保留尖括号 |
 | ModuleInitializationLevel | 模块初始化级别（CORE/SERVERS/SCENE/EDITOR） |
 | `ClassDB::register_class` | 把类注册进 Godot 类数据库 |
 | `GDCLASS` | 让 C++ 类接入 Godot 对象系统的必需宏 |
@@ -914,8 +945,28 @@ scons platform=windows target=editor tests=yes -j8
 
 ---
 
+## 📋 下一章预告
+
+**第 72 篇：自定义模块 vs GDExtension 选型与实战**
+
+- 两条扩展路线的全景对比与选型决策矩阵
+- 实战案例一：用 GDExtension 集成第三方音频库
+- 实战案例二：用自定义模块注册自定义资源加载器
+- 「模块 + GDExtension」混合架构与 ABI 兼容策略
+
+---
+
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+
+---
+
+**上一篇**: [第 70 篇：GDExtension 进阶开发](/articles/70-gdextension-advanced.md)
+**下一篇**: [第 72 篇：自定义模块 vs GDExtension 选型与实战](/articles/72-modules-vs-gdextension.md)
+
+---
+
 *写作时间：2026-08-27*  
-*字数：约 13,000 字*  
+*字数：约 6,100 字（不含代码块）（不含代码块）*  
 *状态：✅ 完成*
 
 ---

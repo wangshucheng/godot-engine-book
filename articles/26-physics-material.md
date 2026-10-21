@@ -33,9 +33,9 @@
 var material = PhysicsMaterial.new()
 
 # 核心属性
-material.friction = 0.8        # 摩擦力 (0-1)
+material.friction = 0.8        # 摩擦力 (0-1)，官方默认值是 1.0
 material.bounce = 0.3          # 弹性/反弹 (0-1)
-material.absorbent = 0.0       # 吸收性 (0-1)
+material.absorbent = false     # 吸收性：bool，语义是"相减对方的弹性而非相加"
 material.rough = false         # false 时取双方较小的摩擦值
 
 # 应用到刚体
@@ -45,12 +45,14 @@ body.physics_material_override = material
 
 ### 1.2 属性详解
 
-| 属性 | 范围 | 默认值 | 说明 |
+| 属性 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| friction | 0-1 | 0.8 | 摩擦力，0=无摩擦，1=最大摩擦 |
-| bounce | 0-1 | 0.0 | 弹性，0=无弹性，1=完全弹性 |
-| absorbent | 0-1 | 0.0 | 吸收性，影响声音和冲击吸收 |
+| friction | float (0-1) | **1.0** | 摩擦力，0=无摩擦，1=最大摩擦 |
+| bounce | float (0-1) | 0.0 | 弹性，0=无弹性，1=完全弹性 |
+| absorbent | **bool** | false | 为 true 时**相减**对方的弹性，而不是相加 |
 | rough | bool | false | 为 true 时直接采用本方摩擦值，否则取双方较小值 |
+
+> ⚠️ **`absorbent` 是布尔值，不是 0~1 的浮点**。官方文档原文：*"If true, subtracts the bounciness from the colliding object's bounciness instead of adding it."* 把它当浮点用（如 `absorbent = 0.8`）在 GDScript 4 里会直接报类型错误。
 
 ---
 
@@ -127,20 +129,29 @@ static func create_super_ball() -> PhysicsMaterial:
 ### 2.3 摩擦力和弹性计算
 
 ```
-碰撞时的材质混合:
+碰撞时的材质混合（依据 PhysicsMaterial.rough / absorbent 的官方语义）:
 ┌─────────────────────────────────────────────────────────────┐
-│                      材质混合规则                            │
+│                      材质混合规则                           │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
-│  摩擦力：取两个材质的平均值                                  │
-│  friction_result = (friction_a + friction_b) / 2           │
+│  摩擦力：由 rough 决定取哪一方的值                          │
+│    双方都是 rough    → 取【较高】的摩擦                     │
+│    只有一方 rough    → 取【那一方】的摩擦                   │
+│    双方都不是 rough  → 取【较低】的摩擦                     │
 │                                                             │
-│  弹性：取两个材质的最大值                                    │
-│  bounce_result = max(bounce_a, bounce_b)                   │
+│  弹性：由 absorbent 决定相加还是相减                        │
+│    absorbent = false（默认）→ bounce_a + bounce_b（相加）   │
+│    absorbent = true         → bounce_a - bounce_b（相减）   │
 │                                                             │
 │  示例:                                                      │
-│  橡胶 (friction=0.9, bounce=0.5) + 冰 (friction=0.05, bounce=0) │
-│  结果：friction = 0.475, bounce = 0.5                      │
+│    橡胶 (friction=0.9, bounce=0.5)                          │
+│      + 冰 (friction=0.05, bounce=0)                         │
+│    摩擦：两边都不 rough → 取较小值 = 0.05                   │
+│    弹性：两边都不 absorbent → 相加 = 0.5                    │
+│                                                             │
+│  ⚠️ 摩擦【不是取平均值】。官方原文：                        │
+│     "use the lowest friction of all colliding objects"      │
+│     （双方都 rough 时才取 highest）                         │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -160,7 +171,8 @@ static func create_water() -> PhysicsMaterial:
     var mat = PhysicsMaterial.new()
     mat.friction = 0.1
     mat.bounce = 0.0
-    mat.absorbent = 0.8
+    # absorbent 是 bool：置 true 表示"相减对方的弹性"
+    mat.absorbent = true
     return mat
 
 static func create_grass() -> PhysicsMaterial:
@@ -211,14 +223,14 @@ static func create_foam() -> PhysicsMaterial:
     var mat = PhysicsMaterial.new()
     mat.friction = 0.5
     mat.bounce = 0.2
-    mat.absorbent = 0.9
+    mat.absorbent = true
     return mat
 
 static func create_carpet() -> PhysicsMaterial:
     var mat = PhysicsMaterial.new()
     mat.friction = 0.8
     mat.bounce = 0.1
-    mat.absorbent = 0.7
+    mat.absorbent = true
     return mat
 ```
 
@@ -253,6 +265,8 @@ static func create_wet_variant(base: PhysicsMaterial) -> PhysicsMaterial:
 
 ```gdscript
 # 自定义材质混合
+# ⚠️ 注意：absorbent 是 bool，不能参与加减乘除；
+#    混合 bool 属性的语义是"任一方为 true 即为 true"（相减弹性）。
 class_name CustomMaterialBlender
 
 enum BlendMode {
@@ -271,25 +285,27 @@ static func blend_materials(mat_a: PhysicsMaterial, mat_b: PhysicsMaterial,
         BlendMode.AVERAGE:
             result.friction = (mat_a.friction + mat_b.friction) / 2
             result.bounce = (mat_a.bounce + mat_b.bounce) / 2
-            result.absorbent = (mat_a.absorbent + mat_b.absorbent) / 2
+            result.absorbent = mat_a.absorbent or mat_b.absorbent
             
         BlendMode.MINIMUM:
             result.friction = min(mat_a.friction, mat_b.friction)
             result.bounce = min(mat_a.bounce, mat_b.bounce)
-            result.absorbent = min(mat_a.absorbent, mat_b.absorbent)
+            result.absorbent = mat_a.absorbent and mat_b.absorbent
             
         BlendMode.MAXIMUM:
             result.friction = max(mat_a.friction, mat_b.friction)
             result.bounce = max(mat_a.bounce, mat_b.bounce)
-            result.absorbent = max(mat_a.absorbent, mat_b.absorbent)
+            result.absorbent = mat_a.absorbent or mat_b.absorbent
             
         BlendMode.MULTIPLY:
             result.friction = mat_a.friction * mat_b.friction
             result.bounce = mat_a.bounce * mat_b.bounce
-            result.absorbent = mat_a.absorbent * mat_b.absorbent
+            result.absorbent = mat_a.absorbent or mat_b.absorbent
     
     return result
 ```
+
+> 提示：上面这个混合器是**你自己写的工具函数**，产出的是一个新 `PhysicsMaterial` 资源；引擎在碰撞时**不会**调用它。引擎真正使用的是 2.3 节那张表里的 `rough` / `absorbent` 规则。想让引擎按你的规则混合，就把 `rough` / `absorbent` 配好，然后把这份混合好的材质赋给 `physics_material_override`。
 
 ### 4.2 表面类型混合
 
@@ -409,15 +425,18 @@ func _integrate_forces(state: PhysicsDirectBodyState3D):
         if impulse.length() > min_velocity:
             var contact_pos = state.get_contact_local_position(i)
             var contact_normal = state.get_contact_local_normal(i)
-            var collider = state.get_contact_collider(i)
+            # get_contact_collider 返回 RID；要拿节点对象用 get_contact_collider_object
+            var collider = state.get_contact_collider_object(i) as Node
             
             _spawn_decal(contact_pos, contact_normal, collider)
 
 func _spawn_decal(position: Vector3, normal: Vector3, collider: Node):
-    if decal_scene:
+    if decal_scene and collider:
         var decal = decal_scene.instantiate()
         decal.global_transform.origin = position
-        decal.global_transform.basis = Basis(normal)
+        # ⚠️ Basis 没有单个 Vector3 的构造函数（Basis(normal) 是非法的）。
+        #    让贴花朝向法线，用 look_at_from_position：
+        decal.look_at_from_position(position, position + normal)
         collider.add_child(decal)
 ```
 
@@ -520,15 +539,38 @@ func setup_shared_materials():
         body.physics_material_override = wood_material
 ```
 
+### 7.3 材质与求解器的关系
+
+材质属性（摩擦、弹性）是在**约束求解阶段**被读取并合成的，因此它和求解器本身的参数是同一层的东西。关节多的场景卡顿，除了"关节太多"这个直观原因，还经常来自求解器配置：
+
+| 旋钮 | 位置 | 作用 |
+|------|------|------|
+| `exclude_nodes_from_collision` | `Joint3D` 节点属性（默认 `true`） | 关节两端物体互相碰撞会额外产生接触约束，关掉可省一轮窄相位 |
+| `solver_priority` | `Joint3D` 节点属性（默认 `1`） | 多关节互相影响时的求解顺序，数值越大越先解 |
+| `joint_disable_collisions_between_bodies()` / `joint_set_solver_priority()` | `PhysicsServer3D`（`servers/physics_server_3d.h`） | 服务器层的等价接口，便于批量调参 |
+
+```gdscript
+var joint := HingeJoint3D.new()
+joint.exclude_nodes_from_collision = true
+joint.solver_priority = 10
+
+# 服务器层写法
+var j_rid := joint.get_rid()
+PhysicsServer3D.joint_disable_collisions_between_bodies(j_rid, true)
+PhysicsServer3D.joint_set_solver_priority(j_rid, 10)
+```
+
+> 摩擦/弹性越"硬"，求解器为保持约束收敛所需的迭代就越多。材质参数（尤其 `bounce` 接近 1、`friction` 接近 1）与关节刚度叠加时，才会显著拖慢物理帧——这是"关节多的场景卡顿"里最容易被忽略的一半原因。完整排查流程见第 32 篇。
+
 ---
 
 ## 📝 本章总结
 
 ### 核心要点
 
-1. **物理材质定义表面属性**，包括摩擦、弹性、吸收性
+1. **物理材质定义表面属性**，包括摩擦、弹性、吸收性（布尔开关）
 2. **摩擦力影响滑动**，弹性影响反弹
-3. **材质混合采用平均/最大规则**，根据属性类型
+3. **材质混合由 `rough` / `absorbent` 决定**：摩擦取较小值（双方都 rough 时取较大值），弹性默认相加、`absorbent` 为 true 时相减
 4. **预设材质库提高效率**，避免重复创建
 5. **动态材质响应环境变化**，增加真实感
 
@@ -553,6 +595,15 @@ func setup_shared_materials():
 
 ---
 
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+
+---
+
+**上一篇**: [第 25 篇：碰撞检测](/articles/25-collision-detection.md)
+**下一篇**: [第 27 篇：关节和约束](/articles/27-joints-and-constraints.md)
+
+---
+
 ## 📋 下一章预告
 
 **第 27 篇：关节和约束**
@@ -567,7 +618,7 @@ func setup_shared_materials():
 ---
 
 *写作时间：2026-03-20*  
-*字数：约 5,000 字*  
+*字数：约 1,000 字（不含代码块）（不含代码块）*  
 *状态：✅ 完成*
 
 ---

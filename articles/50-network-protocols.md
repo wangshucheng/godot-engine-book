@@ -20,7 +20,10 @@
 - 掌握 UDP 协议的特性
 - 学会 WebSocket 协议应用
 - 熟悉自定义协议设计
-- 掌握协议优化技术
+- 掌握线格式与分帧/编解码约定
+- 了解带宽开销的估算方法
+
+> **本篇与第 52 篇的分工**：本篇负责**协议与线格式**（分帧、编解码、版本兼容、开销估算）；第 52 篇《网络优化》负责**运行时策略**（压缩阈值、带宽限流、优先级与区域同步）。两篇通过本文的公共工具类 `ProtocolSerialization` 衔接。
 
 ---
 
@@ -660,11 +663,12 @@ static func unpack_frame(frame: PackedByteArray) -> Dictionary:
 
 ```gdscript
 # WebSocket 客户端实现
+# 注意：4.x 的客户端类是 WebSocketPeer（3.x 的 WebSocket 类已移除）
 class_name WebSocketClientImpl
 
 extends Node
 
-var ws: WebSocket
+var ws: WebSocketPeer
 var connection_state: int = 0
 
 enum State {
@@ -681,7 +685,7 @@ signal binary_received(data: PackedByteArray)
 signal error_occurred(code: int)
 
 func _ready():
-    ws = WebSocket.new()
+    ws = WebSocketPeer.new()
 
 func _process(delta):
     ws.poll()
@@ -690,44 +694,41 @@ func _process(delta):
 func _update_state():
     var state = ws.get_ready_state()
     match state:
-        WebSocket.STATE_CONNECTING:
+        WebSocketPeer.STATE_CONNECTING:
             connection_state = State.CONNECTING
-        WebSocket.STATE_OPEN:
+        WebSocketPeer.STATE_OPEN:
             if connection_state != State.OPEN:
                 connection_state = State.OPEN
                 connected.emit()
             _process_messages()
-        WebSocket.STATE_CLOSING:
+        WebSocketPeer.STATE_CLOSING:
             connection_state = State.CLOSING
-        WebSocket.STATE_CLOSED:
+        WebSocketPeer.STATE_CLOSED:
             if connection_state != State.CLOSED:
                 connection_state = State.CLOSED
                 disconnected.emit()
+                error_occurred.emit(ws.get_close_code())
 
 func _process_messages():
     while ws.get_available_packet_count() > 0:
-        var packet = ws.get_packet()
-        var frame = WebSocketFrameFormat.unpack_frame(packet)
-        
-        if frame.is_empty():
-            continue
-        
-        match frame.opcode:
-            WebSocketFrameFormat.Opcode.TEXT:
-                text_received.emit(frame.data.get_string_from_utf8())
-            WebSocketFrameFormat.Opcode.BINARY:
-                binary_received.emit(frame.data)
-            WebSocketFrameFormat.Opcode.PING:
-                # 自动回复 Pong
-                var pong_frame = WebSocketFrameFormat.pack_frame(WebSocketFrameFormat.Opcode.PONG, frame.data)
-                ws.send(pong_frame)
-            WebSocketFrameFormat.Opcode.PONG:
-                pass  # 忽略 Pong
-            WebSocketFrameFormat.Opcode.CLOSE:
-                ws.close()
+        # WebSocketPeer.get_packet() 返回的是**已经剥掉帧头**的负载，
+        # 不能再用 WebSocketFrameFormat.unpack_frame() 解一次；
+        # 帧类型用 was_string_packet() 判断。
+        var payload := ws.get_packet()
+        if ws.was_string_packet():
+            text_received.emit(payload.get_string_from_utf8())
+        else:
+            binary_received.emit(payload)
+        # PING / PONG / CLOSE 控制帧由底层 wslay 自动处理，应用层看不到。
 
 func connect_to_url(url: String, protocols: PackedStringArray = []):
-    ws.connect_to_url(url, protocols)
+    # 子协议必须先声明。4.3 的 connect_to_url 签名是
+    # connect_to_url(url, tls_client_options = Ref<TLSOptions>())，
+    # 第二个实参是 TLS 选项，不是子协议数组。
+    ws.supported_protocols = protocols
+    var err := ws.connect_to_url(url)
+    if err != OK:
+        error_occurred.emit(err)
 
 func disconnect_from_url():
     ws.close()
@@ -738,11 +739,13 @@ func send_text(text: String):
 
 func send_binary(data: PackedByteArray):
     if connection_state == State.OPEN:
-        ws.send(data)
+        ws.send(data, WebSocketPeer.WRITE_MODE_BINARY)
 
 func get_state() -> int:
     return connection_state
 ```
+
+**为什么不再手工解帧**：RFC 6455 的帧格式（FIN/RSV/Opcode、MASK、扩展长度）由 `WebSocketPeer` 底层的 wslay 实现负责。`get_packet()` 交出来的已经是应用层负载，帧头的解析与 PING/PONG/CLOSE 控制帧的自动应答都不需要应用代码介入。上一节（3.2）的 `WebSocketFrameFormat` 保留下来，是为了讲清楚**协议本身**的线格式——比如你要自己实现一个非 Godot 的 WebSocket 端点，或者做抓包分析时才需要它。
 
 ---
 
@@ -794,7 +797,8 @@ static func pack_message(msg_type: int, sequence: int, payload: PackedByteArray)
 
 static func unpack_message(packet: PackedByteArray) -> Dictionary:
     # 解包消息
-    if packet.size() < 13:
+    # 帧头共 11 字节（1 版本 + 2 类型 + 4 序号 + 4 时间戳）
+    if packet.size() < 11:
         return {}
     
     var offset = 0
@@ -1013,47 +1017,28 @@ func bytes_to_int(data: PackedByteArray) -> int:
 
 ## 5. 协议优化
 
-### 5.1 数据压缩
+### 5.1 压缩标记与分帧约定
 
-```gdscript
-# 数据压缩优化
-class_name ProtocolCompression
+本章负责**线格式**（怎么分帧、怎么编解码）；压缩与带宽的**运行时策略**（阈值、限流、优先级）由第 52 篇《网络优化》独占。本节只固定协议侧必须两端一致的约定。
 
-static func compress_packet(data: PackedByteArray) -> PackedByteArray:
-    # 压缩数据包
-    if data.size() < 100:
-        # 小数据不压缩
-        return data
-    
-    var compressed = data.compress(FileAccess.COMPRESSION_DEFLATE)
-    
-    # 如果压缩后更大，返回原数据
-    if compressed.size() >= data.size():
-        return data
-    
-    # 添加压缩标记
-    var result = PackedByteArray()
-    result.append(0x01)  # 压缩标记
-    result.append_array(compressed)
-    return result
+**压缩标记字节**
 
-static func decompress_packet(data: PackedByteArray) -> PackedByteArray:
-    # 解压数据包
-    if data.size() == 0:
-        return data
-    
-    if data[0] == 0x01:
-        # 压缩数据
-        return data.slice(1).decompress_dynamic(-1, FileAccess.COMPRESSION_DEFLATE)
-    
-    return data
+| 字节 | 取值 | 含义 |
+|------|------|------|
+| flag | `0x00` | 未压缩，负载是原始数据 |
+| flag | `0x01` | 已用 DEFLATE 压缩，负载是压缩流 |
 
-static func should_compress(data: PackedByteArray) -> bool:
-    # 判断是否应该压缩
-    return data.size() > 100
-```
+关键约定有三条：
 
-### 5.2 数据序列化优化
+1. **标记必须先于负载**，且**每帧都有**。接收端拿到帧后先读 flag 再决定要不要解压。也可以把"是否压缩"编码进消息类型（见 4.2 的 `MessageTypes`），那样可以省掉 1 字节，但**两端的类型表必须同步**。
+2. **压缩后可能更大**。DEFLATE 对已经压缩过的数据（PNG、音频、加密后的载荷）几乎没有收益，甚至因为帧头而变大。所以约定"压缩后不小于原文就回退到原文"。
+3. **阈值是策略不是协议**。小于多少字节才值得压，取决于你的 MTU 与 CPU 预算，属于可调参数；第 52 篇 §2.1 给出了带阈值的 `BandwidthCompression` 实现，本节不重复。
+
+**为什么不在这里放压缩实现**：压缩算法本身与线格式无关，而同一份压缩逻辑在第 52 篇还要配合带宽统计与优先级调度使用；放在两处会立刻产生两份会漂移的实现。下面的 `ProtocolSerialization` 是全卷唯一的公共编解码工具类，第 52 篇直接引用它。
+
+### 5.2 线格式编解码（ProtocolSerialization）
+
+`ProtocolSerialization` 是全卷唯一的**公共编解码工具类**：固定宽度整数的字节序、浮点数的编码方式、`Vector3` / `Quaternion` / `Transform3D` 的字段顺序都在这里定死，其他篇（第 52 篇的 `SerializationOptimizer`、第 49 篇的 RPC 状态同步）都直接引用它，避免出现两套互相不兼容的线格式。
 
 ```gdscript
 # 数据序列化优化
@@ -1142,52 +1127,61 @@ static func decode_float(data: PackedByteArray) -> float:
     return data.decode_float(0)
 ```
 
-### 5.3 带宽优化
+### 5.3 线格式开销与带宽预算
+
+分帧格式定下来之后，每条消息的**固定开销**也就定了。把这笔账算清楚，才能反推"每帧最多能塞多少数据"。
 
 ```gdscript
-# 带宽优化
-class_name BandwidthOptimizer
+# 线格式开销估算
+class_name ProtocolOverheadEstimator
 
-@export var max_bandwidth_bps: int = 100000  # 100 kbps
-var current_bandwidth: float = 0.0
-var bandwidth_window: Array = []
-var window_size: float = 1.0  # 1 秒窗口
+extends RefCounted
 
-func record_sent(bytes: int):
-    # 记录发送的字节
-    var current_time = Time.get_ticks_msec() / 1000.0
-    bandwidth_window.append({"time": current_time, "bytes": bytes})
-    _cleanup_window(current_time)
-    _update_bandwidth()
+# 帧头：1 字节版本 + 2 字节类型 + 4 字节序号 + 4 字节时间戳 = 11 字节
+const HEADER_SIZE := 11
+# 压缩标记字节（见 5.1）
+const COMPRESS_FLAG_SIZE := 1
+# ENet 的默认 MTU。超过 MTU 的非可靠包会被分片，分片后丢一个就丢整包
+const ENET_DEFAULT_MTU := 1400
 
-func _cleanup_window(current_time: float):
-    # 清理过期数据
-    var cutoff = current_time - window_size
-    bandwidth_window = bandwidth_window.filter(func(item): return item.time > cutoff)
+static func header_size(use_compress_flag: bool = false) -> int:
+    var size := HEADER_SIZE
+    if use_compress_flag:
+        size += COMPRESS_FLAG_SIZE
+    return size
 
-func _update_bandwidth():
-    # 更新带宽
-    var total_bytes = 0
-    for item in bandwidth_window:
-        total_bytes += item.bytes
-    current_bandwidth = total_bytes / window_size
+static func overhead_ratio(payload_size: int, use_compress_flag: bool = false) -> float:
+    # 固定开销占总长度的比例
+    var total := payload_size + header_size(use_compress_flag)
+    if total <= 0:
+        return 0.0
+    return float(header_size(use_compress_flag)) / float(total)
 
-func can_send(bytes: int) -> bool:
-    # 检查是否可以发送
-    var predicted = (current_bandwidth + bytes) / window_size
-    return predicted * 8 <= max_bandwidth_bps
+static func max_payload_for_mtu(use_compress_flag: bool = false, mtu: int = ENET_DEFAULT_MTU) -> int:
+    # 单个 UDP 包能承载的最大负载
+    return maxi(0, mtu - header_size(use_compress_flag))
 
-func get_delay_for_bytes(bytes: int) -> float:
-    # 获取发送延迟
-    if current_bandwidth * 8 >= max_bandwidth_bps:
-        return 1.0
-    
-    var available = (max_bandwidth_bps / 8.0) - current_bandwidth
-    if available <= 0:
-        return 1.0
-    
-    return float(bytes) / available
+static func estimate_bytes_per_second(payload_size: int, messages_per_second: float,
+                                      use_compress_flag: bool = false) -> float:
+    # 估算每秒的应用层字节数（含固定开销）
+    return (payload_size + header_size(use_compress_flag)) * messages_per_second
+
+static func max_messages_for_budget(payload_size: int, budget_bytes_per_second: float,
+                                     use_compress_flag: bool = false) -> float:
+    # 已知带宽预算，求每秒最多能发多少条消息
+    var per_message := float(payload_size + header_size(use_compress_flag))
+    if per_message <= 0.0:
+        return 0.0
+    return budget_bytes_per_second / per_message
 ```
+
+**三条由此推出的硬约束**
+
+1. **单条消息不要超过 MTU**。ENet 的默认 MTU 是 1400 字节；用非可靠模式发送超过 MTU 的包会被分片，而分片包只要丢一片整条就没了——引擎在 `ENetMultiplayerPeer.put_packet()` 里对此有明确警告。**位置、姿态这类高频数据必须控制在小包内**，宁可多发几条。
+2. **固定开销占比随包变小而急剧上升**。11 字节帧头 + 载荷 20 字节时，开销已经超过 35%；载荷越小，同等带宽能承载的信息越少。这是"高频小包"模式的真实代价。
+3. **带宽预算要换算成"每秒多少条消息"**。`max_messages_for_budget()` 给出这个换算；再用"每秒多少条"除以"每条消息的固定开销 × 频率"反推，得到的才是每个对象能分到的**状态字段预算**。
+
+**运行时怎么用这些数字**：限流、优先级调度、按距离降低同步率等属于运行时策略，第 52 篇 §4（同步优化）与 §2（带宽优化）负责；本节的估算器只负责给出"协议侧要付多少固定成本"这个输入。
 
 ---
 
@@ -1283,24 +1277,35 @@ func test_websocket_frame():
         "frame_size": frame.size()
     }
 
-func test_compression():
-    # 测试压缩
-    var data = "This is a test message that should compress well.".repeat(10).to_utf8_buffer()
-    var compressed = ProtocolCompression.compress_packet(data)
-    var decompressed = ProtocolCompression.decompress_packet(compressed)
-    
-    test_results["compression"] = {
-        "passed": decompressed == data,
-        "original_size": data.size(),
-        "compressed_size": compressed.size(),
-        "ratio": 1.0 - (float(compressed.size()) / float(data.size()))
+func test_serialization():
+    # 测试线格式编解码（本篇的公共工具类）
+    var v := Vector3(1.5, -2.25, 3.75)
+    var packed := ProtocolSerialization.pack_vector3(v)
+    var unpacked := ProtocolSerialization.unpack_vector3(packed)
+
+    test_results["serialization"] = {
+        "passed": unpacked.is_equal_approx(v),
+        "original_size": 12,
+        "packed_size": packed.size()
+    }
+
+func test_overhead():
+    # 测试线格式开销估算
+    var payload := 20
+    test_results["overhead"] = {
+        "passed": ProtocolOverheadEstimator.header_size() == 11,
+        "header_size": ProtocolOverheadEstimator.header_size(),
+        "overhead_ratio": ProtocolOverheadEstimator.overhead_ratio(payload)
     }
 
 func run_all_tests():
     # 运行所有测试
     test_binary_protocol()
     test_websocket_frame()
-    test_compression()
+    test_serialization()
+    test_overhead()
+
+    # 压缩相关的测试在第 52 篇（压缩实现归第 52 篇独占）
     
     # 打印结果
     print("Protocol Test Results:")
@@ -1320,9 +1325,9 @@ func run_all_tests():
 
 1. **TCP 提供可靠连接**，适合需要保证数据完整性的场景
 2. **UDP 提供低延迟**，适合实时游戏和流媒体
-3. **WebSocket 提供 Web 兼容**，适合浏览器游戏
+3. **WebSocket 提供 Web 兼容**，适合浏览器游戏（4.x 客户端类是 `WebSocketPeer`）
 4. **自定义协议设计**，根据需求优化协议格式
-5. **协议优化技术**，包括压缩、序列化、带宽优化
+5. **线格式与编解码**：`ProtocolSerialization` 是全卷公共工具类，压缩与带宽策略见第 52 篇
 
 ### 关键术语
 
@@ -1359,9 +1364,14 @@ func run_all_tests():
 ---
 
 *写作时间：2026-03-20*  
-*字数：约 14,000 字*  
-*状态：✅ 完成*
+*字数：约 1,600 字（不含代码块）（不含代码块）*  
+*状态：✅ 完成*  
 
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+
+
+**上一篇**: [第 49 篇：网络系统](/articles/49-network-system.md)
+**下一篇**: [第 57 篇：权威服务器架构](/articles/57-authoritative-server.md)
 ---
 
 *最后更新：2026-03-20 18:00*

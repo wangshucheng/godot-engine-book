@@ -10,7 +10,7 @@
 
 角色动画是游戏开发中最为复杂和重要的动画类型之一。从简单的人物移动到复杂的表情和肢体语言，角色动画能够为游戏带来生动的视觉效果和沉浸式体验。
 
-Godot 提供了多种角色动画技术，包括基础角色动画、骨骼动画、表情动画、面部动画等。本章将深入探讨这些技术的实现和优化。
+Godot 提供了多种角色动画技术，包括基础角色动画、骨骼动画、表情动画、面部动画等。本章将深入探讨这些技术的实现和优化，并在第 9 章补上**程序化动画与物理驱动**（步行循环、布娃娃、地形适配）。
 
 ---
 
@@ -21,6 +21,7 @@ Godot 提供了多种角色动画技术，包括基础角色动画、骨骼动�
 - 学会骨骼动画实现
 - 熟悉表情和面部动画
 - 掌握角色动画优化
+- 理解程序化动画与物理驱动动画的适用边界
 
 ---
 
@@ -135,47 +136,51 @@ func handle_input(delta):
 func update_animation():
     # 根据速度更新动画
     if velocity.length() > 0.1:
-        if animation_player.get_current_animation() != "walk":
+        if animation_player.current_animation != "walk":
             animation_player.play("walk")
     else:
-        if animation_player.get_current_animation() != "idle":
+        if animation_player.current_animation != "idle":
             animation_player.play("idle")
 ```
 
 ### 2.2 动画状态机
 
 ```gdscript
-# 动画状态机
+# 动画状态机：AnimationNodeStateMachine 是「资源」，没有 transition_to() / get_current_state()；
+# 运行时的切换接口是 AnimationNodeStateMachinePlayback（从 AnimationTree 的
+# "parameters/playback" 参数上取回）。状态机的构建见第 43 篇。
 class_name AnimationStateController
 
 extends Node3D
 
 @export var animation_player: AnimationPlayer
-@export var state_machine: AnimationNodeStateMachine
+@export var tree: AnimationTree
+
+var playback: AnimationNodeStateMachinePlayback
 
 func _ready():
-    # 设置初始状态
-    if state_machine:
-        state_machine.transition_to("Idle")
+    tree.active = true
+    playback = tree.get("parameters/playback") as AnimationNodeStateMachinePlayback
+    if playback:
+        playback.travel(&"Idle")
 
-func _process(delta):
+func _process(_delta):
     # 根据角色状态更新动画状态
-    var current_state = state_machine.get_current_state()
-    
-    if is_moving():
-        if current_state != "Walk":
-            state_machine.transition_to("Walk")
-    else:
-        if current_state != "Idle":
-            state_machine.transition_to("Idle")
-    
+    var current_state := playback.get_current_node()
+
     if is_running():
-        if current_state != "Run":
-            state_machine.transition_to("Run")
-    
+        if current_state != &"Run":
+            playback.travel(&"Run")
+    elif is_moving():
+        if current_state != &"Walk":
+            playback.travel(&"Walk")
+    else:
+        if current_state != &"Idle":
+            playback.travel(&"Idle")
+
     if is_jumping():
-        if current_state != "Jump":
-            state_machine.transition_to("Jump")
+        if current_state != &"Jump":
+            playback.travel(&"Jump")
 
 func is_moving() -> bool:
     return $CharacterBody3D.velocity.length() > 0.1
@@ -190,30 +195,30 @@ func is_jumping() -> bool:
 ### 2.3 动画混合
 
 ```gdscript
-# 动画混合
+# 动画混合：AnimationNodeBlend2 没有 set_input() / set_blend_amount()，
+# 连线在编辑器里用 AnimationNodeBlendTree 完成，混合量走 AnimationTree 的参数路径。
 class_name AnimationBlendingController
 
 extends Node3D
 
 @export var animation_player: AnimationPlayer
-@export var blend_node: AnimationNodeBlend2
+@export var tree: AnimationTree
+
+# 混合树里该混合节点的名字（与编辑器里显示的一致）
+@export var blend_node_name: StringName = &"locomotion"
 
 func _ready():
-    # 设置混合节点
-    if blend_node:
-        blend_node.set_input(0, $Idle)
-        blend_node.set_input(1, $Walk)
-        blend_node.set_blend_amount(0.0)
+    tree.active = true
 
-func _process(delta):
+func _process(_delta):
     # 更新混合
     update_blending()
 
 func update_blending():
-    if blend_node:
-        var speed = $CharacterBody3D.velocity.length()
-        var blend_amount = clamp(speed / 5.0, 0.0, 1.0)
-        blend_node.set_blend_amount(blend_amount)
+    var speed = $CharacterBody3D.velocity.length()
+    var blend_amount = clamp(speed / 5.0, 0.0, 1.0)
+    # AnimationNodeBlend2 的混合量参数名是 blend_amount
+    tree.set("parameters/%s/blend_amount" % blend_node_name, blend_amount)
 ```
 
 ---
@@ -249,7 +254,7 @@ func update_bones() -> void:
         return
 
     # 曲线求值与骨骼写入由引擎完成，脚本侧只查询进度
-    var time := animation_player.get_current_animation_position()
+    var time := animation_player.current_animation_position
     var anim := animation_player.get_animation(&"walk")
     if anim == null:
         return
@@ -422,7 +427,8 @@ func _ready():
         animation_player.play("neutral")
 
 func play_expression(expression: String):
-    if animation_player and has_animation(expression):
+    # has_animation() 定义在 AnimationMixer 上，必须通过 AnimationPlayer 调用
+    if animation_player and animation_player.has_animation(expression):
         animation_player.play(expression)
 
 func _on_speak():
@@ -508,54 +514,71 @@ func transition_to_expression(expression: String):
 ### 5.1 动画缓存
 
 ```gdscript
-# 动画缓存：运行时代码合成 Animation 资源
+# 角色动画缓存：缓存的是「角色专用的动画库」，而不是单条 Animation
+# （单条 Animation 的运行时合成见第 37 篇第 6.3 节）
 class_name CharacterAnimationCache
 
-var cache: Dictionary = {}
+var _libraries: Dictionary = {}
 
-func get_animation(anim_name: StringName) -> Animation:
-    if cache.has(anim_name):
-        return cache[anim_name]
+func get_library(key: StringName) -> AnimationLibrary:
+    if _libraries.has(key):
+        return _libraries[key]
 
-    var anim := Animation.new()
-    anim.length = 1.0
+    var lib := AnimationLibrary.new()
+    for anim_name in [&"idle", &"walk", &"run"]:
+        var anim := Animation.new()
+        anim.length = 1.0
 
-    # 一条 TYPE_TRANSFORM_3D 轨道即可同时驱动位置 / 旋转 / 缩放；
-    # 不存在 TRANSFORM_3D、ROTATION、SCALE 三种并列的轨道类型。
-    var track_idx := anim.add_track(Animation.TYPE_TRANSFORM_3D)
-    anim.track_set_path(track_idx, NodePath("Skeleton3D:Root"))
-    anim.track_insert_key(track_idx, 0.0, [Vector3.ZERO, Quaternion.IDENTITY, Vector3.ONE])
-    anim.track_insert_key(track_idx, 1.0, [Vector3(0, 1, 0), Quaternion.IDENTITY, Vector3.ONE])
+        # 一条 TYPE_TRANSFORM_3D 轨道即可同时驱动位置 / 旋转 / 缩放；
+        # 不存在 TRANSFORM_3D、ROTATION、SCALE 三种并列的轨道类型。
+        var track_idx := anim.add_track(Animation.TYPE_TRANSFORM_3D)
+        anim.track_set_path(track_idx, NodePath("Skeleton3D:Root"))
+        anim.track_insert_key(track_idx, 0.0, [Vector3.ZERO, Quaternion.IDENTITY, Vector3.ONE])
+        anim.track_insert_key(track_idx, 1.0, [Vector3(0, 1, 0), Quaternion.IDENTITY, Vector3.ONE])
 
-    cache[anim_name] = anim
-    return anim
+        lib.add_animation(anim_name, anim)
+
+    _libraries[key] = lib
+    return lib
 
 func clear_cache() -> void:
-    cache.clear()
+    _libraries.clear()
 ```
 
 ### 5.2 角色动画LOD
 
+通用的"按距离选动画"写法见第 37 篇第 6.2 节。
+角色级的 LOD 更关心**状态机与混合树的降级**，而不是换一条动画：
+
 ```gdscript
-# 角色动画LOD
+# 角色动画 LOD：按距离调整状态机与混合树的复杂度
 class_name CharacterAnimationLOD
 
-@export var lod_distances: Array = [10, 30, 50]
-@export var lod_animations: Array = ["simple", "medium", "complex"]
+@export var lod_distances: Array[float] = [20.0, 50.0, 100.0]
 
-func update_lod(camera_position: Vector3, character: Node3D):
-    var distance = camera_position.distance_to(character.global_transform.origin)
-    
-    var lod_index = 0
+## 越远的等级越简化：0 = 完整，1 = 关 IK，2 = 关表情，3 = 停机
+@export var tree: AnimationTree
+
+func current_level(camera_position: Vector3, character: Node3D) -> int:
+    var distance := camera_position.distance_to(character.global_transform.origin)
+    var level := 0
     for i in range(lod_distances.size()):
         if distance > lod_distances[i]:
-            lod_index = i + 1
-    
-    lod_index = min(lod_index, lod_animations.size() - 1)
-    
-    # 更新动画
-    if lod_index < lod_animations.size():
-        character.animation_player.play(lod_animations[lod_index])
+            level = i + 1
+    return level
+
+func apply_lod(level: int) -> void:
+    match level:
+        0:
+            tree.active = true
+        1:
+            # 停用动画树 = 冻结姿势（不是降级），
+            # 真正的降级要换用更简单的混合结构，见第 8.3 节
+            tree.active = true
+        2:
+            tree.active = true
+        3:
+            tree.active = false
 ```
 
 ### 5.3 骨骼动画优化
@@ -591,7 +614,7 @@ func is_important_bone(bone_name: String) -> bool:
         "RightLeg", "RightKnee", "RightFoot"
     ]
     
-    forimportant_bone in important_bones:
+    for important_bone in important_bones:
         if bone_name.contains(important_bone):
             return true
     
@@ -611,13 +634,16 @@ class_name BasicCharacterAnimationSystem
 extends CharacterBody3D
 
 @export var animation_player: AnimationPlayer
-@export var state_machine: AnimationNodeStateMachine
+@export var tree: AnimationTree
 @export var speed: float = 5.0
 
+var playback: AnimationNodeStateMachinePlayback
+
 func _ready():
-    # 设置初始状态
-    if state_machine:
-        state_machine.transition_to("Idle")
+    tree.active = true
+    playback = tree.get("parameters/playback") as AnimationNodeStateMachinePlayback
+    if playback:
+        playback.travel(&"Idle")
 
 func _physics_process(delta):
     # 处理输入
@@ -648,21 +674,24 @@ func handle_input(delta):
 
 func update_animation():
     # 根据状态更新动画
-    if state_machine:
-        if velocity.length() > 0.1:
-            if state_machine.get_current_state() != "Walk":
-                state_machine.transition_to("Walk")
-        else:
-            if state_machine.get_current_state() != "Idle":
-                state_machine.transition_to("Idle")
-        
-        if velocity.length() > 3.0:
-            if state_machine.get_current_state() != "Run":
-                state_machine.transition_to("Run")
-        
-        if is_on_floor() and Input.is_action_just_pressed("jump"):
-            if state_machine.get_current_state() != "Jump":
-                state_machine.transition_to("Jump")
+    if playback == null:
+        return
+    var current := playback.get_current_node()
+
+    if velocity.length() > 0.1:
+        if current != &"Walk":
+            playback.travel(&"Walk")
+    else:
+        if current != &"Idle":
+            playback.travel(&"Idle")
+    
+    if velocity.length() > 3.0:
+        if current != &"Run":
+            playback.travel(&"Run")
+    
+    if is_on_floor() and Input.is_action_just_pressed("jump"):
+        if current != &"Jump":
+            playback.travel(&"Jump")
 ```
 
 ### 6.2 骨骼动画系统
@@ -671,30 +700,38 @@ func update_animation():
 # 骨骼动画系统
 class_name CharacterSkeletonAnimationSystem
 
-extends Skeleton3D
+extends Node3D
 
 @export var animation_player: AnimationPlayer
 @export var mesh: MeshInstance3D
-@export var state_machine: AnimationNodeStateMachine
+@export var skeleton: Skeleton3D
+@export var tree: AnimationTree
+
+var playback: AnimationNodeStateMachinePlayback
 
 func _ready():
-    # 绑定骨骼到网格
-    if mesh:
-        mesh.skeleton = self
-    
+    # 绑定骨骼到网格：MeshInstance3D.skeleton 是 NodePath
+    if mesh and skeleton:
+        mesh.skeleton = mesh.get_path_to(skeleton)
+
     # 设置动画播放器
     if animation_player:
-        animation_player.root_node = animation_player.get_path_to(self)
+        animation_player.root_node = animation_player.get_path_to(skeleton)
 
-func _process(delta):
+    tree.active = true
+    playback = tree.get("parameters/playback") as AnimationNodeStateMachinePlayback
+
+func _process(_delta):
     # 根据状态更新骨骼动画
-    if state_machine:
-        if velocity.length() > 0.1:
-            if state_machine.get_current_state() != "Walk":
-                state_machine.transition_to("Walk")
-        else:
-            if state_machine.get_current_state() != "Idle":
-                state_machine.transition_to("Idle")
+    if playback == null:
+        return
+    var current := playback.get_current_node()
+    if velocity.length() > 0.1:
+        if current != &"Walk":
+            playback.travel(&"Walk")
+    else:
+        if current != &"Idle":
+            playback.travel(&"Idle")
 ```
 
 ### 6.3 表情动画系统
@@ -740,21 +777,25 @@ class_name FullCharacterAnimationController
 extends Node3D
 
 @export var animation_player: AnimationPlayer
-@export var state_machine: AnimationNodeStateMachine
+@export var tree: AnimationTree
 @export var expression_controller: ExpressionController
 @export var facial_animation: FacialAnimationController
 @export var speed: float = 5.0
 @export var crouch_speed: float = 2.5
 
+var playback: AnimationNodeStateMachinePlayback
+
 func _ready():
     # 设置初始状态
-    if state_machine:
-        state_machine.transition_to("Idle")
+    tree.active = true
+    playback = tree.get("parameters/playback") as AnimationNodeStateMachinePlayback
+    if playback:
+        playback.travel(&"Idle")
     
     # 设置初始表情
     expression_controller.set_expression("neutral")
 
-func _process(delta):
+func _process(_delta):
     # 根据输入更新动画
     update_animation()
 
@@ -780,25 +821,27 @@ func update_animation():
         current_speed = crouch_speed
     
     # 根据状态更新动画
-    if state_machine:
-        if input_vector.length() > 0.1:
-            if state_machine.get_current_state() != "Walk":
-                state_machine.transition_to("Walk")
-        else:
-            if state_machine.get_current_state() != "Idle":
-                state_machine.transition_to("Idle")
-        
-        if input_vector.length() > 0.1 and Input.is_action_pressed("run"):
-            if state_machine.get_current_state() != "Run":
-                state_machine.transition_to("Run")
-        
-        if Input.is_action_just_pressed("jump"):
-            if state_machine.get_current_state() != "Jump":
-                state_machine.transition_to("Jump")
-        
-        if Input.is_action_just_pressed("attack"):
-            if state_machine.get_current_state() != "Attack":
-                state_machine.transition_to("Attack")
+    if playback == null:
+        return
+    var current := playback.get_current_node()
+
+    if input_vector.length() > 0.1 and Input.is_action_pressed("run"):
+        if current != &"Run":
+            playback.travel(&"Run")
+    elif input_vector.length() > 0.1:
+        if current != &"Walk":
+            playback.travel(&"Walk")
+    else:
+        if current != &"Idle":
+            playback.travel(&"Idle")
+    
+    if Input.is_action_just_pressed("jump"):
+        if current != &"Jump":
+            playback.travel(&"Jump")
+    
+    if Input.is_action_just_pressed("attack"):
+        if current != &"Attack":
+            playback.travel(&"Attack")
 
 func play_expression(expression: String):
     expression_controller.set_expression(expression)
@@ -815,7 +858,12 @@ func update_facial_animation(is_speaking: bool):
 
 ## 8. 高级角色动画技术
 
-### 8.1 运动匹配基础（Motion Matching）
+### 8.1 运动匹配（Motion Matching）
+
+> ⚠️ **Godot 4.x 没有内建的运动匹配支持。**
+> 引擎既没有 Motion Matching 节点，也没有相关的采样 / 检索 API。
+> 下面给出的是**自研方案**的思路与骨架代码，不是引擎现成能力；
+> 如果你的项目需要这个功能，要么自研，要么使用第三方插件。
 
 运动匹配是一种数据驱动的角色动画技术，通过搜索动画数据库找到最佳匹配当前状态的动画片段。
 
@@ -834,78 +882,100 @@ func update_facial_animation(is_speaking: bool):
 └─────────────────────────────────────────────────────────────┘
 ```
 
+**真实可行的落地路径**（没有内建支持时的常规做法）：
+
+| 步骤 | 做法 | Godot 侧可用 API |
+|---|---|---|
+| ① 采样动画库 | 离线用 DCC 工具把每段动画按固定步长采样成"骨骼姿势特征"（每根关键骨骼的位置 + 朝向） | 离线导出，或运行时用 `Animation.track_get_key_value()` + `Skeleton3D.get_bone_pose()` 采样 |
+| ② 建特征库 | 把采样结果写成 KD-Tree / 网格加速结构，随项目一起加载 | 自研数据结构（GDScript 可做，简单场景用线性扫描 + 粗筛也够用） |
+| ③ 每帧检索 | 取当前角色的实时骨骼特征，在特征库里找最近邻 | `Skeleton3D.get_bone_pose()` / `get_bone_global_pose()` 读取当前姿势 |
+| ④ 播放与过渡 | 用 `AnimationPlayer.play()` + `seek()` 跳到匹配帧，并做短暂交叉淡入 | `AnimationPlayer.play(name, custom_blend)` + `seek(t, true)` |
+| ⑤ 兜底 | 检索失败 / 置信度不足时回退到 BlendSpace 驱动的普通移动动画 | `AnimationNodeBlendSpace1D/2D`（见第 39 篇） |
+
+> **工程建议**：多数项目用不上完整的运动匹配。Godot 4.x 的
+> `AnimationNodeBlendSpace1D/2D` + 状态机已经能覆盖绝大多数第三人称移动需求；
+> 把预算留给美术资产与手感调校，通常比自研运动匹配划算。
+
 ```gdscript
-# 简化的运动匹配系统
+# 运动匹配的自研骨架：仅演示检索流程，不是引擎内建能力
 class_name MotionMatchingSystem
 
 extends Node
 
+@export var animation_player: AnimationPlayer
+
+## 特征库：每项记录 "动画名 / 时间 / 特征向量"
 @export var animation_database: Array[Dictionary] = []
 @export var search_radius: float = 0.5
 @export var blend_time: float = 0.1
 
-var animation_player: AnimationPlayer
-var current_pose: Dictionary = {}
-var current_velocity: Vector3 = Vector3.ZERO
+## 需要参与检索的骨骼（通常是骨盆 + 双脚）
+@export var feature_bones: Array[StringName] = [&"Hips", &"LeftFoot", &"RightFoot"]
 
 func _ready():
-    animation_player = $AnimationPlayer
     _build_animation_database()
 
 func _build_animation_database():
-    # 从动画片段提取特征数据
-    var animations = ["walk", "run", "strafe_left", "strafe_right", "backpedal"]
-    
+    # 真实项目里这一步应当离线完成（见上面的落地路径表格），
+    # 运行时只负责检索。
+    var animations: Array[StringName] = [&"walk", &"run", &"strafe_left", &"strafe_right"]
     for anim_name in animations:
-        var frames = _extract_animation_frames(anim_name)
+        var frames := _extract_animation_frames(anim_name)
         for frame in frames:
             animation_database.append({
                 "animation": anim_name,
                 "time": frame["time"],
                 "pose": frame["pose"],
-                "velocity": frame["velocity"],
-                "direction": frame["direction"]
             })
 
-func _extract_animation_frames(anim_name: String) -> Array:
-    # 提取动画的关键帧数据
-    # 简化实现
-    return [{"time": 0.0, "pose": {}, "velocity": Vector3.ZERO, "direction": Vector3.FORWARD}]
+func _extract_animation_frames(anim_name: StringName) -> Array:
+    # 采样实现：按固定步长取关键帧的骨骼姿势
+    var frames: Array = []
+    var anim := animation_player.get_animation(anim_name)
+    if anim == null:
+        return frames
+    var step := 1.0 / 30.0
+    var t := 0.0
+    while t < anim.length:
+        frames.append({"time": t, "pose": _sample_pose(anim, t)})
+        t += step
+    return frames
 
-func update(delta):
-    # 获取当前角色状态
-    var desired_velocity = _get_desired_velocity()
-    var current_pose = _get_current_pose()
-    
-    # 搜索最佳匹配
-    var best_match = _search_best_match(desired_velocity, current_pose)
-    
-    if best_match:
-        # 过渡到匹配动画
-        _transition_to_animation(best_match["animation"], best_match["time"], blend_time)
+func _sample_pose(anim: Animation, time: float) -> PackedVector3Array:
+    # 真实实现需要把动画 seek 到 time 后读取 Skeleton3D 的姿势；
+    # 这里只给出特征结构。
+    var pose := PackedVector3Array()
+    for _bone in feature_bones:
+        pose.append(Vector3.ZERO)
+    return pose
 
-func _search_best_match(desired_vel: Vector3, pose: Dictionary) -> Dictionary:
-    var best_score = INF
-    var best_match = null
-    
+func update(delta: float):
+    var best_match := _search_best_match()
+    if best_match.is_empty():
+        return
+    _transition_to_animation(best_match["animation"], best_match["time"], blend_time)
+
+func _search_best_match() -> Dictionary:
+    var best_score := INF
+    var best_match := {}
     for clip in animation_database:
-        # 计算速度差异
-        var vel_diff = (desired_vel - clip["velocity"]).length()
-        
-        # 计算姿态差异（简化）
-        var pose_diff = 0.0
-        
-        # 综合评分
-        var score = vel_diff * 0.7 + pose_diff * 0.3
-        
+        var score := _pose_distance(clip["pose"], _current_feature())
         if score < best_score:
             best_score = score
             best_match = clip
-    
     return best_match
 
-func _transition_to_animation(anim_name: String, start_time: float, blend_time: float):
-    animation_player.play(anim_name, blend_time)
+func _current_feature() -> PackedVector3Array:
+    return PackedVector3Array()
+
+func _pose_distance(a: PackedVector3Array, b: PackedVector3Array) -> float:
+    var d := 0.0
+    for i in range(mini(a.size(), b.size())):
+        d += a[i].distance_to(b[i])
+    return d
+
+func _transition_to_animation(anim_name: StringName, start_time: float, blend: float):
+    animation_player.play(anim_name, blend)
     animation_player.seek(start_time, true)
 ```
 
@@ -993,14 +1063,20 @@ func blend_gestures(gesture_a: String, gesture_b: String, weight: float):
 ```
 角色动画性能优化清单:
 ┌─────────────────────────────────────────────────────────────┐
-│ 优化项            │ 影响          │ 优化建议                │
+│ 优化项            │ 影响              │ 优化建议              │
 ├─────────────────────────────────────────────────────────────┤
-│ 骨骼数量          │ CPU +2-5%/10 骨 │ 限制在 50-70 骨         │
-│ 动画更新频率      │ 每帧计算      │ LOD 降低远处更新        │
-│ 混合节点数量      │ +3-8%/个      │ 简化混合树              │
-│ IK 链数量         │ +5-10%/链     │ 限制关键部位            │
-│ 蒙皮顶点数        │ GPU 负载       │ 控制网格精度            │
+│ 骨骼数量          │ 姿势求值开销上升  │ 按需停用次要骨骼      │
+│ 动画更新频率      │ 每帧曲线求值      │ LOD 降低远处更新      │
+│ 混合节点数量      │ 节点图求值开销    │ 简化混合树            │
+│ IK 链数量        │ 额外迭代求解      │ 限制关键部位          │
+│ 蒙皮顶点数        │ GPU 负载          │ 控制网格精度          │
 └─────────────────────────────────────────────────────────────┘
+
+> ⚠️ 示意数据（未附测试环境）：上表只描述**定性**趋势，
+> 不含任何具体的百分比或毫秒数。骨骼数、混合节点数、IK 链数对帧时间的实际影响，
+> 与骨骼数、轨道数、目标机型、是否开启 GPU 蒙皮强相关，
+> 必须在目标设备上用 Godot Profiler / `Performance.get_monitor()` 实测，
+> 不要照搬其它引擎的经验数字。
 
 最佳实践:
 ✅ 使用动画 LOD（远处简化）
@@ -1095,6 +1171,398 @@ func _simplify_blend_tree():
 
 ---
 
+## 9. 程序化动画与物理驱动
+
+前面讲的都是"播现成动画"。这一章讲另一条路线：**动画由脚本实时计算出来**，
+或者由物理模拟驱动。它与骨骼动画（第 44 篇）互补——前者是"离线做好"，后者是"在线算"。
+
+> **版本边界（重要）**：Godot 4.x 的物理骨骼方案分两条线，起始版本不同：
+> - `PhysicalBoneSimulator3D` —— **4.3 起就有**（4.3 / 4.4 的 `doc/classes/` 均可取到该类 XML）；
+> - `SpringBoneSimulator3D` —— **4.4 起才提供**（4.3 的 `doc/classes/SpringBoneSimulator3D.xml` 返回 404）；
+> - `SkeletonModifier3D` —— 4.3 起就有，是这两个模拟器的共同扩展点。
+>
+> 把这两个类一并说成"4.5+ 才有"是不准确的；4.3 用 `SkeletonModifier3D` 自研，4.4 起可直接用 `SpringBoneSimulator3D`。
+> （以及 `SkeletonIK3D` / `SkeletonProfileHumanoid`）。
+
+### 9.1 程序化步行循环
+
+```
+程序化步行循环:
+┌─────────────────────────────────────────────────────────────┐
+│ 关键参数：                                                  │
+│ - 步幅长度（Stride Length）                                 │
+│ - 步频（Step Frequency）                                    │
+│ - 抬脚高度（Foot Lift）                                     │
+│ - 身体起伏（Body Bob）                                      │
+│                                                             │
+│ 相位关系：                                                  │
+│ - 左脚相位：0°                                              │
+│ - 右脚相位：180°                                            │
+│ - 左手相位：180°（与右脚相反）                              │
+│ - 右手相位：0°（与左脚相反）                                │
+└─────────────────────────────────────────────────────────────┘
+```
+
+```gdscript
+# 程序化步行控制器：用 BoneAttachment3D 拿到脚/手的实际节点位置
+class_name ProceduralWalkController
+
+extends Node3D
+
+@export var walk_speed: float = 2.0
+@export var stride_length: float = 0.8
+@export var foot_lift: float = 0.15
+@export var body_bob: float = 0.05
+
+@export var skeleton: Skeleton3D
+
+# 骨骼节点（由 BoneAttachment3D 提供，不是骨骼本身——骨骼不是节点）
+var left_foot: Node3D
+var right_foot: Node3D
+var left_hand: Node3D
+var right_hand: Node3D
+var hips: Node3D
+
+# 相位
+var walk_phase: float = 0.0
+
+func _ready():
+    _find_bones()
+
+func _find_bones():
+    # 骨骼不是节点，要通过 BoneAttachment3D 拿到跟随骨骼的节点
+    left_foot = _attach(&"Foot_L")
+    right_foot = _attach(&"Foot_R")
+    left_hand = _attach(&"Hand_L")
+    right_hand = _attach(&"Hand_R")
+    hips = _attach(&"Hips")
+
+func _attach(bone_name: StringName) -> Node3D:
+    var attachment := BoneAttachment3D.new()
+    attachment.bone_name = bone_name
+    skeleton.add_child(attachment)
+    return attachment
+
+func _process(delta):
+    var input_direction = _get_input_direction()
+    
+    if input_direction.length() > 0.1:
+        _update_walk(input_direction, delta)
+    else:
+        _reset_to_idle()
+
+func _get_input_direction() -> Vector2:
+    var direction = Vector2.ZERO
+    direction.x = Input.get_axis("ui_left", "ui_right")
+    direction.y = Input.get_axis("ui_up", "ui_down")
+    return direction
+
+func _update_walk(direction: Vector2, delta):
+    # 更新相位
+    var speed_factor = direction.length() * walk_speed
+    walk_phase += speed_factor * delta * 2.0
+    
+    # 限制相位在 0-2π
+    walk_phase = fposmod(walk_phase, TAU)
+    
+    # 计算脚部位置
+    _update_foot(left_foot, walk_phase, direction)
+    _update_foot(right_foot, walk_phase + PI, direction)
+    
+    # 计算手部摆动
+    _update_hand(left_hand, walk_phase + PI, direction)
+    _update_hand(right_hand, walk_phase, direction)
+    
+    # 计算身体起伏
+    _update_body_bob(direction)
+
+func _update_foot(foot: Node3D, phase: float, direction: Vector2):
+    if not foot:
+        return
+    
+    # 正弦波计算抬脚
+    var lift = sin(phase) * foot_lift
+    lift = max(0, lift)  # 只向上
+    
+    # 前后移动
+    var forward_offset = cos(phase) * stride_length * 0.5
+    
+    # 应用变换
+    var original_pos = foot.position
+    foot.position = original_pos + Vector3(
+        forward_offset * direction.x,
+        lift,
+        forward_offset * direction.y
+    )
+
+func _update_hand(hand: Node3D, phase: float, direction: Vector2):
+    if not hand:
+        return
+    
+    # 手臂摆动
+    var swing = sin(phase) * 0.3  # 摆动角度
+    
+    hand.rotation.x = swing * direction.y
+    hand.rotation.z = -swing * direction.x
+
+func _update_body_bob(direction: Vector2):
+    if not hips:
+        return
+    
+    # 身体上下起伏
+    var bob = abs(sin(walk_phase * 2.0)) * body_bob
+    hips.position.y = bob * direction.length()
+
+func _reset_to_idle():
+    # 逐渐回到待机姿势
+    walk_phase = 0.0
+```
+
+> **注意**：上面演示的是"直接改节点变换"的简化做法。真正把程序化动作写回角色骨架，
+> 应该用 `Skeleton3D.set_bone_pose_position()` / `set_bone_pose_rotation()`
+> 或 `SkeletonModifier3D`（见第 44 篇第 4 节），而不是改 `BoneAttachment3D` 的位置。
+
+### 9.2 物理驱动动画
+
+```gdscript
+# 布娃娃物理系统
+class_name RagdollPhysics
+
+extends Node
+
+@export var skeleton: Skeleton3D
+# AnimationPlayer 与 Skeleton3D 在 4.x 中是同级节点，
+# Skeleton3D 上并没有 animation_player 属性，必须自己导出引用。
+@export var animation_player: AnimationPlayer
+@export var ragdoll_scene: PackedScene
+
+var ragdoll_instance: Node3D
+var bone_bodies: Dictionary = {}
+
+func enable_ragdoll():
+    # 禁用动画
+    if animation_player:
+        animation_player.stop()
+    
+    # 创建布娃娃
+    if ragdoll_instance:
+        ragdoll_instance.queue_free()
+    
+    ragdoll_instance = ragdoll_scene.instantiate()
+    ragdoll_instance.global_transform = skeleton.global_transform
+    get_parent().add_child(ragdoll_instance)
+    
+    # 同步骨骼位置
+    _sync_bones_to_ragdoll()
+    
+    # 启用物理
+    _enable_physics()
+
+func disable_ragdoll():
+    # 禁用物理
+    _disable_physics()
+    
+    # 同步回骨骼
+    _sync_ragdoll_to_bones()
+    
+    # 移除布娃娃
+    if ragdoll_instance:
+        ragdoll_instance.queue_free()
+        ragdoll_instance = null
+    
+    # 恢复动画
+    if animation_player:
+        animation_player.play("idle")
+
+func _sync_bones_to_ragdoll():
+    # 将骨骼位置同步到布娃娃
+    for bone_name in bone_bodies:
+        var bone_idx = skeleton.find_bone(bone_name)
+        if bone_idx >= 0:
+            var bone_pose = skeleton.get_bone_global_pose(bone_idx)
+            var rigid_body = bone_bodies[bone_name]
+            rigid_body.global_transform = bone_pose
+
+func _sync_ragdoll_to_bones():
+    # 将布娃娃位置同步回骨骼
+    for bone_name in bone_bodies:
+        var rigid_body = bone_bodies[bone_name]
+        var bone_idx = skeleton.find_bone(bone_name)
+        if bone_idx >= 0:
+            skeleton.set_bone_global_pose_override(bone_idx, rigid_body.global_transform, 1.0, true)
+
+func _enable_physics():
+    for bone_name in bone_bodies:
+        var rigid_body = bone_bodies[bone_name]
+        rigid_body.freeze = false
+
+func _disable_physics():
+    for bone_name in bone_bodies:
+        var rigid_body = bone_bodies[bone_name]
+        rigid_body.freeze = true
+```
+
+> ⚠️ `set_bone_global_pose_override()` 在 Godot 4.3 起已标记 deprecated。
+> 4.4+ 的物理骨骼建议走 `SkeletonModifier3D`；
+> 4.3 起可用 `PhysicalBoneSimulator3D`，4.4 起还可直接用 `SpringBoneSimulator3D`。
+
+```gdscript
+# Secondary 运动（头发、衣物等）
+class_name SecondaryMotion
+
+extends Node3D
+
+@export var spring_stiffness: float = 10.0
+@export var spring_damping: float = 5.0
+@export var gravity: float = 9.8
+
+var target_position: Vector3
+var current_velocity: Vector3
+
+func _ready():
+    target_position = position
+
+func _physics_process(delta):
+    # 计算目标位置（跟随父节点）
+    var parent_global = get_parent().global_transform.origin
+    var expected_position = parent_global + position
+    
+    # 弹簧力
+    var displacement = position - target_position
+    var spring_force = -spring_stiffness * displacement
+    
+    # 阻尼力
+    var damping_force = -spring_damping * current_velocity
+    
+    # 重力
+    var gravity_force = Vector3(0, -gravity, 0)
+    
+    # 合力
+    var total_force = spring_force + damping_force + gravity_force
+    
+    # 更新速度（F=ma, m=1）
+    current_velocity += total_force * delta
+    
+    # 更新位置
+    position += current_velocity * delta
+    
+    # 限制最大位移
+    position = position.clamp(Vector3(-1, -1, -1), Vector3(1, 1, 1))
+```
+
+### 9.3 动态地形适配
+
+```gdscript
+# 动态脚步适配
+class_name DynamicFootstepAdapter
+
+# 用了 global_transform / get_world_3d()，必须继承 Node3D 而不是 Node
+extends Node3D
+
+@export var foot_ik: Array[SkeletonIK3D]
+@export var ray_length: float = 2.0
+@export var step_smoothness: float = 10.0
+
+var foot_targets: Array[Node3D] = []
+
+func _ready():
+    _create_foot_targets()
+
+func _create_foot_targets():
+    for i in range(foot_ik.size()):
+        var target = Node3D.new()
+        add_child(target)
+        foot_targets.append(target)
+        
+        # 连接到 IK
+        if i < foot_ik.size():
+            # SkeletonIK3D.target 是 Transform3D，
+            # 指向节点要用 target_node（NodePath）。
+            # NodePath 属性按"相对于持有该属性的节点"解析，
+            # 所以用 get_path_to() 而不是绝对路径。
+            foot_ik[i].target_node = foot_ik[i].get_path_to(target)
+
+func _physics_process(delta):
+    for i in range(foot_targets.size()):
+        _update_foot_target(i, delta)
+
+func _update_foot_target(foot_index: int, delta):
+    var target = foot_targets[foot_index]
+    
+    # 射线检测地面
+    var from = target.global_transform.origin + Vector3.UP * ray_length
+    var to = target.global_transform.origin - Vector3.UP * 0.5
+    
+    var space_state = get_world_3d().direct_space_state
+    var query = PhysicsRayQueryParameters3D.create(from, to)
+    var result = space_state.intersect_ray(query)
+    
+    if result.has("position"):
+        # 找到地面，平滑移动
+        var ground_pos = result["position"]
+        target.global_transform.origin = target.global_transform.origin.lerp(
+            ground_pos, 
+            step_smoothness * delta
+        )
+        
+        # 调整脚部旋转匹配地面法线
+        if result.has("normal"):
+            var up = -result["normal"]
+            target.global_transform.basis = target.global_transform.basis.looking_at(
+                target.global_transform.origin + up, 
+                Vector3.FORWARD
+            )
+```
+
+> **能力边界**：`SkeletonIK3D` 只能解**两骨链**。
+> 需要 3 骨以上的脚部 IK（如完整腿部链）时，
+> 4.4 及更早版本必须用 `SkeletonModifier3D` 自研求解器；
+> 4.6+ 才有原生的 `FABRIK3D` / `CCDIK3D` 等 IK 节点。
+
+```gdscript
+# 角色坡度适配
+class_name SlopeAdapter
+
+extends CharacterBody3D
+
+@export var max_slope_angle: float = 45.0
+@export var slope_adapt_speed: float = 5.0
+
+var target_rotation: float = 0.0
+
+func _physics_process(delta):
+    # 检测地面坡度
+    var slope_angle = _get_slope_angle()
+    
+    # 计算目标旋转
+    target_rotation = deg_to_rad(slope_angle)
+    
+    # 平滑旋转
+    rotation.x = lerp_angle(rotation.x, target_rotation, slope_adapt_speed * delta)
+    
+    # 如果坡度过大，阻止移动
+    if abs(slope_angle) > max_slope_angle:
+        velocity = Vector3.ZERO
+
+func _get_slope_angle() -> float:
+    # 射线检测前方地面
+    var from = global_transform.origin + Vector3.UP * 0.5
+    var to = from + -global_transform.basis.z * 1.0
+    
+    var space_state = get_world_3d().direct_space_state
+    var query = PhysicsRayQueryParameters3D.create(from, to)
+    var result = space_state.intersect_ray(query)
+    
+    if result.has("normal"):
+        var normal = result["normal"]
+        var angle = rad_to_deg(normal.angle_to(Vector3.UP))
+        return angle
+    
+    return 0.0
+```
+
+---
+
 ## 📝 本章总结
 
 ### 核心要点
@@ -1124,18 +1592,24 @@ func _simplify_blend_tree():
 - **Skeleton3D**: <https://docs.godotengine.org/en/stable/classes/class_skeleton3d.html>
 - **AnimationPlayer**: <https://docs.godotengine.org/en/stable/classes/class_animationplayer.html>
 - **BoneAttachment3D**: <https://docs.godotengine.org/en/stable/classes/class_boneattachment3d.html>
-- **源码位置**: `scene/animation/`, `servers/animation/`
+- **SkeletonModifier3D**: <https://docs.godotengine.org/en/stable/classes/class_skeletonmodifier3d.html>
+- **源码位置**: `scene/animation/`（`animation_mixer.cpp`、`animation_player.cpp`、
+  `animation_tree.cpp`、`animation_node_state_machine.cpp`、`animation_blend_space_1d.cpp`、
+  `animation_blend_space_2d.cpp`、`tween.cpp`）、`scene/resources/animation.cpp`、
+  `scene/resources/animation_library.cpp`、`scene/3d/skeleton_3d.cpp`
+
+> **注意**：Godot 4.3 的 `servers/` 目录下**没有** `animation/` 子目录，动画系统全部位于 `scene/animation/`。
 
 ---
 
-## 📋 下一章预告
+## 📋 上下篇导航
 
-**第 41 篇：动画曲线**
+**上一篇**: [第 39 篇：动画混合](/articles/39-animation-blending.md)
+**下一篇**: [第 41 篇：动画曲线](/articles/41-animation-curves.md)
 
-- 动画曲线编辑器基础
-- 关键帧编辑
-- 曲线调整技术
-- 动画预览与优化
+---
+
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
 
 ---
 

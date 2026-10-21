@@ -352,8 +352,24 @@ func calculate_submerged_volume(body: RigidBody3D) -> float:
 
 func get_body_size(body: RigidBody3D) -> Vector3:
     # 获取物体的包围盒大小
-    var aabb = body.get_global_aabb()
-    return aabb.size
+    # ⚠️ Node3D / RigidBody3D 都没有 get_global_aabb()，4.x 也没有这个方法。
+    #    提供 AABB 的是 VisualInstance3D.get_aabb()（且返回【局部空间】的 AABB），
+    #    RigidBody3D 不是 VisualInstance3D，拿不到。
+    #    刚体的包围盒要从它挂的 CollisionShape3D 子节点上自己算。
+    var merged := AABB()
+    var first := true
+    for child in body.get_children():
+        if child is CollisionShape3D and child.shape:
+            # Shape3D.get_debug_mesh() 返回用于渲染的调试网格，取它的局部 AABB
+            var shape_aabb: AABB = child.shape.get_debug_mesh().get_aabb()
+            # 再经过 CollisionShape3D 自身的变换转到刚体空间
+            shape_aabb = child.transform * shape_aabb
+            if first:
+                merged = shape_aabb
+                first = false
+            else:
+                merged = merged.merge(shape_aabb)
+    return merged.size
 ```
 
 ### 3.3 波浪交互
@@ -496,8 +512,9 @@ class_name GPUParticleFluid
 
 extends GPUParticles3D
 
+# 注意：不要在这里再声明 `lifetime` —— GPUParticles3D 已经有同名属性，
+# 在子类里重复声明会导致脚本报 "Member lifetime already exists in parent class" 而加载失败。
 @export var particle_count: int = 1000
-@export var lifetime: float = 5.0
 @export var initial_velocity: Vector3 = Vector3.DOWN
 
 func _ready():
@@ -505,18 +522,18 @@ func _ready():
 
 func setup_particles():
     amount = particle_count
-    lifetime = lifetime
     emitting = true
-    
-    # 设置初始速度
-    initial_velocity_min = initial_velocity
-    initial_velocity_max = initial_velocity
-    
-    # 设置重力
-    gravity = Vector3(0, -9.81, 0)
-    
-    # 设置碰撞
-    collision_mode = GPUParticles3D.COLLISION_HIDE_ON_CONTACT
+
+    # 初速度 / 重力 / 碰撞模式都挂在 **过程材质** 上，不是 GPUParticles3D 的属性
+    var material := ParticleProcessMaterial.new()
+    material.direction = Vector3.UP
+    material.initial_velocity_min = initial_velocity.length()
+    material.initial_velocity_max = initial_velocity.length()
+    material.gravity = Vector3(0, -9.81, 0)
+    # 4.x 的碰撞模式常量在 ParticleProcessMaterial 上：
+    # COLLISION_DISABLED / COLLISION_RIGID / COLLISION_HIDE_ON_CONTACT / COLLISION_MAX
+    material.collision_mode = ParticleProcessMaterial.COLLISION_HIDE_ON_CONTACT
+    process_material = material
 ```
 
 ### 5.2 粒子碰撞
@@ -1154,6 +1171,15 @@ func get_viscosity(shear_stress: float, shear_rate: float) -> float:
 - **ParticleProcessMaterial**: <https://docs.godotengine.org/en/stable/classes/class_particleprocessmaterial.html>
 - **说明**: Godot 没有内置流体求解器，SPH/网格法需自行实现或借助 GDExtension
 - **源码位置**: `servers/rendering/renderer_rd/storage_rd/particles.cpp`
+
+---
+
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+
+---
+
+**上一篇**: [第 28 篇：车辆物理](/articles/28-vehicle-physics.md)
+**下一篇**: [第 30 篇：布料模拟](/articles/30-cloth-simulation.md)
 
 ---
 

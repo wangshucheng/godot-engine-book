@@ -22,13 +22,13 @@
 - [ ] 启用睡眠模式
 - [ ] 减少刚体数量
 - [ ] 合并静态碰撞体
-- [ ] 降低物理 FPS（60→30）
-- [ ] 使用 Area3D 代替射线检测
+- [ ] 降低物理 FPS（60→30；**60 Hz 是推荐默认值**，降频仅用于休闲/省电项目，并需复测移动手感与输入采样）
+- [ ] 能用射线查询就不要用 Area3D 常驻监控（Area3D 是逐帧重叠检测，通常更贵）
 
 #### 动画优化
 
 - [ ] 减少同时播放的动画数量
-- [ ] 使用 LOD 动画
+- [ ] 远处角色禁用 `_process` / 降低 AnimationPlayer 播放频率（自行实现；引擎无内置"动画 LOD"）
 - [ ] 禁用远处角色的动画
 - [ ] 烘焙动画为关键帧
 
@@ -36,7 +36,7 @@
 
 #### 渲染优化
 
-- [ ] 使用批次合批（相同材质）
+- [ ] 减少材质变体（Godot 4 **无通用合批器**；用材质共享 / MultiMesh 减少状态切换）
 - [ ] 减少 Draw Calls
 - [ ] 使用纹理图集
 - [ ] 实现视锥剔除
@@ -57,7 +57,7 @@
 
 #### 资源管理
 
-- [ ] 及时释放不用的资源
+- [ ] 引用归零时让 `RefCounted` 自动回收（4.x **无** `ResourceLoader.unload()`）
 - [ ] 使用弱引用避免内存泄漏
 - [ ] 清理信号连接
 - [ ] 使用对象池
@@ -105,7 +105,7 @@ func _exit_tree():
 #### 延迟优化
 
 - [ ] 客户端预测
-- [ ] 服务器回滚
+- [ ] 服务器状态校正（state correction；**Godot 高层多人 API 无内置回滚**，回滚需自行实现）
 - [ ] 插值平滑
 - [ ] 延迟补偿
 
@@ -143,8 +143,8 @@ func _exit_tree():
 extends Node
 
 func _process(delta):
-    var fps = Engine.get_fps()
-    var frame_time = Engine.get_process_usec() / 1000.0
+    var fps = Engine.get_frames_per_second()
+    var frame_time = Performance.get_monitor(Performance.TIME_PROCESS)
     
     if fps < 30:
         push_warning("FPS 过低：", fps)
@@ -200,6 +200,10 @@ func _process(delta):
 
 ### 目标性能指标
 
+> ⚠️ **示意数据（未附测试环境）** —— 下表为量级参考，非基准测试结果。实际数值随引擎版本、渲染方法、场景规模与硬件差异极大，请以自测为准。
+
+> ⚠️ 下表为示意数据（未附测试环境），仅用于建立数量级概念。实际开销取决于场景规模与目标硬件，请在目标平台实测。
+
 | 平台 | 目标 FPS | Draw Calls | 物理对象 | 内存占用 |
 |------|---------|-----------|---------|---------|
 | PC（高端） | 144 | < 500 | < 1000 | < 2GB |
@@ -218,5 +222,12 @@ func _process(delta):
 
 ---
 
-**版本**: Godot 4.x  
-**最后更新**: 2026-03-20
+**版本**: Godot 4.x（基线 4.3）  
+**最后更新**: 2026-10-20
+
+---
+
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+
+**上一篇**: [附录 C：Godot 与 Unity 对照表](/articles/appendix-c-unity-migration.md)
+**下一篇**: [首页](/README.md)

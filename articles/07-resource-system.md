@@ -1,6 +1,8 @@
 # 第 7 篇：Godot 资源系统深度解析
 
 > **摘要**：资源（Resource）是 Godot 的核心概念——场景、材质、音频、脚本都是资源。本文基于 `core/io/resource.cpp` 与 `resource_loader.cpp` 的真实实现，剖析 `path_cache` 与资源缓存的关系、`set_path()` 的抢占语义、`ResourceLoader.load()` 的完整管线、五种 CACHE_MODE 的差异、线程化加载的真实行为，以及 `duplicate()`/`local_to_scene` 的复制规则。
+>
+> **与第 56 篇的分工**：本篇讲**引擎侧语义**（类结构、`set_path()` 抢占、`CACHE_MODE` 五态、`.tres`/`.res` 格式、`local_to_scene`、`changed` 线程安全）；[第 56 篇《资源加载与缓存实战》](/articles/56-resource-system.md) 讲**脚本侧策略**（何时同步/线程化加载、缓存怎么组织、引用怎么持有与释放、自定义资源怎么落地）。
 
 ---
 
@@ -156,6 +158,9 @@ ResourceLoader.load_threaded_request("res://large_level.scn")
 ```gdscript
 ResourceLoader.load_threaded_request("res://large_level.scn")
 
+# progress 是**输出参数**：必须先声明一个数组，引擎会往里写进度值
+var progress: Array = []
+
 # 每帧轮询状态与进度（进度由子任务递归折算，且保证单调不减）
 match ResourceLoader.load_threaded_get_status("res://large_level.scn", progress):
     ResourceLoader.THREAD_LOAD_IN_PROGRESS: pass  # progress[0] ∈ [0,1]
@@ -166,6 +171,8 @@ match ResourceLoader.load_threaded_get_status("res://large_level.scn", progress)
 ```
 
 源码里的三个关键行为：
+
+> ⚠️ 括号里的毫秒数是常见取值（示意数据，未附测试环境），不是实测值。
 
 1. **`load_threaded_get()` 在主线程调用且未完成时会阻塞等待**（1ms 轮询）——想不卡顿就在 `_process` 里轮询状态，不要直接 `get`；
 2. 重复 `load_threaded_request()` 同一路径**不会重复加载**：令牌复用（内部引用计数），多次 `get` 依次取走；
@@ -413,7 +420,7 @@ load("res://x") → uid 解析 → (REUSE)查缓存 → remap → loader 加载
 
 ---
 
-**Godot 版本**: 4.x（基线 4.3，2026-09 最新稳定版为 4.7）
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
 
 ---
 

@@ -1,0 +1,265 @@
+# 《深入理解 Godot 引擎》书稿门禁 · API 白名单
+#
+# 格式: 规则|token|说明
+#   规则 = unknown_class（类不存在）/ unknown_member（成员不存在）
+#   token = 类名，或 `类.成员`
+#
+# ⚠️ 白名单只应收「书里有意提及」的符号。把真实缺陷放进来等于关掉门禁；
+#    新增条目必须写明依据（C++ 内部 / 4.4+ / 3.x 已移除 / Unity / 反例 / 示例占位）。
+#    判据自检：python tools/verify_book.py --selftest
+
+## unknown_class —— 类级白名单
+unknown_class|Activity|行文简写（Activity 节点）
+unknown_class|Adaptive|行文简写（自适应分辨率相关枚举）
+unknown_class|Add2|AnimationNodeAdd2 的简写
+unknown_class|Add3|AnimationNodeAdd3 的简写
+unknown_class|AdvancedEnemy|书稿示例类
+unknown_class|AnimationBlend|行文简写
+unknown_class|AnimationMask|Unity 概念，书里明确写 4.x 没有该类
+unknown_class|AnimationNodeModulate|Unity 概念，书里明确写 4.x 没有该类
+unknown_class|AudioDriverOpenSL|Godot 3.x 的音频驱动类名，4.x 已改为 AudioDriver 模块
+unknown_class|AudioEffectFlanger|4.x 没有该效果器，书里明确写「没有」
+unknown_class|AudioListener|3.x 类名，4.x 用 AudioListener3D/2D
+unknown_class|AudioStreamResource|行文简写（音频流资源）
+unknown_class|AudioStreamSample|行文简写（音频采样）
+unknown_class|AudioTrack|行文简写（音频轨道）
+unknown_class|BACKOFF|书稿自定义的重连退避常量
+unknown_class|BasicEnemy|书稿示例类
+unknown_class|Blend2|AnimationNodeBlend2 的简写
+unknown_class|Blend3|AnimationNodeBlend3 的简写
+unknown_class|BossEnemy|书稿示例类
+unknown_class|CFBundleExecutable|macOS 包的 Info.plist 键
+unknown_class|Call|C# 委托（Unity 风格）
+unknown_class|CallDeferred|C# 委托（Unity 风格）
+unknown_class|Collections|C# 命名空间 Godot.Collections 的后半段，不是引擎类
+unknown_class|CommandBuffer|C++ 内部类（渲染命令缓冲）
+unknown_class|CommandQueueMT|C++ 内部类
+unknown_class|Compact|书稿示例枚举
+unknown_class|CompressionMode|书稿示例枚举
+unknown_class|ComputeShader|Godot 4 没有该资源类，书里明确写「没有」
+unknown_class|Connect|C# 事件（Unity 风格）
+unknown_class|Context|行文简写
+unknown_class|CustomControl|书稿示例类
+unknown_class|DampedSpringJoint3D|4.x 只有 2D 版，书里明确写「3D 没有」
+unknown_class|DebugDraw|Viewport.DebugDraw 枚举的行文简写
+unknown_class|Disabled|行文简写（禁用状态）
+unknown_class|EditorExtension|虚构类，书里明确写「不存在」
+unknown_class|EditorFileSystemPlugin|4.x 没有该类
+unknown_class|EditorResourceImporter|4.x 没有该类
+unknown_class|EditorResourcePreviewPlugin|4.x 没有该类
+unknown_class|EditorSettingsPlugin|4.x 没有该类
+unknown_class|Enemy|书稿示例类（读者自定义的敌人脚本）
+unknown_class|File|行文简写（指 FileAccess）
+unknown_class|FrameProfileArea|C++ 内部枚举
+unknown_class|GDExtensionBinding|GDExtension C 接口结构体，不是类
+unknown_class|GameMessageType|书稿示例枚举
+unknown_class|GameState|书稿示例类
+unknown_class|GetType|Unity 侧 API（对比章节）
+unknown_class|Glob|GDExtension C 接口结构体
+unknown_class|Glow|C++ pass 名称（泛光阶段）
+unknown_class|Godot|C# 命名空间 Godot.Collections 的首段，不是引擎类
+unknown_class|Godot.Collections|C# 命名空间，不是引擎类
+unknown_class|GodotBodyPair2D|Godot 3.x 物理内部类型，4.x 已重构
+unknown_class|GodotCollisionSolver2D|Godot 3.x 物理内部类型，4.x 已重构
+unknown_class|GodotPhysics3D|C++ 内部物理空间类（scripts/physics/3d/）
+unknown_class|GraphicsSettings|Unity 侧类型（对比章节）
+unknown_class|Gray|书稿示例枚举
+unknown_class|Group|3.x 已移除，迁移对照表里作为「旧写法」
+unknown_class|GroupData|3.x 已移除，迁移对照表里作为「旧写法」
+unknown_class|HealthComponent|书稿示例类
+unknown_class|IKModifier3D|4.6+ 引入的原生 IK 框架，正文已标注版本
+unknown_class|ImportOrder|书稿示例枚举
+unknown_class|InputEventJoypadConnection|3.x 已移除，迁移对照表里作为「旧写法」
+unknown_class|JacobianIK3D|4.6+ 引入的原生 IK 框架，正文已标注版本
+unknown_class|KinematicBody|3.x 已移除，迁移对照表里作为「旧写法」
+unknown_class|KinematicBody2D|3.x 已移除，迁移对照表里作为「旧写法」
+unknown_class|LODLevel|书稿自定义枚举（文件内已定义）
+unknown_class|LevelData|书稿示例类（读者自定义的关卡数据资源）
+unknown_class|LinearInterpolatedCurve2D|3.x 已移除，迁移对照表里作为「旧写法」
+unknown_class|LoopMode|Animation.LoopMode 枚举的行文简写
+unknown_class|Mailbox|C++ 内部概念
+unknown_class|Math|godot-cpp 的 Math 命名空间，不是引擎类
+unknown_class|Matrix3|C++ 内部类型（行文简写）
+unknown_class|MethodBind|C++ 内部类（ClassDB 方法绑定）
+unknown_class|MethodBindT|C++ 内部模板
+unknown_class|MethodInfo|C++ 内部结构
+unknown_class|MethodName|C# 委托参数名
+unknown_class|ModuleInitializationLevel|godot-cpp 枚举
+unknown_class|MyGlobalService|书稿示例的 C++ 类
+unknown_class|NSMicrophoneUsageDescription|iOS 项目的 Info.plist 键
+unknown_class|NetCoreServer|书稿示例的 C++ 类
+unknown_class|Node1|书稿示例节点名
+unknown_class|ORMMaterial|Unity 材质类型（对比章节用；注意 Unity 的类名是 ORM + Material，共 11 个字符）
+unknown_class|ObjectDB|C++ 内部类
+unknown_class|ObjectID|C++ 内部类型
+unknown_class|PacketType|书稿示例枚举
+unknown_class|Param|C++ 枚举名（servers/physics_server_3d.h）
+unknown_class|ParticleShape3D|3.x 已移除，迁移对照表里作为「旧写法」
+unknown_class|ParticleSystem3D|3.x 已移除，迁移对照表里作为「旧写法」
+unknown_class|ParticleTextureMaterial|3.x 已移除，迁移对照表里作为「旧写法」
+unknown_class|PhysicsDirectSpaceState|3.x/行文简写，真实类是 PhysicsDirectSpaceState2D/3D
+unknown_class|PhysicsRigidBodyPool|C++ 内部类
+unknown_class|PhysicsServer|C++ 内部基类
+unknown_class|PipelineCache|C++ 内部类（shader_rd.cpp）
+unknown_class|Play|Unity Animation API（对比章节）
+unknown_class|PoolIntArray|3.x 已移除，迁移对照表里作为「旧写法」
+unknown_class|PoolStringArray|3.x 已移除，迁移对照表里作为「旧写法」
+unknown_class|PoolVector3|3.x 已移除，迁移对照表里作为「旧写法」
+unknown_class|ProjectManager|行文简写（项目管理器界面）
+unknown_class|PropertyHint|C++ 内部枚举
+unknown_class|PropertyInfo|C++ 内部结构（Object 的属性描述）
+unknown_class|PropertyName|C# 委托参数名
+unknown_class|PropertyUsageFlags|C++ 内部枚举
+unknown_class|Quat|3.x 已移除，迁移对照表里作为「旧写法」
+unknown_class|Registry|行文简写
+unknown_class|RenderGraph|C++ 内部概念
+unknown_class|RenderList|C++ 内部类（渲染器可见性列表）
+unknown_class|RenderThreadMode|C++ 内部枚举
+unknown_class|RendererFeature|C++ 内部类
+unknown_class|RendererSceneCull|C++ 内部类（renderer_scene_cull.h）
+unknown_class|RendererSceneOcclusionCull|C++ 内部类
+unknown_class|RendererViewport|C++ 内部类
+unknown_class|RenderingContextDriverVulkan|C++ 内部类（drivers/vulkan/）
+unknown_class|RenderingServerDefault|C++ 内部类
+unknown_class|ResourceUsage|C++ 内部概念
+unknown_class|Reverse|C# 委托（Unity 风格）
+unknown_class|Rules|书稿示例标识符
+unknown_class|SConstruct|SCons 构建脚本名，不是类
+unknown_class|SCsub|SCons 构建脚本名，不是类
+unknown_class|SafeRefCount|C++ 内部类
+unknown_class|SceneRenderer|C++ 内部基类
+unknown_class|SceneShaderForwardClustered|C++ 内部类（renderer_scene_render_rd.cpp）
+unknown_class|ScriptableRenderContext|Unity 渲染管线 API（对比章节）
+unknown_class|ScriptableRenderPass|Unity 渲染管线 API（对比章节）
+unknown_class|ScriptableRenderPipeline|Unity 渲染管线 API（对比章节）
+unknown_class|SendMessage|Unity 侧 API（对比章节）
+unknown_class|SetFloat|Unity AnimationClip API（对比章节）
+unknown_class|ShaderData|C++ 内部类（scene/resources/material.cpp）
+unknown_class|ShapeCast|行文简写，真实类是 ShapeCast2D/3D
+unknown_class|SignalName|C# 委托参数名
+unknown_class|SliderJointParam|C++ 枚举名（servers/physics_server_3d.h）
+unknown_class|SoftBodyRenderingServerHandler|C++ 内部类
+unknown_class|Sort|C# 委托（Unity 风格）
+unknown_class|SortByKey|C++ 内部枚举（可见性排序方式）
+unknown_class|SortByReverseDepthAndPriority|C++ 内部枚举（可见性排序方式）
+unknown_class|Spacious|书稿示例枚举
+unknown_class|Spatial|3.x 已移除，迁移对照表里作为「旧写法」
+unknown_class|SplineIK3D|4.6+ 引入的原生 IK 框架，正文已标注版本
+unknown_class|SpringBoneCollision3D|4.4+ 引入，正文已标注版本
+unknown_class|SpringBoneSimulator3D|4.4+ 引入，正文已标注版本
+unknown_class|Sub2|AnimationNodeSub2 的简写
+unknown_class|SubResource|C++ 内部术语（不是类）
+unknown_class|SubShader|Unity 侧概念（对比章节）
+unknown_class|Summator|书稿示例的 C++ 类
+unknown_class|TargetFramework|C# 项目文件属性
+unknown_class|Tonemap|C++ pass 名称（renderer_scene_render_rd.cpp 里的后处理阶段）
+unknown_class|True|行文简写
+unknown_class|TwoBoneIK3D|4.6+ 引入的原生 IK 框架，正文已标注版本
+unknown_class|TypedArray|godot-cpp 模板，不是引擎类
+unknown_class|URI|HTTP 术语（不是 Godot 类）
+unknown_class|Volume|Unity 侧类型（对比章节）
+unknown_class|WebSocketServer|3.x 已移除，书里写明 4.x 删除了该类
+unknown_class|Workflow|书稿示例类（读者自定义的工作流节点）
+unknown_class|godot::Math|godot-cpp 的 Math 命名空间，不是引擎类
+unknown_class|memnew(MyGlobalService)|书稿示例的 C++ 类
+unknown_class|memnew(NetCoreServer)|书稿示例的 C++ 类
+unknown_class|memnew(Summator)|书稿示例的 C++ 类
+
+## unknown_member —— 成员级白名单
+unknown_member|AnimationPlayer.get_current_animation|4.x 是属性 current_animation
+unknown_member|AnimationPlayer.get_current_animation_length|4.x 是属性 current_animation_length
+unknown_member|AnimationPlayer.get_current_animation_position|4.x 是属性 current_animation_position
+unknown_member|AnimationPlayer.length|AnimationPlayer 无 length() 方法
+unknown_member|AnimationPlayer.set_speed_scale|4.x 是属性 speed_scale
+unknown_member|ArrayMesh.surface_set_arrays|真实成员（ArrayMesh.surface_set_arrays）
+unknown_member|AudioServer.set_hrtf_enabled|4.3 不存在，书里明确写「不存在」
+unknown_member|AudioServer.set_hrtf_interpolation_enabled|4.3 不存在，书里明确写「不存在」
+unknown_member|Curve.get_point_count|4.3 的 Curve 点数是属性 point_count
+unknown_member|Curve.remove_point_at_time|4.3 无该方法，书里提到旧写法
+unknown_member|Curve.tangent_mode|4.3 无全局 tangent_mode 属性，书里提到旧写法
+unknown_member|DisplayServer.get_screen_size|4.3 里是 screen_get_size()
+unknown_member|ENetMultiplayerPeer.get_host|4.3 取底层连接用 get_peer()（书里正文已说明）
+unknown_member|EditorExportPlatform.export_project|4.3 不存在，书里的「不存在 API」对照表
+unknown_member|Engine.get_fps|4.3 里是 Engine.get_frames_per_second()
+unknown_member|Engine.get_process_usec|4.3 里是 Time.get_ticks_usec()
+unknown_member|Engine.get_version|4.3 里是 Engine.get_version_info()
+unknown_member|Environment.SSAO_QUALITY_HIGH|4.3 没有 SSAOQuality 枚举，书里作为反例
+unknown_member|Environment.adjustment_*|行文简写，指 adjustment_* 系列属性
+unknown_member|Environment.adjustment_color_correction|4.3 的属性名是 adjustment_color_correction（Texture）
+unknown_member|Environment.adjustment_color_correction_lut|4.3 不存在，书里作为反例
+unknown_member|Environment.adjustment_color_correction_lut_scale|4.3 不存在，书里作为反例
+unknown_member|Environment.fog_*|行文简写，指 fog_enabled / fog_light_color 等 fog_* 系列
+unknown_member|GPUParticles3D.COLLISION_HIDE_ON_CONTACT|该常量属于 ParticleProcessMaterial，书里作为反例
+unknown_member|GeometryInstance3D.visibility_range_begin/end|两个属性的简写（真实名 visibility_range_begin / _end）
+unknown_member|HTTPRequest.get_response_body_as_string|4.3 无该方法，书里提到旧写法
+unknown_member|InputMap.get_action_list|4.3 里是 action_get_events() / get_actions()
+unknown_member|LightmapGI.BAKE_MODE_STATIC|LightmapGI 无 bake_mode，书里作为反例
+unknown_member|MeshData.surface_set_arrays|行文简写，指 ArrayMesh.surface_set_arrays()
+unknown_member|MeshInstance3D.visibility_range_*|行文简写，实际定义在 GeometryInstance3D 上
+unknown_member|OS.get_process_cpu_usage|4.3 不存在，书里已更正
+unknown_member|OS.get_temp_dir|4.3 不存在，书里提到替代写法
+unknown_member|OS.get_ticks_usec|4.3 里在 Time 上，不在 OS 上
+unknown_member|OS.get_total_memory|4.3 不存在，书里已更正
+unknown_member|PacketPeer.put_string|PacketPeer 无 put_string，书里提到旧写法
+unknown_member|ParticleProcessMaterial.EMISSION_SHAPE_*|行文简写，指 EMISSION_SHAPE_* 系列枚举值
+unknown_member|ParticleProcessMaterial.EMISSION_SHAPE_BOX|真实枚举值，作为对照书写
+unknown_member|ParticleProcessMaterial.EMISSION_SHAPE_POINT|真实枚举值，作为对照书写
+unknown_member|ParticleProcessMaterial.EMISSION_SHAPE_SPHERE|真实枚举值，作为对照书写
+unknown_member|Performance.RENDER_TOTAL_DRAW_CALLS|不带 _IN_FRAME 的错写，书里作为反例
+unknown_member|ResourceLoader.unload|4.x 没有该方法，书里明确写「没有」
+unknown_member|ResourceSaver.save_to_buffer|4.3/4.4/4.5/master 都没有该方法
+unknown_member|RichTextLabel.append_text|行文简写，指 RichTextLabel.append_text()
+unknown_member|RigidBody3D.CCD_MODE_CAST_RAY|4.x 无 CCD_MODE_* 枚举
+unknown_member|Skeleton3D.set_bone_pose_enabled|4.3 的正确写法是 set_bone_enabled()
+unknown_member|TextEdit.append_text|TextEdit 无该方法（书里已更正）
+unknown_member|UDPServer.close|4.3 的 UDPServer 用 stop()
+unknown_member|UDPServer.get_available_packet_count|4.3 的 UDPServer 没有该方法
+unknown_member|UDPServer.get_packet|4.3 的 UDPServer 没有 get_packet()（书里正文已更正）
+unknown_member|UDPServer.get_packet_peer|4.3 的 UDPServer 没有 get_packet_peer()
+unknown_member|UDPServer.put_packet_to_peer|4.3 的 UDPServer 没有该方法
+unknown_member|WebSocketPeer.set_supported_protocols|4.3 是 supported_protocols 属性
+
+## unknown_member —— 书稿示例里的自定义方法/信号
+unknown_member|_create_color_curve|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|_dangerous_operation|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|_data_export|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|_do_expensive_calculation|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|_do_operation|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|_get_hitbox_data|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|_get_or_create_metrics|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|_get_player_state|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|_initialize_game_state|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|_on_action|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|_prefab_generation|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|_reduce_update_rate|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|_send_hit_results|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|_update_blend_trees|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|_update_enemies|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|_update_full_animation|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|_update_game_logic|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|_update_minimal_animation|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|_update_physics|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|_update_simplified_animation|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|_update_skeletons|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|_validate_interaction|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|_verify_token|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|add_custom_control|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|advect_velocity|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|apply_pressure_gradient|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|do_one_thing|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|get_connected_joints|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|get_current_material_params|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|get_player_node|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|get_plugin_name|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|get_server_tick|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|get_stack|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|handle_capsule_collision|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|peer_connected|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|peer_disconnected|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|print_debug|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|process_item|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|set_node_b|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|solve_pressure|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|update|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|update_density|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）
+unknown_member|value_changed|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）

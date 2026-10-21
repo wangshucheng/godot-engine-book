@@ -93,6 +93,9 @@ void WaveEmitter::_bind_methods() {
         &WaveEmitter::emit_burst,
         DEFVAL(8)  // 对应 GDScript: emitter.emit_burst()
     );
+
+    // 无参回调：供 "timeout" 这类无参信号连接（见 2.3 节）
+    ClassDB::bind_method(D_METHOD("on_timer_timeout"), &WaveEmitter::on_timer_timeout);
 }
 ```
 
@@ -233,6 +236,9 @@ public:
 
     void emit_burst(int p_count);
 
+    // 无参回调：用于连接 "timeout" 这类不带实参的信号（见 2.3 节）
+    void on_timer_timeout();
+
     // 静态工具函数，见 1.5 节
     static double sample_wave(WaveType p_type, double p_phase);
 };
@@ -322,7 +328,8 @@ void WaveEmitter::_bind_methods() {
 double WaveEmitter::sample_wave(WaveType p_type, double p_phase) {
     switch (p_type) {
         case WAVE_SINE:
-            return Math::sin(p_phase * Math_TAU);
+            // 2π 常量取自 godot-cpp 的 <godot_cpp/core/math_defs.hpp>（namespace godot::Math）
+            return Math::sin(p_phase * Math::TAU);
         case WAVE_SQUARE:
             return Math::fmod(p_phase, 1.0) < 0.5 ? 1.0 : -1.0;
         case WAVE_TRIANGLE: {
@@ -342,6 +349,8 @@ GDScript 侧使用：
 var v := WaveEmitter.sample_wave(WaveEmitter.WAVE_SINE, 0.25)
 print(v)  # 1.0
 ```
+
+> **常量名的坑**：`Math::TAU` 定义在 godot-cpp 的 `godot_cpp/core/math_defs.hpp` 中，位于 `namespace godot::Math` 内。引擎源码侧用的是 `core/math/math_funcs.h` 里的 `Math_TAU` 别名，**godot-cpp 不提供这个别名**——写 `Math_TAU` 会直接编译失败（找不到标识符）。
 
 头文件中类声明之后的 `VARIANT_ENUM_CAST(WaveEmitter::WaveType);` 是必需的：它让 godot-cpp 知道该枚举与 `Variant::INT` 之间的转换关系，`bind_method` 的模板推导依赖它。缺少这一行，编译器会报出晦涩的模板错误。
 
@@ -406,37 +415,62 @@ void WaveEmitter::_ready() {
     Node *timer_node = get_node_or_null(NodePath("TickTimer"));
     if (timer_node) {
         // 经典写法：字符串方法名 + Callable
-        timer_node->connect("timeout", Callable(this, "emit_burst"));
+        // "timeout" 不带实参，所以目标方法也必须是无参的
+        timer_node->connect("timeout", Callable(this, "on_timer_timeout"));
     }
 }
 ```
 
-注意 `Callable(this, "emit_burst")` 要求 `emit_burst` **已在 `_bind_methods` 中绑定**，否则运行时报错。如果想在编译期检查方法存在性，godot-cpp 提供了 `callable_mp` 模板：
+注意 `Callable(this, "on_timer_timeout")` 要求 `on_timer_timeout` **已在 `_bind_methods` 中绑定**，否则运行时报错。如果想在编译期检查方法存在性，godot-cpp 提供了 `callable_mp` 模板：
 
 ```cpp
-#include <godot_cpp/core/object.hpp>
+#include <godot_cpp/variant/callable_method_pointer.hpp>
 
 // 编译期类型检查的 Callable，推荐在纯 C++ 互连时使用
-timer_node->connect("timeout", callable_mp(this, &WaveEmitter::emit_burst));
+timer_node->connect("timeout", callable_mp(this, &WaveEmitter::on_timer_timeout));
 ```
 
-`callable_mp` 生成的 Callable 携带强类型签名，参数不匹配会在编译期暴露，比字符串写法安全得多。
+**`callable_mp` 只保证「成员指针的类型」正确，不保证「信号实参个数」匹配。** Godot 4 的 `Callable` 在真正调用时会校验实参个数：把 `timeout`（无参信号）连到 `emit_burst(int)` 上，编译期毫无问题，运行期却会报「参数数量不匹配」。因此目标方法的形参必须与信号能提供的实参对得上：
+
+```cpp
+// 目标方法需要实参时，用 Callable::bind 把参数补齐
+// （bind 追加的参数排在信号自带的实参之后）
+// godot-cpp 的 Callable::bind 是可变参模板，参数会被逐个装箱成 Variant
+timer_node->connect("timeout",
+        callable_mp(this, &WaveEmitter::emit_burst).bind(8));
+```
+
+对应的回调实现：
+
+```cpp
+void WaveEmitter::on_timer_timeout() {
+    // 无参回调：与 "timeout" 这类无参信号匹配
+    emit_burst(8);
+}
+```
 
 **断开连接**与**防重复连接**：
 
 ```cpp
-// 防重复连接：connect 返回 Error 码
-Error err = timer_node->connect("timeout", callable_mp(this, &WaveEmitter::emit_burst),
-                                CONNECT_REFERENCE_COUNTED);
-if (err == ERR_INVALID_PARAMETER) {
-    // 通常意味着已经连接过
+// 防重复连接：先查再连
+if (!timer_node->is_connected("timeout", callable_mp(this, &WaveEmitter::on_timer_timeout))) {
+    timer_node->connect("timeout", callable_mp(this, &WaveEmitter::on_timer_timeout));
+}
+
+// connect 的返回码：ERR_INVALID_PARAMETER 覆盖多种失败原因——
+// callable 为空/无效、信号不存在、或该 callable 已经连过（未加 CONNECT_REFERENCE_COUNTED 时）
+Error err = timer_node->connect("timeout", callable_mp(this, &WaveEmitter::on_timer_timeout));
+if (err != OK) {
+    UtilityFunctions::push_error("连接 timeout 失败，错误码: ", (int64_t)err);
 }
 
 // 显式断开
-if (timer_node->is_connected("timeout", callable_mp(this, &WaveEmitter::emit_burst))) {
-    timer_node->disconnect("timeout", callable_mp(this, &WaveEmitter::emit_burst));
+if (timer_node->is_connected("timeout", callable_mp(this, &WaveEmitter::on_timer_timeout))) {
+    timer_node->disconnect("timeout", callable_mp(this, &WaveEmitter::on_timer_timeout));
 }
 ```
+
+> **注意**：`CONNECT_REFERENCE_COUNTED` 会让「重复连接同一个 callable」返回 `OK` 而不是报错（引擎内部只增加引用计数），所以它不能用来探测重复连接——要判断重复，请用 `is_connected()`。
 
 **GDScript 侧连接**（用户视角，务必在文档中给出示例）：
 
@@ -588,9 +622,11 @@ PackedFloat32Array WaveEmitter::sample_range(double p_from, double p_to, int p_s
 
 ```cpp
 // 每帧执行：隐式从 "body_entered" 字面量构造临时 StringName
-// 字面量 → String（UTF-8 解码）→ StringName（全局池查找 + 哈希）
+// 字面量 → 直接以 UTF-8 字节交给 StringName 构造 → 引擎侧驻留进全局字符串池
 emit_signal("burst_finished", count);
 ```
+
+> **机制订正**：godot-cpp 的 `StringName(const char *)` 并不会先构造一个中间的 `String` 再转成 `StringName`——它把 UTF-8 字节直接交给 GDExtension 接口（`string_name_new_with_utf8_chars`），由引擎完成驻留（intern）与哈希。无论走哪条路径，结论不变：**热点路径上的标识符应该缓存成静态 `StringName`**。
 
 如果这行代码在热路径上，应把 `StringName` 缓存为静态变量：
 
@@ -779,8 +815,10 @@ GDExtension 没有 `@tool` 关键字，等价机制由两部分组成：**注册
 #include "register_types.h"
 #include "wave_emitter.h"
 #include "wave_preset.h"
+#include "wave_emitter_editor_plugin.h"
 
 #include <gdextension_interface.h>
+#include <godot_cpp/classes/editor_plugin_registration.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/core/defs.hpp>
 #include <godot_cpp/godot.hpp>
@@ -796,11 +834,15 @@ void initialize_wave_module(ModuleInitializationLevel p_level) {
     // EDITOR 层级：纯编辑器类，导出游戏时不加载
     if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
         GDREGISTER_CLASS(WaveEmitterEditorPlugin);  // 见 5.3
+        // 将插件类注册到编辑器（插件随编辑器启动即激活）
+        EditorPlugins::add_by_type<WaveEmitterEditorPlugin>();
     }
 }
 
 void uninitialize_wave_module(ModuleInitializationLevel p_level) {
     // 通常无需反注册，引擎退出时统一清理
+    // 需要对称清理时，在同一函数的 EDITOR 分支中写：
+    //   EditorPlugins::remove_by_type<WaveEmitterEditorPlugin>();
 }
 
 extern "C" {
@@ -937,21 +979,29 @@ void WaveEmitterEditorPlugin::_on_preview_pressed() {
 
 ```cpp
 #include <godot_cpp/classes/editor_plugin_registration.hpp>
+```
 
-void initialize_wave_module(ModuleInitializationLevel p_level) {
-    if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
-        GDREGISTER_CLASS(WaveEmitterEditorPlugin);
-        // 将插件类注册到编辑器（插件随编辑器启动即激活）
-        EditorPlugins::add_by_type<WaveEmitterEditorPlugin>();
-    }
-}
+> **不要另写一份 `initialize_wave_module()`**：本扩展只有一个注册入口函数（见 5.1 节）。在这里再写一个同名函数，会造成**符号重定义**；即使放进另一个 .cpp 文件，也会出现 `Class already registered`——因为 `WaveEmitterEditorPlugin` 已经被注册过一次了。
 
-void uninitialize_wave_module(ModuleInitializationLevel p_level) {
-    if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
-        EditorPlugins::remove_by_type<WaveEmitterEditorPlugin>();
-    }
+正确的做法是在 5.1 节那个**同一个函数**的 EDITOR 分支中补上两行：
+
+```cpp
+if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
+    GDREGISTER_CLASS(WaveEmitterEditorPlugin);
+    // 将插件类注册到编辑器（插件随编辑器启动即激活）
+    EditorPlugins::add_by_type<WaveEmitterEditorPlugin>();
 }
 ```
+
+卸载时，在同一个 `uninitialize_wave_module()` 的 EDITOR 分支中对称地写：
+
+```cpp
+if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
+    EditorPlugins::remove_by_type<WaveEmitterEditorPlugin>();
+}
+```
+
+> `EditorPlugins::add_by_type<T>()` / `remove_by_type<T>()` 定义在 godot-cpp 的 `godot_cpp/classes/editor_plugin_registration.hpp` 中（文件名反直觉，但确实存在）。
 
 常用的 EditorPlugin 虚函数与辅助方法：
 
@@ -966,7 +1016,9 @@ void uninitialize_wave_module(ModuleInitializationLevel p_level) {
 `EditorExportPlugin` 让你在导出项目时注入自定义逻辑——添加文件、修改资源、按平台裁剪内容：
 
 ```cpp
-// wave_export_plugin.h / .cpp（节选）
+// wave_export_plugin.h（GDExtension / godot-cpp）
+#include <godot_cpp/classes/editor_export_plugin.hpp>
+
 class WaveExportPlugin : public EditorExportPlugin {
     GDCLASS(WaveExportPlugin, EditorExportPlugin)
 
@@ -974,22 +1026,43 @@ protected:
     static void _bind_methods() {}
 
 public:
-    // 导出开始时回调，可在此读取导出预设信息
-    void _export_begin(const PackedStringArray &features, bool is_debug,
-                       const String &path, uint32_t flags) override {
-        UtilityFunctions::print("导出开始，平台特性: ", features);
+    // 导出开始时回调：打印本次导出启用的平台特性
+    // 签名由 godot-cpp 依据 extension_api.json 生成，与脚本侧 _export_begin 完全一致
+    void _export_begin(const PackedStringArray &p_features, bool p_debug,
+                       const String &p_path, uint32_t p_flags) override {
+        UtilityFunctions::print("导出开始，平台特性: ", p_features);
     }
 
     // 每个被导出的文件都会经过这里
-    void _export_file(const String &path, const String &type,
-                      const PackedStringArray &features) override {
-        // 示例：导出 release 包时跳过调试配置资源
-        if (!get_export_preset().is_null() && path.ends_with(".debug.tres")) {
+    void _export_file(const String &p_path, const String &p_type,
+                      const PackedStringArray &p_features) override {
+        // 示例：跳过调试配置资源（该文件不进入导出包）
+        if (p_path.ends_with(".debug.tres")) {
             skip();  // 该文件不进入导出包
         }
     }
 };
 ```
+
+> **两套签名，别混用。** `EditorExportPlugin` 的「引擎内部虚函数」与「脚本可见虚函数」是两套不同的东西，容器类型也不同：
+>
+> | 场景 | 头文件 | `_export_file` 签名 |
+> |------|--------|--------------------|
+> | GDExtension（godot-cpp，本节） | `godot_cpp/classes/editor_export_plugin.hpp` | `void (const String &, const String &, const PackedStringArray &)` |
+> | 自定义模块（引擎侧 C++） | `editor/export/editor_export_plugin.h` | `void (const String &, const String &, const HashSet<String> &)` |
+>
+> 引擎侧（4.4 `editor/export/editor_export_plugin.h`）的完整声明是：
+>
+> ```cpp
+> #include "core/templates/hash_set.h"
+>
+> virtual void _export_file(const String &p_path, const String &p_type, const HashSet<String> &p_features);
+> virtual void _export_begin(const HashSet<String> &p_features, bool p_debug, const String &p_path, int p_flags);
+> ```
+>
+> 差异只在「特征集合」的容器：脚本侧走 `PackedStringArray`，引擎内部用 `HashSet<String>`。写错这一层会直接编译失败（`override` 签名与基类不匹配）。
+
+> **GDExtension 的能力边界**：`skip()`、`add_file(path, data, remap)`、`add_shared_object()` 在 `extension_api.json` 里是**公开绑定方法**，GDExtension 可以直接调用；但 `get_export_preset()` 与 `get_export_platform()` 是引擎内部的 protected 方法，**不在 `extension_api.json` 中**，扩展侧根本拿不到（在 godot-cpp 里调用它们会报「no member named」）。需要在导出时读取当前导出预设的信息，只能改用引擎侧（自定义模块）实现，或改走 `EditorExportPlatform` 的公开接口。
 
 在 EditorPlugin 中挂载：
 
@@ -1117,6 +1190,19 @@ scons platform=macos target=template_release arch=x86_64
 # 或用 lipo 手动合成后放进 .framework 目录结构
 ```
 
+> **macOS 的 universal 二进制**：`.framework` 里放的是**一个** Mach-O 文件，它必须同时包含 arm64 与 x86_64 两个 slice。分别构建两个架构后用 `lipo` 合并：
+>
+> ```bash
+> lipo -create \
+>   demo/bin/libaudiofx.macos.template_release.arm64/libaudiofx.macos.template_release.arm64 \
+>   demo/bin/libaudiofx.macos.template_release.x86_64/libaudiofx.macos.template_release.x86_64 \
+>   -output demo/bin/libaudiofx.macos.template_release.framework/libaudiofx.macos.template_release
+>
+> # 校验合并结果
+> lipo -info demo/bin/libaudiofx.macos.template_release.framework/libaudiofx.macos.template_release
+> # -> Architectures in the fat file: ... are: x86_64 arm64
+> ```
+
 **交叉编译的现实**：Windows → MinGW 可以在 Linux 上交叉编译；Linux 目标最省事的方式是 Docker/Ubuntu 容器；macOS 与 iOS **必须**在 macOS + Xcode 环境构建（无法交叉）。这正是 CI 矩阵存在的意义（见 7.3）。
 
 ### 7.2 .gdextension 文件：多平台清单
@@ -1127,7 +1213,7 @@ scons platform=macos target=template_release arch=x86_64
 [configuration]
 
 entry_symbol = "wave_library_init"
-compatibility_minimum = "4.1"
+compatibility_minimum = "4.3"
 reloadable = true
 
 [libraries]
@@ -1147,8 +1233,10 @@ macos.release          = "res://addons/wave/bin/libwave.macos.template_release.f
 
 要点：
 
-- `compatibility_minimum` 防止过旧版本的 Godot 加载你的扩展（版本不兼容会崩溃，不如优雅拒绝）。GDExtension 的兼容承诺是**向后兼容**：针对 4.1 构建的扩展可在 4.2+ 运行，反之不行。
-- 键的格式为 `<platform>.<debug|release>[.<arch>]`；macOS 因使用 universal 二进制通常不写架构段。
+- `compatibility_minimum` 防止过旧版本的 Godot 加载你的扩展（版本不兼容会崩溃，不如优雅拒绝）。GDExtension 的兼容承诺是**向后兼容**：针对 4.3 构建的扩展可在 4.4+ 运行，反之不行。本书基线是 4.3，所以这里写 `"4.3"`——用 4.3 分支的 godot-cpp 构建，却声明兼容 4.1，等于对引擎谎报了自己的 ABI 边界。
+- 键的格式为 `<platform>.<target_feature>[.<arch>]`。`target_feature` 是构建类型标识，取值含 `editor` / `template_debug` / `template_release`；实际项目里最常见的是两个简写 `debug`（对应 `template_debug` / `editor` 构建）与 `release`（对应 `template_release` 构建），godot-cpp 官方示例的 `my_test.gdextension` 用的就是 `macos.debug` / `windows.release.x86_64` 这种写法。`arch` 段可选，macOS 因使用 universal 二进制通常不写架构段。
+- 引擎判定键的方式：把键按 `.` 拆成若干段，每一段都必须命中当前环境的特性标签（`OS::has_feature()`），全部命中才选这条；多条命中时取**标签段数最多**的一条。按 Godot 4.3 `core/os/os.cpp` 的实现：`editor` → 编辑器构建，`template` / `template_debug` / `template_release` → 导出模板构建，`debug` → 带 `DEBUG_ENABLED` 的构建，`release` → 发布模板构建。
+- macOS 的值指向的是 **`.framework` 包目录本身**（不是包内的动态库）：包内还必须有与包名同名的动态库、`Info.plist` 与 `Resources/` 目录，缺一就不是合法的 macOS bundle（详见第 72 篇 3.5 节的打包步骤）。
 - 路径必须以 `res://` 开头，指向项目内位置——这也是 AssetLib 分发的布局基础。
 
 ### 7.3 CI 构建（GitHub Actions）
@@ -1335,8 +1423,17 @@ func _exit_tree() -> void:
 
 ---
 
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+
+---
+
+**上一篇**: [第 69 篇：GDExtension 架构与入门](/articles/69-gdextension-basics.md)
+**下一篇**: [第 71 篇：引擎 C++ 自定义模块开发](/articles/71-custom-modules-cpp.md)
+
+---
+
 *写作时间：2026-08-27*  
-*字数：约 15,000 字*  
+*字数：约 5,700 字（不含代码块）（不含代码块）*  
 *状态：✅ 完成*
 
 ---

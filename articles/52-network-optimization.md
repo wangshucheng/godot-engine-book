@@ -22,6 +22,8 @@
 - 熟悉同步优化策略
 - 掌握网络优化实践
 
+> ⚠️ **关于本章的数值**：本章出现的所有阈值与默认值（同步率 60/30/10 Hz、插值缓冲 50–200 ms、RTT 150 ms、Jitter 50 ms、单机带宽上限 50–100 kbps 等）都是**示意值 / 经验起点**，**未附测试环境**（没有给出 CPU、带宽、延迟、玩家数、包长等测量条件）。它们的作用是告诉你"该调哪几个旋钮"，**不是**可以直接抄进项目的推荐值。真实取值必须在**你自己的网络条件下**用第 1 节的监控器实测后确定。
+
 ---
 
 ## 1. 网络性能分析
@@ -53,7 +55,9 @@ class_name NetworkBandwidthMonitor
 
 extends Node
 
-@export var sample_rate: float = 1.0  # 1 秒采样一次
+# 采样间隔（秒）。注意这是「间隔」而不是「频率」，
+# 频率 = 1.0 / sample_interval。
+@export var sample_interval: float = 1.0
 @export var history_size: int = 60
 
 var stats: Dictionary = {
@@ -66,22 +70,32 @@ var stats: Dictionary = {
     "jitter": []
 }
 
+# 本采样窗口内的累加量
 var current_session: Dictionary = {
     "bytes_sent": 0,
     "bytes_received": 0,
     "packets_sent": 0,
     "packets_received": 0,
+    "packets_lost": 0,
     "start_time": 0
 }
+
+# 应用层 ping/pong 得到的原始 RTT 样本（在两次采样之间累积）
+var _rtt_samples: Array = []
+# 应用层序号统计：用于算「序号缺口」
+var _highest_seq_sent: int = -1
+var _highest_seq_received: int = -1
+var _last_sample_ms: int = 0
 
 signal stats_updated(stats: Dictionary)
 
 func _ready():
     current_session.start_time = Time.get_ticks_msec()
+    _last_sample_ms = Time.get_ticks_msec()
     
     # 启动定时采样
     var timer = Timer.new()
-    timer.wait_time = sample_rate
+    timer.wait_time = sample_interval
     timer.timeout.connect(_sample_stats)
     add_child(timer)
     timer.start()
@@ -99,31 +113,37 @@ func _sample_stats():
     # 清理历史
     _cleanup_history()
     
+    _last_sample_ms = Time.get_ticks_msec()
     stats_updated.emit(get_current_stats())
 
-func record_packet_sent(bytes: int):
+func record_packet_sent(bytes: int, seq: int = -1):
     # 记录发送包
     current_session.bytes_sent += bytes
     current_session.packets_sent += 1
+    if seq >= 0:
+        _highest_seq_sent = maxi(_highest_seq_sent, seq)
 
-func record_packet_received(bytes: int):
+func record_packet_received(bytes: int, seq: int = -1):
     # 记录接收包
     current_session.bytes_received += bytes
     current_session.packets_received += 1
+    if seq >= 0:
+        # 序号缺口 = 本次收到的序号 - 期望的下一个序号
+        var expected := _highest_seq_received + 1
+        if seq > expected:
+            current_session.packets_lost += seq - expected
+        _highest_seq_received = maxi(_highest_seq_received, seq)
 
 func record_rtt(rtt_ms: float):
-    # 记录 RTT
-    if stats.rtt.size() == 0:
-        stats.rtt.append(rtt_ms)
-    else:
-        var last_rtt = stats.rtt[-1]
-        stats.rtt.append(rtt_ms)
+    # 记录 RTT 样本（由应用层 ping/pong 提供）
+    _rtt_samples.append(rtt_ms)
 
 func _calculate_bandwidth():
-    # 计算带宽
-    var elapsed_seconds = sample_rate
+    # 计算带宽：用**真实经过的时间**做分母，不能拿配置值当实际耗时
+    var now_ms := Time.get_ticks_msec()
+    var elapsed_seconds := max(0.001, float(now_ms - _last_sample_ms) / 1000.0)
     var sent_bps = (current_session.bytes_sent * 8) / elapsed_seconds
-    var received_bps = (current_session.bytes_received * 8) / elapsed_session
+    var received_bps = (current_session.bytes_received * 8) / elapsed_seconds
     
     stats.bandwidth_sent.append(sent_bps)
     stats.bandwidth_received.append(received_bps)
@@ -133,11 +153,18 @@ func _calculate_bandwidth():
     current_session.bytes_received = 0
 
 func _calculate_rtt():
-    # 计算 RTT（从网络层获取）
-    pass
+    # 计算 RTT：引擎没有提供 RTT 接口，必须由应用层 ping/pong 喂进来。
+    # 每次采样取本窗口内 RTT 样本的平均值。
+    if _rtt_samples.is_empty():
+        return
+    var total := 0.0
+    for rtt in _rtt_samples:
+        total += rtt
+    stats.rtt.append(total / _rtt_samples.size())
+    _rtt_samples.clear()
 
 func _calculate_jitter():
-    # 计算抖动
+    # 计算抖动：相邻两次采样的 RTT 均值之差的绝对值平均
     if stats.rtt.size() >= 2:
         var jitter = 0.0
         for i in range(1, stats.rtt.size()):
@@ -145,11 +172,15 @@ func _calculate_jitter():
         stats.jitter.append(jitter / (stats.rtt.size() - 1))
 
 func _calculate_packet_loss():
-    # 计算丢包率
-    var total_sent = current_session.packets_sent
-    if total_sent > 0:
-        # 需要跟踪确认包
-        pass
+    # 计算丢包率：用**应用层序号缺口**统计
+    # 在可靠通道上，ENet 会重传，网络丢包表现为延迟而不是缺口；
+    # 此时缺口统计到的是「应用层实际没交付到的消息数」。
+    # 在非可靠通道上，同一套统计直接反映网络丢包率。
+    var total_sent := int(current_session.packets_sent)
+    if total_sent <= 0:
+        return
+    var lost := int(current_session.packets_lost)
+    stats.packet_loss.append(float(lost) / float(total_sent))
 
 func _store_sample():
     # 存储样本
@@ -158,6 +189,7 @@ func _store_sample():
     
     current_session.packets_sent = 0
     current_session.packets_received = 0
+    current_session.packets_lost = 0
 
 func _cleanup_history():
     # 清理历史
@@ -172,8 +204,9 @@ func get_current_stats() -> Dictionary:
         "average_bandwidth_sent": _get_average(stats.bandwidth_sent),
         "average_bandwidth_received": _get_average(stats.bandwidth_received),
         "average_jitter": _get_average(stats.jitter),
-        "total_bytes_sent": _sum(stats.bandwidth_sent) * sample_rate / 8,
-        "total_bytes_received": _sum(stats.bandwidth_received) * sample_rate / 8,
+        "average_packet_loss": _get_average(stats.packet_loss),
+        "total_bytes_sent": _sum(stats.bandwidth_sent) / 8.0,
+        "total_bytes_received": _sum(stats.bandwidth_received) / 8.0,
         "session_duration": (Time.get_ticks_msec() - current_session.start_time) / 1000.0
     }
 
@@ -199,8 +232,20 @@ func print_stats():
     print("- Avg Bandwidth Sent: ", current.average_bandwidth_sent / 1000, " kbps")
     print("- Avg Bandwidth Received: ", current.average_bandwidth_received / 1000, " kbps")
     print("- Average Jitter: ", current.average_jitter, " ms")
+    print("- Average Packet Loss: ", current.average_packet_loss * 100.0, " %")
     print("- Session Duration: ", current.session_duration, " s")
 ```
+
+> ⚠️ **指标来源说明（不是所有指标都能"自动拿到"）**
+>
+> | 指标 | 来源 | 能否由引擎直接提供 |
+> |------|------|------------------|
+> | 带宽（收 / 发） | 应用层在每次 `put_packet()` 前记字节数 | 否，需自己埋点 |
+> | RTT | 应用层 ping/pong 的时间戳差 | 否，需自己埋点 |
+> | 抖动 | 由 RTT 序列派生 | 否，依赖 RTT |
+> | 丢包率 | 应用层序号缺口 | 否，需自己埋点 |
+>
+> Godot 的 `MultiplayerPeer` **没有**暴露 RTT、丢包率或带宽统计接口；ENet 内部有 `HOST_TOTAL_SENT_DATA` 等统计，但 `ENetMultiplayerPeer` 没有把它们暴露到脚本层。因此上表中的埋点是必需的，不是可选的。RTT 的 ping/pong 实现见第 51 篇 §4.1。
 
 ### 1.3 性能分析工具
 
@@ -267,6 +312,8 @@ func compare_profiles(profile1: Dictionary, profile2: Dictionary) -> Dictionary:
 
 ### 2.1 数据压缩
 
+> 压缩标记字节的**线格式约定**（flag 取值、两端必须一致的三条规则）见第 50 篇《网络通信协议》§5.1；本节只讲运行时的压缩策略（阈值、回退、收益核算）。
+
 ```gdscript
 # 数据压缩优化
 class_name BandwidthCompression
@@ -316,6 +363,8 @@ static func decompress_variant(data: PackedByteArray) -> Variant:
 ```
 
 ### 2.2 数据序列化优化
+
+> 底层的定长编码工具类是第 50 篇《网络通信协议》§5.2 的 **`ProtocolSerialization`**（全卷公共工具类，固定字节序与字段顺序）。本节的 `SerializationOptimizer` 是它的**可调精度变体**：按精度档位选择 1 / 2 / 4 字节每分量，两者共享同一套字段顺序约定，可以互相替换。
 
 ```gdscript
 # 数据序列化优化
@@ -1011,6 +1060,67 @@ func optimize_for_latency(latency_ms: float):
     priority_sync.sync_rates = [hitbox_sync_rate, player_model_sync_rate, projectile_sync_rate]
 ```
 
+### 5.4 传输层加密与安全边界
+
+这一节回答一个常被忽略的问题：**你的游戏数据在网络上长什么样**。
+
+#### 5.4.1 各传输层默认是否加密
+
+| 传输层 | 载荷是否加密 | 说明 |
+|--------|--------------|------|
+| `ENetMultiplayerPeer` | **默认否** | ENet 的 UDP 载荷是明文；RPC 的序列化结果也是明文 |
+| `WebSocketMultiplayerPeer`（`ws://`） | **否** | 明文 WebSocket |
+| `WebSocketMultiplayerPeer`（`wss://`） | **是** | 由 TLS 提供，证书校验走 `TLSOptions` |
+| `WebRTCMultiplayerPeer` | **是** | WebRTC DataChannel 使用 DTLS-SRTP，强制加密 |
+| Godot 4 的高层多人 API（`MultiplayerAPI` / `SceneMultiplayer`） | **不提供应用层加密** | RPC 载荷按 `var_to_bytes` 等方式序列化后直接发出 |
+
+也就是说：**Godot 4 的高层多人 API 不提供任何应用层加密**。`SceneMultiplayer` 只负责路由与序列化，通道之上是否有 TLS，完全取决于你选的 `MultiplayerPeer` 与它连接的 URL 协议。
+
+#### 5.4.2 ENet 的 DTLS（4.3 起可用，但有前提）
+
+Godot 内置的 ENet（打了补丁的 `GODOT_ENET` 构建）带有 DTLS 支持，可以通过 `ENetConnection` 打开：
+
+```gdscript
+# ENet + DTLS（需要 Godot 内置的 ENet 构建）
+var peer := ENetMultiplayerPeer.new()
+peer.create_server(9999)
+# create_server() 之后、连接建立之前，用 host 设置 DTLS。
+# 注意：4.3 的 TLSOptions 只有 client() / client_unsafe() / server(key, certificate)，
+# 没有 server_unsafe()——服务端必须提供自己的私钥与证书链。
+var key := load("res://certs/server.key")          # CryptoKey
+var cert := load("res://certs/server.crt")         # X509Certificate
+var tls_options := TLSOptions.server(key, cert)
+# ENetMultiplayerPeer 上取底层连接用 get_peer()（返回 ENetConnection），
+# 没有 get_host() 方法。
+var err := peer.get_peer().dtls_server_setup(tls_options)
+if err != OK:
+    push_error("DTLS 设置失败：%d" % err)
+multiplayer.multiplayer_peer = peer
+```
+
+客户端侧对应 `peer.get_peer().dtls_client_setup(hostname, client_options)`。
+
+**前提与限制**：
+
+- 必须是 **Godot 自带的 ENet 构建**。用系统 vanilla ENet 编译的引擎上，这两个方法返回 `ERR_UNAVAILABLE`。
+- `dtls_client_setup()` 需要**域名**（用于证书校验），不能直接用 IP。
+- 必须在 `create_server()` / `create_client()` **之后**调用（此时 host 才存在），且要在连接真正建立**之前**完成。
+- DTLS 会在握手阶段增加往返与握手字节，弱网环境下的连接建立时间会明显变长。
+
+> 📌 选型建议：需要加密的**浏览器客户端**用 `wss://`（最省事，TLS 由浏览器与服务器处理）；需要加密的**原生客户端**可以用 ENet + DTLS；如果两端都由你控制，也可以自己在应用层做对称加密（把密文当作 `PackedByteArray` 传），但要自己处理密钥协商与重放保护。
+
+#### 5.4.3 RPC 不是可信通道
+
+这是本章最该记住的一条：**"消息是从服务器发来的"不等于"消息是真的"**。
+
+- `@rpc("any_peer", ...)` 的接口，**任何**连上的客户端都能调用，参数随便填。服务器收到后如果直接采信，就等于把权限交出去了。
+- `@rpc("authority", ...)` 只保证**调用者**是权威端，不保证**参数**没被改——权威端自己发出的数据被中间人篡改，同样是问题（这就是需要 TLS 的原因）。
+- 客户端本地内存里的游戏状态、货币、伤害值，攻击者可以直接改内存绕过所有客户端逻辑。
+
+**因此**：任何影响游戏结果的数据（位置、伤害、命中、掉落、货币）都必须**由服务器重算**，客户端上报的只能当作"请求"而不是"事实"。可伪造什么、必须重算什么，见第 57 篇《权威服务器架构》§5 的反作弊边界。
+
+**加密解决的是"路上被偷看/被改写"，解决不了"对端自己就是攻击者"**。这两件事必须分开处理：前者用 TLS / DTLS，后者用服务器权威校验。
+
 ---
 
 ## 📝 本章总结
@@ -1059,9 +1169,14 @@ func optimize_for_latency(latency_ms: float):
 ---
 
 *写作时间：2026-03-20*  
-*字数：约 14,000 字*  
-*状态：✅ 完成*
+*字数：约 1,700 字（不含代码块）（不含代码块）*  
+*状态：✅ 完成*  
 
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+
+
+**上一篇**: [第 51 篇：网络同步](/articles/51-network-synchronization.md)
+**下一篇**: [第 54 篇：脚本系统](/articles/54-script-system.md)
 ---
 
 *最后更新：2026-03-20 20:00*

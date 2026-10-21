@@ -34,13 +34,15 @@ Godot 3D 关节类型:
 ├── SliderJoint3D       # 滑块关节（线性滑动）
 ├── ConeTwistJoint3D    # 锥形扭关节（球窝关节）
 ├── Generic6DOFJoint3D  # 6 自由度关节（完全控制）
-└── PinJoint3D          # 钉关节（2D 铰链）
+└── PinJoint3D          # 钉关节（3D 钉连接，两个物体只保留一个点重合）
 
 Godot 2D 关节类型:
-├── PinJoint2D          # 钉关节（旋转）
+├── PinJoint2D          # 钉关节（2D 旋转铰链）
 ├── GrooveJoint2D       # 凹槽关节（滑动）
 └── DampedSpringJoint2D # 阻尼弹簧关节
 ```
+
+> ⚠️ `PinJoint3D` 是**3D 钉关节**（两个刚体在锚点处重合、其余自由度自由），不是"2D 铰链"；2D 版是 `PinJoint2D`。另外，`PinJoint3D` 的服务器侧参数只有 `PIN_JOINT_BIAS` / `PIN_JOINT_DAMPING` / `PIN_JOINT_IMPULSE_CLAMP`，没有角度限制与马达——需要限位请改用 `HingeJoint3D`。
 
 ### 1.2 自由度（DOF）
 
@@ -106,7 +108,8 @@ func create_hinge_joint():
     joint.set_param(HingeJoint3D.PARAM_LIMIT_UPPER, deg_to_rad(90))
     
     # 限制的柔化与松弛
-    joint.set_param(HingeJoint3D.PARAM_LIMIT_SOFTNESS, 0.9)
+    # 注意：PARAM_LIMIT_SOFTNESS 在 4.x 已被标记为 deprecated，
+    #      官方说明"引擎从不使用它，仅为兼容性保留"，不要指望它生效。
     joint.set_param(HingeJoint3D.PARAM_LIMIT_RELAXATION, 0.5)
     
     # 马达（可选）
@@ -122,11 +125,13 @@ func create_hinge_joint():
 | 参数 | 说明 | 典型值 |
 |------|------|--------|
 | PARAM_LIMIT_LOWER / UPPER | 旋转角下限 / 上限（弧度） | -PI/2 / PI/2 |
-| PARAM_LIMIT_SOFTNESS | 限制柔化系数 | 0.9 |
+| PARAM_LIMIT_BIAS | 限制的误差修正偏置 | 0 |
 | PARAM_LIMIT_RELAXATION | 限制松弛程度，越小越严格 | 0.5 |
-| PARAM_MOTOR_TARGET_VELOCITY | 马达目标速度 | 1.0 |
+| PARAM_MOTOR_TARGET_VELOCITY | 马达目标速度（弧度/秒） | 1.0 |
 | PARAM_MOTOR_MAX_IMPULSE | 马达最大冲量 | 10.0 |
 | FLAG_USE_LIMIT / FLAG_ENABLE_MOTOR | 限制与马达开关（Flag 枚举） | true |
+
+> **Param 与 Flag 的分工**：`HingeJoint3D` 的开关类参数（是否使用限位、是否启用马达）属于 **Flag** 枚举（`set_flag` / `get_flag`），数值类参数属于 **Param** 枚举（`set_param` / `get_param`）。写成 `set_param(..., PARAM_ANGULAR_MOTOR_ENABLED, ...)` 会报"常量不存在"——4.x 里根本没有 `PARAM_ANGULAR_MOTOR_*` 这一族名字。
 
 ### 2.3 应用： swinging 门
 
@@ -163,6 +168,9 @@ func create_swinging_door():
     hinge.transform.origin = Vector3(0, 1.25, 0)
     
     # 设置限制（0-90 度）
+    # ⚠️ 限位是 Flag 开关：不显式打开 FLAG_USE_LIMIT，
+    #    PARAM_LIMIT_LOWER / UPPER 写了也不会生效。
+    hinge.set_flag(HingeJoint3D.FLAG_USE_LIMIT, true)
     hinge.set_param(HingeJoint3D.PARAM_LIMIT_LOWER, 0)
     hinge.set_param(HingeJoint3D.PARAM_LIMIT_UPPER, deg_to_rad(90))
     
@@ -190,33 +198,38 @@ func create_slider_joint():
     joint.set_param(SliderJoint3D.PARAM_LINEAR_LIMIT_LOWER, 0)
     joint.set_param(SliderJoint3D.PARAM_LINEAR_LIMIT_UPPER, 0.5)
     
-    # 设置限制软度
+    # 设置限制软度与回弹
     joint.set_param(SliderJoint3D.PARAM_LINEAR_LIMIT_SOFTNESS, 0.9)
     joint.set_param(SliderJoint3D.PARAM_LINEAR_LIMIT_RESTITUTION, 0.1)
     
-    # 设置阻尼
-    joint.set_param(SliderJoint3D.PARAM_LINEAR_DAMPING, 0.5)
-    
-    # 设置弹簧（可选）
-    joint.set_param(SliderJoint3D.PARAM_LINEAR_SPRING_STIFFNESS, 10.0)
-    joint.set_param(SliderJoint3D.PARAM_LINEAR_SPRING_DAMPING, 1.0)
-    joint.set_param(SliderJoint3D.PARAM_LINEAR_SPRING_EQUILIBRIUM_POINT, 0.25)
+    # 设置限制阻尼
+    # ⚠️ 4.x 的名字是 PARAM_LINEAR_LIMIT_DAMPING（不是 PARAM_LINEAR_DAMPING）
+    joint.set_param(SliderJoint3D.PARAM_LINEAR_LIMIT_DAMPING, 0.5)
     
     return joint
 ```
+
+> ⚠️ **4.x 的滑块关节没有弹簧**。`SliderJoint3D` 的 `Param` 枚举只有 `PARAM_LINEAR_LIMIT_*` / `PARAM_LINEAR_MOTION_*` / `PARAM_LINEAR_ORTHOGONAL_*` / `PARAM_ANGULAR_*` 这几族（见 `servers/physics_server_3d.h` 的 `SliderJointParam`），**没有** `PARAM_LINEAR_SPRING_STIFFNESS` / `PARAM_LINEAR_SPRING_DAMPING` / `PARAM_LINEAR_SPRING_EQUILIBRIUM_POINT`，3.x 教程里的这几行在 4.x 会报"常量不存在"。
+>
+> 需要弹簧效果时的三条路：
+> 1. **2D**：用 `DampedSpringJoint2D`（它就是为弹簧设计的关节）；
+> 2. **3D**：用 `Generic6DOFJoint3D` 的线性弹簧（`PARAM_LINEAR_SPRING_STIFFNESS` / `_DAMPING` / `_EQUILIBRIUM_POINT`，并显式打开 `FLAG_ENABLE_LINEAR_SPRING`）；
+> 3. **自行施力**：在 `_integrate_forces` 里按胡克定律 `F = -k·Δx - c·v` 调用 `apply_central_force()`。
+>
+> 另外 `SliderJoint3D` 也**没有马达参数**（没有 `PARAM_LINEAR_MOTOR_*`），需要线性驱动请走上面第 2 或第 3 条。
 
 ### 3.2 参数详解
 
 | 参数 | 说明 | 典型值 |
 |------|------|--------|
-| LINEAR_LIMIT_LOWER | 下限位置 | 0 |
-| LINEAR_LIMIT_UPPER | 上限位置 | 0.5 |
-| LINEAR_LIMIT_SOFTNESS | 限制软度 | 0.9 |
-| LINEAR_LIMIT_RESTITUTION | 限制反弹 | 0.1 |
-| LINEAR_DAMPING | 线性阻尼 | 0.5 |
-| LINEAR_SPRING_STIFFNESS | 弹簧刚度 | 10.0 |
-| LINEAR_SPRING_DAMPING | 弹簧阻尼 | 1.0 |
-| LINEAR_SPRING_EQUILIBRIUM_POINT | 弹簧平衡点 | 0.25 |
+| PARAM_LINEAR_LIMIT_LOWER | 线性下限位置 | 0 |
+| PARAM_LINEAR_LIMIT_UPPER | 线性上限位置 | 0.5 |
+| PARAM_LINEAR_LIMIT_SOFTNESS | 限制软度 | 0.9 |
+| PARAM_LINEAR_LIMIT_RESTITUTION | 限制回弹 | 0.1 |
+| PARAM_LINEAR_LIMIT_DAMPING | 限制阻尼 | 0.5 |
+| PARAM_LINEAR_MOTION_SOFTNESS / _RESTITUTION / _DAMPING | 线性运动的软度/回弹/阻尼 | 按需 |
+| PARAM_LINEAR_ORTHOGONAL_SOFTNESS / _RESTITUTION / _DAMPING | 垂直于滑动方向的约束参数 | 按需 |
+| PARAM_ANGULAR_LIMIT_UPPER / _LOWER / _SOFTNESS / _RESTITUTION / _DAMPING | 角度限制系列 | 按需 |
 
 ### 3.3 应用：升降机
 
@@ -272,15 +285,12 @@ func create_cone_twist_joint():
     joint.set_param(ConeTwistJoint3D.PARAM_TWIST_SPAN, deg_to_rad(90))
     joint.set_param(ConeTwistJoint3D.PARAM_BIAS, 0)
     
-    # 设置软度
+    # 设置软度与松弛
+    # ⚠️ 4.x 的 ConeTwistJoint3D.Param 只有这五个：
+    #    PARAM_SWING_SPAN / PARAM_TWIST_SPAN / PARAM_BIAS / PARAM_SOFTNESS / PARAM_RELAXATION
+    #    没有 PARAM_DAMPING，也没有 PARAM_SPRING_STIFFNESS / PARAM_SPRING_DAMPING。
     joint.set_param(ConeTwistJoint3D.PARAM_SOFTNESS, 0.8)
-    
-    # 设置阻尼
-    joint.set_param(ConeTwistJoint3D.PARAM_DAMPING, 0.1)
-    
-    # 设置弹簧（可选）
-    joint.set_param(ConeTwistJoint3D.PARAM_SPRING_STIFFNESS, 10.0)
-    joint.set_param(ConeTwistJoint3D.PARAM_SPRING_DAMPING, 1.0)
+    joint.set_param(ConeTwistJoint3D.PARAM_RELAXATION, 0.5)
     
     return joint
 ```
@@ -289,13 +299,11 @@ func create_cone_twist_joint():
 
 | 参数 | 说明 | 典型值 |
 |------|------|--------|
-| SWING_SPAN | 摆动角度范围 | 45° |
-| TWIST_SPAN | 扭转角度范围 | 90° |
-| BIAS | 偏差 | 0 |
-| SOFTNESS | 软度 | 0.8 |
-| DAMPING | 阻尼 | 0.1 |
-| SPRING_STIFFNESS | 弹簧刚度 | 10.0 |
-| SPRING_DAMPING | 弹簧阻尼 | 1.0 |
+| PARAM_SWING_SPAN | 摆动角度范围 | 45° |
+| PARAM_TWIST_SPAN | 扭转角度范围 | 90° |
+| PARAM_BIAS | 偏差 | 0 |
+| PARAM_SOFTNESS | 软度 | 0.8 |
+| PARAM_RELAXATION | 松弛 | 0.5 |
 
 ### 4.3 应用：布娃娃手臂
 
@@ -344,29 +352,81 @@ func create_ragdoll_arm():
 ### 5.1 基础配置
 
 ```gdscript
+# ⚠️ 4.x 的 Generic6DOFJoint3D 没有 set_param(axis, PARAM, value) 这种统一入口。
+#    公开方法是按轴分开的：
+#      set_param_x / set_param_y / set_param_z (Param, real_t)
+#      set_flag_x  / set_flag_y  / set_flag_z  (Flag, bool)
+#    （见 scene/3d/physics/joints/generic_6dof_joint_3d.h）
+#
+# 4.x 配置 6DOF 关节的套路就是"逐轴设参数 + 逐轴开开关"。
+# 下面先给三个按轴的辅助函数，再给主流程。
+
+# 按轴设置线性限制（X/Y/Z 各调一次对应的 set_param_x/y/z）
+func _set_linear_limit(joint: Generic6DOFJoint3D, axis: int,
+                       lower: float, upper: float) -> void:
+    match axis:
+        Vector3.AXIS_X:
+            joint.set_param_x(Generic6DOFJoint3D.PARAM_LINEAR_LOWER_LIMIT, lower)
+            joint.set_param_x(Generic6DOFJoint3D.PARAM_LINEAR_UPPER_LIMIT, upper)
+        Vector3.AXIS_Y:
+            joint.set_param_y(Generic6DOFJoint3D.PARAM_LINEAR_LOWER_LIMIT, lower)
+            joint.set_param_y(Generic6DOFJoint3D.PARAM_LINEAR_UPPER_LIMIT, upper)
+        Vector3.AXIS_Z:
+            joint.set_param_z(Generic6DOFJoint3D.PARAM_LINEAR_LOWER_LIMIT, lower)
+            joint.set_param_z(Generic6DOFJoint3D.PARAM_LINEAR_UPPER_LIMIT, upper)
+
+# 按轴设置角限制
+func _set_angular_limit(joint: Generic6DOFJoint3D, axis: int,
+                         lower: float, upper: float) -> void:
+    match axis:
+        Vector3.AXIS_X:
+            joint.set_param_x(Generic6DOFJoint3D.PARAM_ANGULAR_LOWER_LIMIT, lower)
+            joint.set_param_x(Generic6DOFJoint3D.PARAM_ANGULAR_UPPER_LIMIT, upper)
+        Vector3.AXIS_Y:
+            joint.set_param_y(Generic6DOFJoint3D.PARAM_ANGULAR_LOWER_LIMIT, lower)
+            joint.set_param_y(Generic6DOFJoint3D.PARAM_ANGULAR_UPPER_LIMIT, upper)
+        Vector3.AXIS_Z:
+            joint.set_param_z(Generic6DOFJoint3D.PARAM_ANGULAR_LOWER_LIMIT, lower)
+            joint.set_param_z(Generic6DOFJoint3D.PARAM_ANGULAR_UPPER_LIMIT, upper)
+
+# 按轴开关限制（限位/弹簧都是 Flag，不开就不生效）
+func _set_linear_limit_enabled(joint: Generic6DOFJoint3D, axis: int, enabled: bool) -> void:
+    match axis:
+        Vector3.AXIS_X: joint.set_flag_x(Generic6DOFJoint3D.FLAG_ENABLE_LINEAR_LIMIT, enabled)
+        Vector3.AXIS_Y: joint.set_flag_y(Generic6DOFJoint3D.FLAG_ENABLE_LINEAR_LIMIT, enabled)
+        Vector3.AXIS_Z: joint.set_flag_z(Generic6DOFJoint3D.FLAG_ENABLE_LINEAR_LIMIT, enabled)
+
+func _set_linear_spring_enabled(joint: Generic6DOFJoint3D, axis: int, enabled: bool) -> void:
+    match axis:
+        Vector3.AXIS_X: joint.set_flag_x(Generic6DOFJoint3D.FLAG_ENABLE_LINEAR_SPRING, enabled)
+        Vector3.AXIS_Y: joint.set_flag_y(Generic6DOFJoint3D.FLAG_ENABLE_LINEAR_SPRING, enabled)
+        Vector3.AXIS_Z: joint.set_flag_z(Generic6DOFJoint3D.FLAG_ENABLE_LINEAR_SPRING, enabled)
+
+
 # 创建 6 自由度关节
 func create_6dof_joint():
     var joint = Generic6DOFJoint3D.new()
     
-    # 线性轴设置（X, Y, Z）
-    for axis in range(3):
-        # 启用/禁用线性运动
-        joint.set_param(axis, Generic6DOFJoint3D.PARAM_LINEAR_LOWER_LIMIT, 0)
-        joint.set_param(axis, Generic6DOFJoint3D.PARAM_LINEAR_UPPER_LIMIT, 0)
-        joint.set_param(axis, Generic6DOFJoint3D.PARAM_LINEAR_LIMIT_SOFTNESS, 0.9)
-        joint.set_param(axis, Generic6DOFJoint3D.PARAM_LINEAR_DAMPING, 0.5)
-        joint.set_param(axis, Generic6DOFJoint3D.PARAM_LINEAR_RESTITUTION, 0.1)
+    # 线性轴：三个轴都锁死（下限=上限=0），并显式打开限位开关
+    for axis in [Vector3.AXIS_X, Vector3.AXIS_Y, Vector3.AXIS_Z]:
+        _set_linear_limit(joint, axis, 0.0, 0.0)
+        _set_linear_limit_enabled(joint, axis, true)
     
-    # 角轴设置（X, Y, Z）
-    for axis in range(3):
-        joint.set_param(axis + 3, Generic6DOFJoint3D.PARAM_ANGULAR_LOWER_LIMIT, 0)
-        joint.set_param(axis + 3, Generic6DOFJoint3D.PARAM_ANGULAR_UPPER_LIMIT, 0)
-        joint.set_param(axis + 3, Generic6DOFJoint3D.PARAM_ANGULAR_LIMIT_SOFTNESS, 0.9)
-        joint.set_param(axis + 3, Generic6DOFJoint3D.PARAM_ANGULAR_DAMPING, 0.5)
-        joint.set_param(axis + 3, Generic6DOFJoint3D.PARAM_ANGULAR_RESTITUTION, 0.1)
+    # 角轴：同样全部锁死
+    for axis in [Vector3.AXIS_X, Vector3.AXIS_Y, Vector3.AXIS_Z]:
+        _set_angular_limit(joint, axis, 0.0, 0.0)
+        match axis:
+            Vector3.AXIS_X: joint.set_flag_x(Generic6DOFJoint3D.FLAG_ENABLE_ANGULAR_LIMIT, true)
+            Vector3.AXIS_Y: joint.set_flag_y(Generic6DOFJoint3D.FLAG_ENABLE_ANGULAR_LIMIT, true)
+            Vector3.AXIS_Z: joint.set_flag_z(Generic6DOFJoint3D.FLAG_ENABLE_ANGULAR_LIMIT, true)
     
     return joint
 ```
+
+> ⚠️ **两个必须知道的坑**
+>
+> 1. **没有 `set_param(axis, PARAM, value)`**：4.x 只提供 `set_param_x/y/z` 与 `set_flag_x/y/z`。旧教程里 `joint.set_param(axis, Generic6DOFJoint3D.PARAM_LINEAR_LOWER_LIMIT, 0)` 这种写法在 4.x 会直接报"函数不存在"。
+> 2. **限位与弹簧默认是关闭的**：即使把 `PARAM_LINEAR_LOWER_LIMIT` / `PARAM_LINEAR_SPRING_STIFFNESS` 都写上了，只要没有显式 `set_flag_*(FLAG_ENABLE_LINEAR_LIMIT / FLAG_ENABLE_LINEAR_SPRING, true)`，**限制与弹簧都不会生效**。这是 6DOF 关节"参数写了却没反应"的头号原因。
 
 ### 5.2 轴向配置
 
@@ -378,19 +438,23 @@ func configure_6dof_axis(joint: Generic6DOFJoint3D, axis: int,
     
     # 线性轴
     if linear_enabled:
-        joint.set_param(axis, Generic6DOFJoint3D.PARAM_LINEAR_LOWER_LIMIT, -linear_range)
-        joint.set_param(axis, Generic6DOFJoint3D.PARAM_LINEAR_UPPER_LIMIT, linear_range)
+        _set_linear_limit(joint, axis, -linear_range, linear_range)
     else:
-        joint.set_param(axis, Generic6DOFJoint3D.PARAM_LINEAR_LOWER_LIMIT, 0)
-        joint.set_param(axis, Generic6DOFJoint3D.PARAM_LINEAR_UPPER_LIMIT, 0)
+        _set_linear_limit(joint, axis, 0.0, 0.0)
+    # 限位必须显式打开
+    _set_linear_limit_enabled(joint, axis, true)
     
     # 角轴
     if angular_enabled:
-        joint.set_param(axis + 3, Generic6DOFJoint3D.PARAM_ANGULAR_LOWER_LIMIT, -angular_range)
-        joint.set_param(axis + 3, Generic6DOFJoint3D.PARAM_ANGULAR_UPPER_LIMIT, angular_range)
+        _set_angular_limit(joint, axis, -angular_range, angular_range)
     else:
-        joint.set_param(axis + 3, Generic6DOFJoint3D.PARAM_ANGULAR_LOWER_LIMIT, 0)
-        joint.set_param(axis + 3, Generic6DOFJoint3D.PARAM_ANGULAR_UPPER_LIMIT, 0)
+        _set_angular_limit(joint, axis, 0.0, 0.0)
+    
+    # 角限位同样要显式打开
+    match axis:
+        Vector3.AXIS_X: joint.set_flag_x(Generic6DOFJoint3D.FLAG_ENABLE_ANGULAR_LIMIT, true)
+        Vector3.AXIS_Y: joint.set_flag_y(Generic6DOFJoint3D.FLAG_ENABLE_ANGULAR_LIMIT, true)
+        Vector3.AXIS_Z: joint.set_flag_z(Generic6DOFJoint3D.FLAG_ENABLE_ANGULAR_LIMIT, true)
 ```
 
 ### 5.3 应用：车辆悬挂
@@ -411,22 +475,31 @@ func create_vehicle_suspension():
     suspension.node_a = chassis.get_path()
     suspension.node_b = wheel.get_path()
     
-    # Y 轴（上下）允许移动
-    suspension.set_param(1, Generic6DOFJoint3D.PARAM_LINEAR_LOWER_LIMIT, -0.2)
-    suspension.set_param(1, Generic6DOFJoint3D.PARAM_LINEAR_UPPER_LIMIT, 0.2)
-    suspension.set_param(1, Generic6DOFJoint3D.PARAM_LINEAR_SPRING_STIFFNESS, 50.0)
-    suspension.set_param(1, Generic6DOFJoint3D.PARAM_LINEAR_SPRING_DAMPING, 5.0)
-    suspension.set_param(1, Generic6DOFJoint3D.PARAM_LINEAR_SPRING_EQUILIBRIUM_POINT, 0)
+    # Y 轴（上下）允许移动 ±0.2m
+    suspension.set_param_y(Generic6DOFJoint3D.PARAM_LINEAR_LOWER_LIMIT, -0.2)
+    suspension.set_param_y(Generic6DOFJoint3D.PARAM_LINEAR_UPPER_LIMIT, 0.2)
+    # 线性弹簧：刚度、阻尼、平衡点
+    suspension.set_param_y(Generic6DOFJoint3D.PARAM_LINEAR_SPRING_STIFFNESS, 50.0)
+    suspension.set_param_y(Generic6DOFJoint3D.PARAM_LINEAR_SPRING_DAMPING, 5.0)
+    suspension.set_param_y(Generic6DOFJoint3D.PARAM_LINEAR_SPRING_EQUILIBRIUM_POINT, 0.0)
+    # ⚠️ 必须显式打开限位与弹簧开关，否则上面这些参数一个都不生效
+    suspension.set_flag_y(Generic6DOFJoint3D.FLAG_ENABLE_LINEAR_LIMIT, true)
+    suspension.set_flag_y(Generic6DOFJoint3D.FLAG_ENABLE_LINEAR_SPRING, true)
     
-    # 其他轴锁定
-    for axis in [0, 2]:
-        suspension.set_param(axis, Generic6DOFJoint3D.PARAM_LINEAR_LOWER_LIMIT, 0)
-        suspension.set_param(axis, Generic6DOFJoint3D.PARAM_LINEAR_UPPER_LIMIT, 0)
+    # 其他轴锁定（线性）
+    suspension.set_param_x(Generic6DOFJoint3D.PARAM_LINEAR_LOWER_LIMIT, 0)
+    suspension.set_param_x(Generic6DOFJoint3D.PARAM_LINEAR_UPPER_LIMIT, 0)
+    suspension.set_param_z(Generic6DOFJoint3D.PARAM_LINEAR_LOWER_LIMIT, 0)
+    suspension.set_param_z(Generic6DOFJoint3D.PARAM_LINEAR_UPPER_LIMIT, 0)
+    suspension.set_flag_x(Generic6DOFJoint3D.FLAG_ENABLE_LINEAR_LIMIT, true)
+    suspension.set_flag_z(Generic6DOFJoint3D.FLAG_ENABLE_LINEAR_LIMIT, true)
     
     # 所有角轴锁定
-    for axis in range(3):
-        suspension.set_param(axis + 3, Generic6DOFJoint3D.PARAM_ANGULAR_LOWER_LIMIT, 0)
-        suspension.set_param(axis + 3, Generic6DOFJoint3D.PARAM_ANGULAR_UPPER_LIMIT, 0)
+    for axis in [Vector3.AXIS_X, Vector3.AXIS_Y, Vector3.AXIS_Z]:
+        _set_angular_limit(suspension, axis, 0.0, 0.0)
+    suspension.set_flag_x(Generic6DOFJoint3D.FLAG_ENABLE_ANGULAR_LIMIT, true)
+    suspension.set_flag_y(Generic6DOFJoint3D.FLAG_ENABLE_ANGULAR_LIMIT, true)
+    suspension.set_flag_z(Generic6DOFJoint3D.FLAG_ENABLE_ANGULAR_LIMIT, true)
     
     return suspension
 ```
@@ -517,28 +590,64 @@ func create_damped_spring():
 
 ```gdscript
 # 配置关节马达
+# ⚠️ 4.x 的 HingeJoint3D 没有 PARAM_ANGULAR_MOTOR_* 这一族常量。
+#    真实枚举是：PARAM_BIAS / PARAM_LIMIT_UPPER / PARAM_LIMIT_LOWER /
+#               PARAM_LIMIT_BIAS / PARAM_LIMIT_SOFTNESS / PARAM_LIMIT_RELAXATION /
+#               PARAM_MOTOR_TARGET_VELOCITY / PARAM_MOTOR_MAX_IMPULSE
+#    马达的开关是 Flag：FLAG_USE_LIMIT / FLAG_ENABLE_MOTOR
 func setup_joint_motor(joint: HingeJoint3D, target_velocity: float, force_limit: float):
-    joint.set_param(HingeJoint3D.PARAM_ANGULAR_MOTOR_TARGET_VELOCITY, target_velocity)
-    joint.set_param(HingeJoint3D.PARAM_ANGULAR_MOTOR_FORCE_LIMIT, force_limit)
-    joint.set_param(HingeJoint3D.PARAM_ANGULAR_MOTOR_ENABLED, true)
+    # 启用马达（开关是 Flag，不是 Param）
+    joint.set_flag(HingeJoint3D.FLAG_ENABLE_MOTOR, true)
+    joint.set_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY, target_velocity)
+    joint.set_param(HingeJoint3D.PARAM_MOTOR_MAX_IMPULSE, force_limit)
 
 # 马达控制
 func control_motor(joint: HingeJoint3D, enabled: bool):
-    joint.set_param(HingeJoint3D.PARAM_ANGULAR_MOTOR_ENABLED, enabled)
+    joint.set_flag(HingeJoint3D.FLAG_ENABLE_MOTOR, enabled)
 
 func set_motor_speed(joint: HingeJoint3D, speed: float):
-    joint.set_param(HingeJoint3D.PARAM_ANGULAR_MOTOR_TARGET_VELOCITY, speed)
+    joint.set_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY, speed)
 ```
 
 ### 7.2 弹簧配置
 
 ```gdscript
 # 配置关节弹簧
-func setup_joint_spring(joint: SliderJoint3D, stiffness: float, damping: float, equilibrium: float):
-    joint.set_param(SliderJoint3D.PARAM_LINEAR_SPRING_STIFFNESS, stiffness)
-    joint.set_param(SliderJoint3D.PARAM_LINEAR_SPRING_DAMPING, damping)
-    joint.set_param(SliderJoint3D.PARAM_LINEAR_SPRING_EQUILIBRIUM_POINT, equilibrium)
+# ⚠️ Godot 4 的 3D 滑块关节没有弹簧参数：
+#    SliderJoint3D.Param 里只有 LIMIT_* / MOTION_* / ORTHOGONAL_* 三族，
+#    不存在 PARAM_LINEAR_SPRING_STIFFNESS / _DAMPING / _EQUILIBRIUM_POINT。
+#
+#    需要 3D 弹簧时的两条可行路径：
+#    1) 用 Generic6DOFJoint3D 的线性弹簧（并显式打开 FLAG_ENABLE_LINEAR_SPRING）；
+#    2) 自己按胡克定律施力。
+func setup_6dof_spring(joint: Generic6DOFJoint3D, axis: int,
+                       stiffness: float, damping: float, equilibrium: float):
+    match axis:
+        Vector3.AXIS_X:
+            joint.set_param_x(Generic6DOFJoint3D.PARAM_LINEAR_SPRING_STIFFNESS, stiffness)
+            joint.set_param_x(Generic6DOFJoint3D.PARAM_LINEAR_SPRING_DAMPING, damping)
+            joint.set_param_x(Generic6DOFJoint3D.PARAM_LINEAR_SPRING_EQUILIBRIUM_POINT, equilibrium)
+            joint.set_flag_x(Generic6DOFJoint3D.FLAG_ENABLE_LINEAR_SPRING, true)
+        Vector3.AXIS_Y:
+            joint.set_param_y(Generic6DOFJoint3D.PARAM_LINEAR_SPRING_STIFFNESS, stiffness)
+            joint.set_param_y(Generic6DOFJoint3D.PARAM_LINEAR_SPRING_DAMPING, damping)
+            joint.set_param_y(Generic6DOFJoint3D.PARAM_LINEAR_SPRING_EQUILIBRIUM_POINT, equilibrium)
+            joint.set_flag_y(Generic6DOFJoint3D.FLAG_ENABLE_LINEAR_SPRING, true)
+        Vector3.AXIS_Z:
+            joint.set_param_z(Generic6DOFJoint3D.PARAM_LINEAR_SPRING_STIFFNESS, stiffness)
+            joint.set_param_z(Generic6DOFJoint3D.PARAM_LINEAR_SPRING_DAMPING, damping)
+            joint.set_param_z(Generic6DOFJoint3D.PARAM_LINEAR_SPRING_EQUILIBRIUM_POINT, equilibrium)
+            joint.set_flag_z(Generic6DOFJoint3D.FLAG_ENABLE_LINEAR_SPRING, true)
+
+# 或者自己施加胡克力（不依赖任何关节类型）
+func apply_spring_force(body: RigidBody3D, anchor: Vector3, stiffness: float, damping: float) -> void:
+    var displacement := anchor - body.global_position
+    var velocity := body.linear_velocity
+    var force := displacement * stiffness - velocity * damping
+    body.apply_central_force(force)
 ```
+
+> 2D 有专门的 `DampedSpringJoint2D`（`stiffness` / `damping` / `rest_length`），3D **没有**对应的 `DampedSpringJoint3D`。
 
 ---
 
@@ -564,8 +673,12 @@ func create_crane():
     var arm_joint = HingeJoint3D.new()
     arm_joint.node_a = base.get_path()
     arm_joint.node_b = arm.get_path()
-    arm_joint.set_param(HingeJoint3D.PARAM_ANGULAR_LIMIT_LOWER_ANGLE, deg_to_rad(-30))
-    arm_joint.set_param(HingeJoint3D.PARAM_ANGULAR_LIMIT_UPPER_ANGLE, deg_to_rad(30))
+    # ⚠️ 4.x 没有 PARAM_ANGULAR_LIMIT_LOWER_ANGLE / _UPPER_ANGLE，
+    #    铰链限位参数名是 PARAM_LIMIT_LOWER / PARAM_LIMIT_UPPER，
+    #    而且必须显式打开限位开关 FLAG_USE_LIMIT。
+    arm_joint.set_flag(HingeJoint3D.FLAG_USE_LIMIT, true)
+    arm_joint.set_param(HingeJoint3D.PARAM_LIMIT_LOWER, deg_to_rad(-30))
+    arm_joint.set_param(HingeJoint3D.PARAM_LIMIT_UPPER, deg_to_rad(30))
     
     # 吊钩关节
     var hook_joint = SliderJoint3D.new()
@@ -608,10 +721,16 @@ func create_domino_chain(count: int, spacing: float):
         joint.node_a = dominos[i].get_path()
         joint.node_b = dominos[i + 1].get_path()
         
-        # 允许小范围移动
-        for axis in range(3):
-            joint.set_param(axis, Generic6DOFJoint3D.PARAM_LINEAR_LOWER_LIMIT, -0.05)
-            joint.set_param(axis, Generic6DOFJoint3D.PARAM_LINEAR_UPPER_LIMIT, 0.05)
+        # 允许小范围移动（按轴设置，且要显式打开限位开关）
+        joint.set_param_x(Generic6DOFJoint3D.PARAM_LINEAR_LOWER_LIMIT, -0.05)
+        joint.set_param_x(Generic6DOFJoint3D.PARAM_LINEAR_UPPER_LIMIT, 0.05)
+        joint.set_param_y(Generic6DOFJoint3D.PARAM_LINEAR_LOWER_LIMIT, -0.05)
+        joint.set_param_y(Generic6DOFJoint3D.PARAM_LINEAR_UPPER_LIMIT, 0.05)
+        joint.set_param_z(Generic6DOFJoint3D.PARAM_LINEAR_LOWER_LIMIT, -0.05)
+        joint.set_param_z(Generic6DOFJoint3D.PARAM_LINEAR_UPPER_LIMIT, 0.05)
+        joint.set_flag_x(Generic6DOFJoint3D.FLAG_ENABLE_LINEAR_LIMIT, true)
+        joint.set_flag_y(Generic6DOFJoint3D.FLAG_ENABLE_LINEAR_LIMIT, true)
+        joint.set_flag_z(Generic6DOFJoint3D.FLAG_ENABLE_LINEAR_LIMIT, true)
         
         add_child(joint)
 ```
@@ -630,7 +749,7 @@ func create_domino_chain(count: int, spacing: float):
 │ 关节类型          │ 马达支持      │ 控制方式               │
 ├─────────────────────────────────────────────────────────────┤
 │ HingeJoint3D      │ ✅ 角速度马达  │ 速度/力矩控制          │
-│ SliderJoint3D     │ ✅ 线性马达    │ 速度/力控制            │
+│ SliderJoint3D     │ ❌ 无马达参数  │ 自行施力 / 改用 6DOF   │
 │ ConeTwistJoint3D  │ ❌ 无马达      │ 被动关节               │
 │ Generic6DOFJoint  │ ✅ 多轴马达    │ 每轴独立控制           │
 │ PinJoint2D        │ ✅ 角速度马达  │ 速度控制               │
@@ -642,20 +761,17 @@ func create_domino_chain(count: int, spacing: float):
 ```gdscript
 # 铰链关节马达配置
 func setup_hinge_motor(joint: HingeJoint3D):
-    # 启用马达
-    joint.set_param(HingeJoint3D.PARAM_ANGULAR_MOTOR_ENABLED, true)
+    # 启用马达（开关是 Flag：FLAG_ENABLE_MOTOR）
+    joint.set_flag(HingeJoint3D.FLAG_ENABLE_MOTOR, true)
     
     # 目标速度（弧度/秒）
-    joint.set_param(HingeJoint3D.PARAM_ANGULAR_MOTOR_TARGET_VELOCITY, deg_to_rad(90))
+    joint.set_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY, deg_to_rad(90))
     
     # 最大力矩
-    joint.set_param(HingeJoint3D.PARAM_ANGULAR_MOTOR_MAX_IMPULSE, 100.0)
+    joint.set_param(HingeJoint3D.PARAM_MOTOR_MAX_IMPULSE, 100.0)
     
-    # 马达模式
-    # JOINT_MOTOR_TARGET_VELOCITY: 速度控制
-    # JOINT_MOTOR_FORCE_LIMIT: 力矩限制
-    
-    print("Motor enabled: ", joint.is_enabled(HingeJoint3D.PARAM_ANGULAR_MOTOR))
+    # 查询马达是否开启：用 get_flag(FLAG_ENABLE_MOTOR)
+    print("Motor enabled: ", joint.get_flag(HingeJoint3D.FLAG_ENABLE_MOTOR))
 
 # 速度控制示例
 class_name MotorizedHinge
@@ -667,114 +783,111 @@ extends HingeJoint3D
 
 func _ready():
     # 启用马达
-    set_param(PARAM_ANGULAR_MOTOR_ENABLED, true)
-    set_param(PARAM_ANGULAR_MOTOR_TARGET_VELOCITY, deg_to_rad(target_speed))
-    set_param(PARAM_ANGULAR_MOTOR_MAX_IMPULSE, max_torque)
+    set_flag(HingeJoint3D.FLAG_ENABLE_MOTOR, true)
+    set_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY, deg_to_rad(target_speed))
+    set_param(HingeJoint3D.PARAM_MOTOR_MAX_IMPULSE, max_torque)
 
 func _physics_process(delta):
     # 动态调整速度
     if Input.is_action_pressed("speed_up"):
-        set_param(PARAM_ANGULAR_MOTOR_TARGET_VELOCITY, deg_to_rad(180))
+        set_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY, deg_to_rad(180))
     elif Input.is_action_pressed("slow_down"):
-        set_param(PARAM_ANGULAR_MOTOR_TARGET_VELOCITY, deg_to_rad(45))
+        set_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY, deg_to_rad(45))
     
     # 反转方向
     if Input.is_action_just_pressed("reverse"):
-        var current = get_param(PARAM_ANGULAR_MOTOR_TARGET_VELOCITY)
-        set_param(PARAM_ANGULAR_MOTOR_TARGET_VELOCITY, -current)
+        var current = get_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY)
+        set_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY, -current)
 
 # 力矩控制示例
 func setup_torque_control(joint: HingeJoint3D, torque: float):
     # 设置力矩限制模式
-    joint.set_param(HingeJoint3D.PARAM_ANGULAR_MOTOR_ENABLED, true)
-    joint.set_param(HingeJoint3D.PARAM_ANGULAR_MOTOR_TARGET_VELOCITY, 0.0)
-    joint.set_param(HingeJoint3D.PARAM_ANGULAR_MOTOR_MAX_IMPULSE, torque)
+    joint.set_flag(HingeJoint3D.FLAG_ENABLE_MOTOR, true)
+    joint.set_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY, 0.0)
+    joint.set_param(HingeJoint3D.PARAM_MOTOR_MAX_IMPULSE, torque)
     
     # 施加力矩（通过手动应用）
-    var body_b = joint.get_node_b()
-    if body_b:
-        var body = get_node_or_null(body_b)
-        if body is RigidBody3D:
-            body.apply_torque(Vector3.UP * torque)
+    var body = get_node_or_null(node_b)
+    if body is RigidBody3D:
+        body.apply_torque(Vector3.UP * torque)
 ```
 
 ### 9.3 滑块关节马达
 
 ```gdscript
-# 滑块关节马达配置
-func setup_slider_motor(joint: SliderJoint3D):
-    # 启用线性马达
-    joint.set_param(SliderJoint3D.PARAM_LINEAR_MOTOR_ENABLED, true)
-    
-    # 目标速度（米/秒）
-    joint.set_param(SliderJoint3D.PARAM_LINEAR_MOTOR_TARGET_VELOCITY, 2.0)
-    
-    # 最大力
-    joint.set_param(SliderJoint3D.PARAM_LINEAR_MOTOR_MAX_IMPULSE, 500.0)
-    
-    # 启用角马达（可选，用于旋转）
-    joint.set_param(SliderJoint3D.PARAM_ANGULAR_MOTOR_ENABLED, true)
-    joint.set_param(SliderJoint3D.PARAM_ANGULAR_MOTOR_TARGET_VELOCITY, deg_to_rad(45))
-    joint.set_param(SliderJoint3D.PARAM_ANGULAR_MOTOR_MAX_IMPULSE, 50.0)
+# ⚠️ Godot 4 的 SliderJoint3D 没有马达参数。
+#    SliderJoint3D.Param 里不存在 PARAM_LINEAR_MOTOR_ENABLED /
+#    PARAM_LINEAR_MOTOR_TARGET_VELOCITY / PARAM_LINEAR_MOTOR_MAX_IMPULSE，
+#    也不存在 PARAM_LINEAR_POSITION（拿不到滑块当前位置）。
+#
+#    路线 A：用 Generic6DOFJoint3D 的线性马达（见 9.4 节）
+#    路线 B：自己按目标速度施力（下面的电梯控制器）
+```
 
-# 电梯控制器
+```gdscript
+# 电梯控制器（路线 B：自行施力驱动）
+# 关节用 SliderJoint3D 限制行程，用力来驱动
 class_name ElevatorController
 
-extends SliderJoint3D
+extends Node3D
 
 @export var floor_height: float = 3.0
 @export var max_floors: int = 10
 @export var speed: float = 2.0
+@export var drive_force: float = 2000.0
+
+@export var platform: RigidBody3D
+@export var slider: SliderJoint3D
 
 var current_floor: int = 1
 var target_floor: int = 1
+var _origin_height: float = 0.0
 
 func _ready():
-    # 配置马达
-    set_param(PARAM_LINEAR_MOTOR_ENABLED, true)
-    set_param(PARAM_LINEAR_MOTOR_MAX_IMPULSE, 1000.0)
-    
-    # 设置限位
-    set_param(PARAM_LINEAR_LIMIT_LOWER, 0)
-    set_param(PARAM_LINEAR_LIMIT_UPPER, floor_height * (max_floors - 1))
+    if platform:
+        _origin_height = platform.global_position.y
+    # 设置限位（SliderJoint3D 唯一的"行程"控制）
+    slider.set_param(SliderJoint3D.PARAM_LINEAR_LIMIT_LOWER, 0)
+    slider.set_param(SliderJoint3D.PARAM_LINEAR_LIMIT_UPPER, floor_height * (max_floors - 1))
 
 func go_to_floor(floor: int):
     target_floor = clamp(floor, 1, max_floors)
     var target_height = (target_floor - 1) * floor_height
-    
-    # 计算方向
-    var current_height = get_param(PARAM_LINEAR_POSITION)
-    var direction = sign(target_height - current_height)
-    
-    # 设置马达速度
-    set_param(PARAM_LINEAR_MOTOR_TARGET_VELOCITY, direction * speed)
-    
     print("Going to floor ", target_floor, " (", target_height, "m)")
 
 func _physics_process(delta):
-    var current_height = get_param(PARAM_LINEAR_POSITION)
-    var target_height = (target_floor - 1) * floor_height
-    
-    # 检查是否到达目标楼层
-    if abs(current_height - target_height) < 0.1:
-        set_param(PARAM_LINEAR_MOTOR_TARGET_VELOCITY, 0.0)
-        print("Arrived at floor ", target_floor)
+    if platform == null:
+        return
+    var target_height = _origin_height + (target_floor - 1) * floor_height
+    var current_height = platform.global_position.y
+    var error = target_height - current_height
+
+    # 到达目标楼层：停止驱动
+    if abs(error) < 0.1:
+        return
+
+    # 简单的 P 控制：误差 → 目标速度 → 力
+    var target_velocity = clamp(error * 2.0, -speed, speed)
+    var velocity_error = target_velocity - platform.linear_velocity.y
+    platform.apply_central_force(Vector3.UP * velocity_error * drive_force / max(speed, 0.001))
 ```
 
 ### 9.4 6DOF 关节多轴马达
 
 ```gdscript
 # 6DOF 关节多轴马达配置
+# ⚠️ 4.x 没有 PARAM_LINEAR_MOTOR_ENABLED / PARAM_ANGULAR_MOTOR_ENABLED 这类"整轴开关"参数：
+#    马达的启用是【按轴的 Flag】：
+#      FLAG_ENABLE_MOTOR          —— 该轴马达总开关
+#      FLAG_ENABLE_LINEAR_MOTOR   —— 该轴线性马达
+#    数值参数：PARAM_LINEAR_MOTOR_TARGET_VELOCITY / PARAM_LINEAR_MOTOR_FORCE_LIMIT
+#              PARAM_ANGULAR_MOTOR_TARGET_VELOCITY / PARAM_ANGULAR_MOTOR_FORCE_LIMIT
 func setup_6dof_motors(joint: Generic6DOFJoint3D):
-    # 线性轴（X, Y, Z）
-    joint.set_param(Generic6DOFJoint3D.PARAM_LINEAR_MOTOR_ENABLED, Vector3(1, 1, 0))
-    joint.set_param(Generic6DOFJoint3D.PARAM_LINEAR_MOTOR_TARGET_VELOCITY, Vector3(1, 0, 0))
-    joint.set_param(Generic6DOFJoint3D.PARAM_LINEAR_MOTOR_MAX_IMPULSE, Vector3(100, 100, 0))
-    
-    # 角轴（X, Y, Z）
-    joint.set_param(Generic6DOFJoint3D.PARAM_ANGULAR_MOTOR_ENABLED, Vector3(1, 0, 1))
-    joint.set_param(Generic6DOFJoint3D.PARAM_ANGULAR_MOTOR_TARGET_VELOCITY, Vector3(0, 0, deg_to_rad(45)))
-    joint.set_param(Generic6DOFJoint3D.PARAM_ANGULAR_MOTOR_MAX_IMPULSE, Vector3(50, 0, 50))
+    # 线性马达：只开 Y 轴
+    joint.set_param_y(Generic6DOFJoint3D.PARAM_LINEAR_MOTOR_TARGET_VELOCITY, 1.0)
+    joint.set_param_y(Generic6DOFJoint3D.PARAM_LINEAR_MOTOR_FORCE_LIMIT, 100.0)
+    joint.set_flag_y(Generic6DOFJoint3D.FLAG_ENABLE_MOTOR, true)
+    joint.set_flag_y(Generic6DOFJoint3D.FLAG_ENABLE_LINEAR_MOTOR, true)
 
 # 机械臂控制器
 class_name RoboticArmController
@@ -785,16 +898,29 @@ extends Generic6DOFJoint3D
 @export var rotation_speed: float = 90.0
 
 func move_linear(direction: Vector3):
-    set_param(PARAM_LINEAR_MOTOR_ENABLED, direction)
-    set_param(PARAM_LINEAR_MOTOR_TARGET_VELOCITY, direction * arm_speed)
+    # direction 的每个分量对应一个轴的目标速度
+    set_param_x(Generic6DOFJoint3D.PARAM_LINEAR_MOTOR_TARGET_VELOCITY, direction.x * arm_speed)
+    set_param_y(Generic6DOFJoint3D.PARAM_LINEAR_MOTOR_TARGET_VELOCITY, direction.y * arm_speed)
+    set_param_z(Generic6DOFJoint3D.PARAM_LINEAR_MOTOR_TARGET_VELOCITY, direction.z * arm_speed)
+    set_flag_x(Generic6DOFJoint3D.FLAG_ENABLE_LINEAR_MOTOR, true)
+    set_flag_y(Generic6DOFJoint3D.FLAG_ENABLE_LINEAR_MOTOR, true)
+    set_flag_z(Generic6DOFJoint3D.FLAG_ENABLE_LINEAR_MOTOR, true)
 
 func rotate_axis(axis: Vector3):
-    set_param(PARAM_ANGULAR_MOTOR_ENABLED, axis)
-    set_param(PARAM_ANGULAR_MOTOR_TARGET_VELOCITY, axis * deg_to_rad(rotation_speed))
+    set_param_x(Generic6DOFJoint3D.PARAM_ANGULAR_MOTOR_TARGET_VELOCITY, axis.x * deg_to_rad(rotation_speed))
+    set_param_y(Generic6DOFJoint3D.PARAM_ANGULAR_MOTOR_TARGET_VELOCITY, axis.y * deg_to_rad(rotation_speed))
+    set_param_z(Generic6DOFJoint3D.PARAM_ANGULAR_MOTOR_TARGET_VELOCITY, axis.z * deg_to_rad(rotation_speed))
+    set_flag_x(Generic6DOFJoint3D.FLAG_ENABLE_MOTOR, true)
+    set_flag_y(Generic6DOFJoint3D.FLAG_ENABLE_MOTOR, true)
+    set_flag_z(Generic6DOFJoint3D.FLAG_ENABLE_MOTOR, true)
 
 func stop():
-    set_param(PARAM_LINEAR_MOTOR_ENABLED, Vector3.ZERO)
-    set_param(PARAM_ANGULAR_MOTOR_ENABLED, Vector3.ZERO)
+    set_param_x(Generic6DOFJoint3D.PARAM_LINEAR_MOTOR_TARGET_VELOCITY, 0.0)
+    set_param_y(Generic6DOFJoint3D.PARAM_LINEAR_MOTOR_TARGET_VELOCITY, 0.0)
+    set_param_z(Generic6DOFJoint3D.PARAM_LINEAR_MOTOR_TARGET_VELOCITY, 0.0)
+    set_param_x(Generic6DOFJoint3D.PARAM_ANGULAR_MOTOR_TARGET_VELOCITY, 0.0)
+    set_param_y(Generic6DOFJoint3D.PARAM_ANGULAR_MOTOR_TARGET_VELOCITY, 0.0)
+    set_param_z(Generic6DOFJoint3D.PARAM_ANGULAR_MOTOR_TARGET_VELOCITY, 0.0)
 ```
 
 ### 9.5 马达性能优化
@@ -833,46 +959,71 @@ func stop():
 ┌─────────────────────────────────────────────────────────────┐
 │ 条件类型          │ 检测方式          │ 适用场景            │
 ├─────────────────────────────────────────────────────────────┤
-│ 力超过阈值        │ get_applied_force() │ 拉扯、撞击         │
-│ 速度超过阈值      │ get_applied_impulse() │ 高速冲击         │
-│ 角度超过限制      │ get_angle()       │ 过度扭转            │
-│ 距离超过限制      │ get_param()       │ 拉伸过度            │
+│ 约束受力过大      │ 两端相对偏转角    │ 拉扯、撞击          │
+│ 撞击动量过大      │ 刚体接触信号      │ 高速冲击            │
+│ 角度超过限制      │ 自行记录相对角度  │ 过度扭转            │
+│ 距离超过限制      │ 两端相对位移      │ 拉伸过度            │
 └─────────────────────────────────────────────────────────────┘
+
+> ⚠️ 4.x 的 `Joint3D` 没有 `get_applied_force()` / `get_applied_impulse()`（3.x `PhysicsBody` 的接口），
+> 也没有"当前关节角度"参数。上面两种判据都是用可测量的量近似出来的。
 ```
 
 ### 10.2 基础断裂实现
 
 ```gdscript
 # 可断裂的关节
+# ⚠️ Godot 4 的 Joint3D 没有 get_applied_force() / get_applied_impulse()
+#    （那是 3.x PhysicsBody 的接口），也没有 contact_monitor 属性
+#    （contact_monitor 属于 RigidBody3D 这类物理体，不属于关节）。
+#    4.x 也没有直接查询"关节约束力"的接口，常见做法是量测约束两端的
+#    相对偏转来间接反映受力；撞击强度则由刚体的接触冲量给出。
 class_name BreakableJoint
 
 extends HingeJoint3D
 
-@export var break_force: float = 500.0  # 断裂力阈值
-@export var break_impulse: float = 100.0  # 断裂冲量阈值
+@export var break_force: float = 500.0      # 断裂力阈值（用相对偏转折算）
+@export var break_impulse: float = 100.0   # 断裂冲量阈值
+@export var max_angle_degrees: float = 45.0  # 允许的最大相对偏转（度）
 
 var is_broken: bool = false
 
 signal joint_broken
 
 func _ready():
-    # 启用接触监控
-    contact_monitor = true
+    # 撞击强度用两端刚体的接触信号捕捉
+    # （刚体侧需要 contact_monitor = true 且 max_contacts_reported > 0）
+    for body in [get_node_or_null(node_a), get_node_or_null(node_b)]:
+        if body is RigidBody3D:
+            body.body_entered.connect(_on_body_entered)
 
 func _physics_process(delta):
     if is_broken:
         return
     
-    # 检测施加的力
-    var applied_force = get_applied_force()
-    var applied_impulse = get_applied_impulse()
-    
-    # 检查是否超过阈值
-    if applied_force.length() > break_force:
-        _break_joint("Force exceeded: " + str(applied_force.length()))
-    
-    if applied_impulse.length() > break_impulse:
-        _break_joint("Impulse exceeded: " + str(applied_impulse.length()))
+    # 约束受力：用两端的相对偏转角折算（约束越"硬"，偏转越小）
+    var deviation := _constraint_deviation_degrees()
+    if deviation > max_angle_degrees:
+        _break_joint("Deviation exceeded: " + str(deviation))
+
+func _on_body_entered(other: Node) -> void:
+    if is_broken:
+        return
+    # 用撞击者的动量近似冲量
+    if other is RigidBody3D:
+        var momentum := other.linear_velocity.length() * other.mass
+        if momentum > break_impulse:
+            _break_joint("Impact momentum exceeded: " + str(momentum))
+
+# 约束两端的相对偏转角（度）
+func _constraint_deviation_degrees() -> float:
+    var a := get_node_or_null(node_a) as RigidBody3D
+    var b := get_node_or_null(node_b) as RigidBody3D
+    if a == null or b == null:
+        return 0.0
+    var rel := a.global_transform.basis.get_rotation_quaternion().inverse() \
+        * b.global_transform.basis.get_rotation_quaternion()
+    return rad_to_deg(rel.get_angle())
 
 func _break_joint(reason: String):
     if is_broken:
@@ -897,8 +1048,8 @@ func _disconnect_joint():
     # 方法 2：从场景中移除关节
     # queue_free()
     
-    # 方法 3：禁用关节
-    # set_param(PARAM_ANGULAR_MOTOR_ENABLED, false)
+    # 方法 3：禁用马达（马达开关是 Flag）
+    # set_flag(HingeJoint3D.FLAG_ENABLE_MOTOR, false)
 
 func _play_break_effect():
     # 播放音效
@@ -966,12 +1117,15 @@ signal on_break
 
 func _physics_process(delta):
     # 累积应力
-    var current_force = get_applied_force().length()
-    var current_impulse = get_applied_impulse().length()
+    # ⚠️ Joint3D 没有 get_applied_force() / get_applied_impulse()，
+    #    也没有"当前关节角度"参数（没有 PARAM_ANGULAR_POSITION）。
+    #    改用可测量的量：约束两端的相对偏转 + 撞击动量。
+    var deviation := _constraint_deviation_degrees()
+    var momentum := _max_impact_momentum()
     
     # 计算应力值（0-1）
-    var force_stress = current_force / (max_force * safety_factor)
-    var impulse_stress = current_impulse / (max_impulse * safety_factor)
+    var force_stress = deviation / (max_angle * safety_factor)
+    var impulse_stress = momentum / (max_impulse * safety_factor)
     
     # 累积
     accumulated_stress = max(0, accumulated_stress - stress_decay * delta)
@@ -980,12 +1134,22 @@ func _physics_process(delta):
     # 检查断裂
     if accumulated_stress > 1.0:
         _break()
-    
-    # 角度检查（仅旋转关节）
-    if self is HingeJoint3D:
-        var angle = rad_to_deg((self as HingeJoint3D).get_param(HingeJoint3D.PARAM_ANGULAR_POSITION))
-        if abs(angle) > max_angle:
-            _break()
+
+func _constraint_deviation_degrees() -> float:
+    var a := get_node_or_null(node_a) as RigidBody3D
+    var b := get_node_or_null(node_b) as RigidBody3D
+    if a == null or b == null:
+        return 0.0
+    var rel := a.global_transform.basis.get_rotation_quaternion().inverse() \
+        * b.global_transform.basis.get_rotation_quaternion()
+    return rad_to_deg(rel.get_angle())
+
+func _max_impact_momentum() -> float:
+    var biggest := 0.0
+    for body in [get_node_or_null(node_a), get_node_or_null(node_b)]:
+        if body is RigidBody3D:
+            biggest = max(biggest, body.linear_velocity.length() * body.mass)
+    return biggest
 
 func _break():
     emit_signal("on_break")
@@ -1133,7 +1297,10 @@ func _create_rope():
             joints.append(joint)
         else:
             # 第一个段固定在天花板上
-            segment.mode = RigidBody3D.MODE_STATIC
+            # ⚠️ 4.x 的 RigidBody3D 没有 mode 属性与 MODE_STATIC / MODE_RIGID 枚举；
+            #    对应能力是 freeze + freeze_mode。
+            segment.freeze = true
+            segment.freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
         
         last_body = segment
 
@@ -1145,6 +1312,41 @@ func cut_rope(index: int):
         joints.remove_at(index)
         print("Rope cut at segment ", index)
 ```
+
+---
+
+## 11. 求解器与关节：关节多的场景为什么卡
+
+"关节一多物理就掉帧"是最常见的物理性能问题之一，但它很少是"碰撞检测"造成的——真正吃预算的是**约束求解**。Godot 为此提供了几个直接可调的旋钮：
+
+```gdscript
+# 1) 关节两端物体默认不再互相碰撞（Joint3D.exclude_nodes_from_collision，默认 true）
+#    机械连杆的两个零件本来就该贴合，额外算一次接触约束纯属浪费。
+var joint := HingeJoint3D.new()
+joint.exclude_nodes_from_collision = true
+
+# 2) 求解优先级：同一空间里多个关节互相影响时，先解哪个
+#    Joint3D.solver_priority 默认 1；数值越大越先被求解。
+joint.solver_priority = 10
+
+# 3) 服务器层等价接口（servers/physics_server_3d.h）
+var j_rid := joint.get_rid()
+PhysicsServer3D.joint_disable_collisions_between_bodies(j_rid, true)
+PhysicsServer3D.joint_set_solver_priority(j_rid, 10)
+```
+
+| 旋钮 | 位置 | 典型用法 |
+|------|------|----------|
+| `exclude_nodes_from_collision` | `Joint3D` 节点属性（默认 `true`） | 保持默认即可；自碰撞确实无用时再关 |
+| `solver_priority` | `Joint3D` 节点属性（默认 `1`） | 底盘/悬挂等"基础"关节调低，被动悬挂/软约束调高 |
+| `joint_set_solver_priority()` | `PhysicsServer3D` | 代码里统一调参 |
+| `joint_disable_collisions_between_bodies()` | `PhysicsServer3D` | 运行时批量开关 |
+
+**排查顺序**（与第 32 篇一致）：
+
+1. `Performance.get_monitor(Performance.PHYSICS_3D_COLLISION_PAIRS)` 很大 → 是**配对**太多，收窄碰撞掩码；
+2. 碰撞对正常但物理帧耗时高 → 是**求解**太重，减少关节数量、放松约束刚度（限制的 `PARAM_LIMIT_RELAXATION` 调大）、调 `solver_priority`；
+3. 关节连着高精度碰撞形状 → 窄相位成本被放大，给关节两端的物体换成球/盒等简单形状。
 
 ---
 
@@ -1181,6 +1383,15 @@ func cut_rope(index: int):
 - **HingeJoint3D**: <https://docs.godotengine.org/en/stable/classes/class_hingejoint3d.html>
 - **Generic6DOFJoint3D**: <https://docs.godotengine.org/en/stable/classes/class_generic6dofjoint3d.html>
 - **源码位置**: `servers/physics_3d/joints/`
+
+---
+
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+
+---
+
+**上一篇**: [第 26 篇：物理材质](/articles/26-physics-material.md)
+**下一篇**: [第 28 篇：车辆物理](/articles/28-vehicle-physics.md)
 
 ---
 

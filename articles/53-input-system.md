@@ -1,7 +1,7 @@
 # 第 53 篇：输入系统
 
-> **本卷定位**: 第七卷 脚本系统（5 篇）  
-> **前置知识**: 无  
+> **本卷定位**: 第一卷 引擎核心架构（11 篇）  
+> **前置知识**: 第 6 篇 信号系统、第 7 篇 资源系统  
 > **难度等级**: ⭐⭐⭐ 中级
 
 ---
@@ -179,7 +179,7 @@ func remove_action(action_name: String):
 func get_action_events(action_name: String) -> Array:
     # 获取动作的所有事件
     if InputMap.has_action(action_name):
-        return InputMap.get_action_list(action_name)
+        return InputMap.action_get_events(action_name)
     return []
 ```
 
@@ -205,20 +205,31 @@ func load_custom_input_map():
         for action in config.get_sections():
             custom_actions[action] = {}
             for key in config.get_section_keys(action):
-                custom_actions[action][key] = config.get_value(action, key)
+                # 保存时用 var_to_bytes() 编码过，这里必须用 bytes_to_var() 解码，
+                # 否则读回来的是一串字节而不是 InputEvent 数组。
+                # 第二个参数 allow_objects = true 允许还原 InputEvent 这类对象。
+                if key == "events":
+                    custom_actions[action][key] = bytes_to_var(config.get_value(action, key), true)
+                else:
+                    custom_actions[action][key] = config.get_value(action, key)
+        
+        # 读回来的绑定必须重新写进 InputMap，否则只是躺在字典里不生效
+        _apply_all_to_input_map()
 
 func save_custom_input_map():
     # 保存自定义输入映射
     var config = ConfigFile.new()
     
     for action in custom_actions:
-        config.set_value(action, "events", var_to_bytes(custom_actions[action]))
+        # InputEvent 继承自 Resource，序列化时必须开 full_objects = true，
+        # 否则对象会被丢成 null，保存下来的是一份空绑定。
+        config.set_value(action, "events", var_to_bytes(custom_actions[action]["events"], true))
     
     config.save("user://input_config.ini")
 
 func add_custom_action(action_name: String, events: Array):
     # 添加自定义动作
-    custom_actions[action_name] = events
+    custom_actions[action_name] = {"events": events}
     
     if not InputMap.has_action(action_name):
         InputMap.add_action(action_name)
@@ -239,7 +250,15 @@ func rebind_action(action_name: String, new_events: Array):
 
 func get_custom_binding(action_name: String) -> Array:
     # 获取自定义绑定
-    return custom_actions.get(action_name, [])
+    return custom_actions.get(action_name, {}).get("events", [])
+
+func _apply_all_to_input_map():
+    # 把已保存的绑定写回 InputMap
+    for action_name in custom_actions:
+        if not InputMap.has_action(action_name):
+            InputMap.add_action(action_name)
+        for event in custom_actions[action_name]["events"]:
+            InputMap.action_add_event(action_name, event)
 
 func reset_to_default():
     # 重置为默认
@@ -567,6 +586,25 @@ func is_button_pressed(device: int, button: int) -> bool:
     return Input.is_joy_button_pressed(device, button)
 ```
 
+**设备热插拔**
+
+Godot 4 通过 `InputEventJoypadConnection` 事件通知手柄插拔，上面的 `_handle_gamepad_connection()` 已经处理了它。除此之外还有两个更省事的接口：
+
+```gdscript
+# 列出当前已连接的手柄设备 ID（不需要自己维护列表）
+var devices := Input.get_connected_joypads()
+
+# 某个设备是否还是已知设备
+if Input.is_joy_known(device_id):
+    pass
+
+# 手柄的 GUID 与显示名（用于"记住玩家上次用的手柄"这类需求）
+var guid := Input.get_joy_guid(device_id)
+var name := Input.get_joy_name(device_id)
+```
+
+注意 `Input.get_connected_joypads()` 返回的是**当前**连接列表，手柄被拔掉后立刻就会消失；要在拔掉时做清理，仍然要监听 `InputEventJoypadConnection`。
+
 ---
 
 ## 4. 输入动作系统
@@ -610,6 +648,20 @@ func is_action_just_released(action: String) -> bool:
 
 func get_action_strength(action: String) -> float:
     return Input.get_action_strength(action)
+
+func get_movement_vector() -> Vector2:
+    # 组合四个方向动作。
+    # Input.get_vector(neg_x, pos_x, neg_y, pos_y, deadzone = -1.0) 会：
+    #   1. 读取四个动作的强度；
+    #   2. 应用死区（deadzone 传 -1 时使用 InputMap 里为该动作配置的死区）；
+    #   3. 对结果归一化，保证斜向移动的速度和直线移动一致（不会更快）。
+    # 直接读轴值再自己相加是做不到第 3 点的，这是最常见的"斜向跑得快"bug。
+    return Input.get_vector("move_left", "move_right", "move_forward", "move_backward")
+
+func get_movement_vector_3d() -> Vector3:
+    # 3D 版本：把 2D 向量映射到 XZ 平面
+    var v := get_movement_vector()
+    return Vector3(v.x, 0.0, -v.y)
 
 func get_active_actions() -> Array:
     return active_actions.duplicate()
@@ -731,7 +783,9 @@ func _input(event):
 
 ## 5. 输入系统优化
 
-### 5.1 输入缓冲
+### 5.1 本地输入缓冲（单进程内）
+
+> **边界说明**：本节的缓冲是**进程内**的——把最近几个输入事件暂存下来，供同一帧内的多次逻辑查询使用（例如"跳跃事件 + 攻击事件"在同一个物理帧里都要读到）。**跨网络**的输入缓冲（把输入排队等服务器确认、预测未确认输入的移动）是同步策略问题，见第 51 篇 §3 与第 57 篇 §2，本节不涉及。
 
 ```gdscript
 # 输入缓冲
@@ -788,7 +842,9 @@ func clear_buffer():
     input_buffer.clear()
 ```
 
-### 5.2 输入预测
+### 5.2 本地输入节奏预测（不跨网络）
+
+> **边界说明**：本节预测的是**下一帧本机可能按下的键**（例如"玩家按住 W，很大概率下一帧还按着 W"），属于本地手感优化。**跨网络**的输入预测是"根据已发送但未确认的输入推算本机应该显示的位置"，那是同步策略问题，见第 51 篇 §4.3 与第 57 篇 §2。
 
 ```gdscript
 # 输入预测
@@ -912,6 +968,15 @@ func apply_to_axis_value(value: float) -> float:
     # 应用灵敏度
     return sign(value) * adjusted * gamepad_sensitivity
 ```
+
+**死区的两种做法**
+
+| 做法 | API | 特点 |
+|------|-----|------|
+| 动作级死区 | `InputMap.action_set_deadzone("move_left", 0.2)` | 引擎在计算动作强度时就把小信号截断；`Input.get_vector()` 默认就会使用它 |
+| 手动死区 | 本节的 `apply_to_axis_value()` | 需要自己做"减去死区再归一化"的重映射，适合模拟量摇杆 |
+
+注意两者的区别：动作级死区只是**截断**（小于死区 → 强度 0），不会把剩下的区间重新拉伸到 0–1；手动死区会做重映射，因此手感更"线性"。如果用的是 `Input.get_vector()`，它内部对每个动作先应用动作级死区，再对合成向量做归一化。
 
 ---
 
@@ -1134,7 +1199,9 @@ func print_input_stats():
 2. **InputEvent 处理各种输入**，键盘、鼠标、手柄、触摸
 3. **输入动作系统抽象输入**，便于游戏逻辑处理
 4. **输入上下文管理状态**，不同场景不同输入
-5. **输入优化提升体验**，缓冲、预测、灵敏度调整
+5. **输入优化提升体验**，缓冲、节奏预测、灵敏度调整（均为**本机**行为）
+
+> **本篇边界**：本篇只讲 **Godot 4 侧的输入采集、映射与设备处理**（`InputMap`、`InputEvent`、死区、设备热插拔、`Input.get_vector()`）。**跨网络**的输入同步（把输入发给服务器、预测未确认输入、延迟补偿）属于同步策略，见第 51 篇 §3 与第 57 篇 §2。
 
 ### 关键术语
 
@@ -1170,9 +1237,14 @@ func print_input_stats():
 ---
 
 *写作时间：2026-03-20*  
-*字数：约 13,000 字*  
-*状态：✅ 完成*
+*字数：约 1,100 字（不含代码块）（不含代码块）*  
+*状态：✅ 完成*  
 
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+
+
+**上一篇**: [第 10 篇：Godot 跨平台架构详解](/articles/10-cross-platform-architecture.md)
+**下一篇**: [第 11 篇：Godot 渲染架构概述](/articles/11-godot-rendering-architecture.md)
 ---
 
 *最后更新：2026-03-20 21:00*

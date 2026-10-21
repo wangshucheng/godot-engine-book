@@ -72,7 +72,7 @@ Godot 4.x 提供了两条原生扩展路线：**自定义模块（Custom Module�
 | **分发方式** | 必须分发整个定制引擎 + 全部导出模板 | 只分发动态库 + `.gdextension` 文件，用户放进项目即可 |
 | **性能** | 零开销，直接函数调用，可内联 | 跨 ABI 边界有少量调用开销，热点路径可忽略，但高频小调用需留意 |
 
-关于性能需要说一句公道话：GDExtension 的调用开销是一次通过 C 函数指针的间接跳转加参数装箱，量级在纳秒级。只有当你每帧调用数万次小函数（例如逐粒子回调脚本层）时才需要认真测量；把批量数据留在 C++ 一侧处理、用一次调用传数组，是两边通用的优化手法。
+关于性能需要说一句公道话：GDExtension 的调用开销是一次通过 C 函数指针的间接跳转加参数装箱，量级在纳秒级（⚠️ 示意数据，未附测试环境——具体数值随平台、编译器与参数类型差异很大，请以自己的基准测试为准）。只有当你每帧调用数万次小函数（例如逐粒子回调脚本层）时才需要认真测量；把批量数据留在 C++ 一侧处理、用一次调用传数组，是两边通用的优化手法。
 
 ### 1.4 选型决策流程图
 
@@ -117,7 +117,7 @@ Godot 4.x 提供了两条原生扩展路线：**自定义模块（Custom Module�
 
 **场景二：不改动引擎。** 团队没有引擎程序员、不想维护引擎 fork、希望随时升级到官方新版本编辑器——GDExtension 让你完全停留在「引擎用户」的身份上。
 
-**场景三：快速迭代。** GDExtension 编译一次通常以秒计（只编译你自己的代码 + 增量链接），而重编译引擎是以十分钟计的。配合 `.gdextension` 文件中的 `reloadable = true`，调试构建下编辑器还能在重新编译后自动热重载扩展，无需重启编辑器。
+**场景三：快速迭代。** GDExtension 编译一次通常以秒计（只编译你自己的代码 + 增量链接），而重编译引擎是以十分钟计的（⚠️ 示意数据，未附测试环境——实际耗时随机器与增量范围差异很大）。配合 `.gdextension` 文件中的 `reloadable = true`，调试构建下编辑器还能在重新编译后自动热重载扩展，无需重启编辑器。
 
 **场景四：跨版本兼容分发。** 官方的长期目标是：面向 Godot 4.x 旧小版本构建的 GDExtension 可以在更高小版本上运行（例如面向 4.1 构建的扩展可在 4.2 运行，反之不行）。这意味着你发布的插件可以服务一个版本区间的用户，而不是锁死某个精确版本。需要注意 GDExtension 仍带有实验性质，官方保留为修复重大问题而破坏兼容的权利——4.0 构建的扩展就无法在 4.1 上运行，升级时需要按官方迁移指南调整。
 
@@ -429,11 +429,16 @@ sources = Glob("src/*.cpp")
 # 输出到 demo/bin/，命名遵循 <平台>.<target>.<架构> 约定，
 # 与 .gdextension 文件中的 [libraries] 键一一对应
 if env["platform"] == "macos":
-    library = env.SharedLibrary(
-        "demo/bin/libaudiofx.{}.{}.framework/libaudiofx.{}.{}".format(
-            env["platform"], env["target"], env["platform"], env["target"]),
-        source=sources,
-    )
+    # macOS 产物必须是一个**合法的 .framework 包**，目录结构为：
+    #   libaudiofx.macos.template_release.framework/
+    #     ├── libaudiofx.macos.template_release   ← 动态库本体（名字 = 包名去掉 .framework）
+    #     ├── Info.plist                          ← 包描述文件（必需）
+    #     └── Resources/                          ← 资源目录（必需，可以是空目录）
+    # 只把动态库丢进一个叫 *.framework 的目录里是不够的——那不是 bundle，
+    # macOS 的动态加载器会拒绝加载。Info.plist 与 Resources/ 的生成见下方说明。
+    bundle = "demo/bin/libaudiofx.{}.{}.framework".format(env["platform"], env["target"])
+    binary = "libaudiofx.{}.{}".format(env["platform"], env["target"])
+    library = env.SharedLibrary(os.path.join(bundle, binary), source=sources)
 else:
     library = env.SharedLibrary(
         "demo/bin/libaudiofx{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
@@ -449,13 +454,53 @@ Default(library)
 scons platform=windows target=template_debug -j8
 ```
 
+> **macOS 的 `.framework` 打包（不可省略的两步）**
+>
+> 1. 生成 `Info.plist`（`CFBundleExecutable` 必须与包内动态库同名）：
+>
+> ```bash
+> BUNDLE=demo/bin/libaudiofx.macos.template_release.framework
+> cat > "$BUNDLE/Info.plist" <<'PLIST'
+> <?xml version="1.0" encoding="UTF-8"?>
+> <plist version="1.0">
+> <dict>
+>     <key>CFBundleExecutable</key>
+>     <string>libaudiofx.macos.template_release</string>
+>     <key>CFBundleIdentifier</key>
+>     <string>org.godotengine.audiofx</string>
+>     <key>CFBundleName</key>
+>     <string>libaudiofx.macos.template_release</string>
+>     <key>CFBundlePackageType</key>
+>     <string>FMWK</string>
+>     <key>CFBundleShortVersionString</key>
+>     <string>1.0</string>
+> </dict>
+> </plist>
+> PLIST
+> ```
+>
+> 2. 建好 `Resources/` 目录（可以为空，但必须存在）：
+>
+> ```bash
+> mkdir -p "$BUNDLE/Resources"
+> ```
+>
+> 3. 需要 universal 二进制时，用 `lipo` 把 arm64 与 x86_64 两个 slice 合并进包内的同一个文件（godot-cpp 官方示例同样使用 `.framework` 布局）：
+>
+> ```bash
+> lipo -create \
+>   demo/bin/libaudiofx.macos.template_release.arm64/libaudiofx.macos.template_release.arm64 \
+>   demo/bin/libaudiofx.macos.template_release.x86_64/libaudiofx.macos.template_release.x86_64 \
+>   -output "$BUNDLE/libaudiofx.macos.template_release"
+> ```
+
 ### 3.6 加载描述文件：audio_fx.gdextension
 
 ```ini
 [configuration]
 
 entry_symbol = "audio_fx_library_init"
-compatibility_minimum = "4.1"
+compatibility_minimum = "4.3"
 reloadable = true
 
 [libraries]
@@ -464,6 +509,9 @@ windows.debug.x86_64 = "res://bin/libaudiofx.windows.template_debug.x86_64.dll"
 windows.release.x86_64 = "res://bin/libaudiofx.windows.template_release.x86_64.dll"
 linux.debug.x86_64 = "res://bin/libaudiofx.linux.template_debug.x86_64.so"
 linux.release.x86_64 = "res://bin/libaudiofx.linux.template_release.x86_64.so"
+; macOS 登记的是 .framework 包目录本身，不是包内的动态库
+macos.debug = "res://bin/libaudiofx.macos.template_debug.framework"
+macos.release = "res://bin/libaudiofx.macos.template_release.framework"
 
 [dependencies]
 
@@ -474,9 +522,11 @@ windows.release.x86_64 = { "res://bin/soundfx.dll": "" }
 
 三个字段值得强调：
 
-- `compatibility_minimum`：声明扩展要求的最低 Godot 版本，防止旧版本引擎误载新扩展。
+- `compatibility_minimum`：声明扩展要求的最低 Godot 版本，防止旧版本引擎误载新扩展。本书基线是 4.3，所以写 `"4.3"`——用 4.3 分支的 godot-cpp 构建却声明兼容 4.1，等于对引擎谎报了自己的 ABI 边界。
 - `reloadable = true`：debug 构建下，重新编译后编辑器自动热重载扩展，免重启——这是 GDExtension 迭代效率高的关键一环。
 - `[dependencies]`：声明随扩展一起打包的第三方动态库，导出项目时引擎只会带出当前平台需要的文件，不会把 Windows 的 `.dll` 塞进 Linux 包。
+
+> **`[libraries]` 的键是「特性标签」而不是固定枚举**：引擎把键按 `.` 拆成若干段，**每一段都必须是当前运行环境报告的特性标签**（`OS::has_feature()`），全部满足才算命中；命中多条时取**标签段数最多**的那一条。因此 `windows.release.x86_64` 表示「平台是 windows + release 构建 + x86_64 架构」，`macos.debug` 表示「平台是 macos + debug 构建」（架构段可省）。godot-cpp 官方示例的 `my_test.gdextension` 用的就是这套写法。
 
 ### 3.7 在 GDScript 中使用
 
@@ -820,18 +870,33 @@ void initialize_netcore_module(ModuleInitializationLevel p_level) {
     ClassDB::register_class<NetCoreServer>();
 
     net_core_singleton = memnew(NetCoreServer);
-    // 注册为引擎单例，脚本与 GDExtension 均可通过名字拿到
-    Engine::get_singleton()->register_singleton("NetCoreServer", net_core_singleton);
+    // 注册为引擎单例，脚本与 GDExtension 均可通过名字拿到。
+    // 注意：引擎侧 C++ 的 Engine 类（core/config/engine.h）**没有**
+    // register_singleton(name, ptr) 这对 API，正确写法是
+    // add_singleton(Engine::Singleton(...)) —— add_singleton 收的是结构体，不是二元组。
+    Engine::get_singleton()->add_singleton(
+        Engine::Singleton("NetCoreServer", net_core_singleton));
 }
 
 void uninitialize_netcore_module(ModuleInitializationLevel p_level) {
     if (p_level != MODULE_INITIALIZATION_LEVEL_SERVERS) {
         return;
     }
-    Engine::get_singleton()->unregister_singleton("NetCoreServer");
+    Engine::get_singleton()->remove_singleton("NetCoreServer");
     memdelete(net_core_singleton);
 }
 ```
+
+> **两套 `Engine` API，别混用**：引擎侧 C++（`core/config/engine.h`）与脚本侧暴露给扩展的 `Engine` 是两套接口——
+>
+> | 能力 | 引擎侧 C++（模块用） | 脚本侧 / GDExtension 可见 |
+> |------|---------------------|--------------------------|
+> | 注册单例 | `add_singleton(Engine::Singleton(name, ptr))` | `register_singleton(name, instance)` |
+> | 注销单例 | `remove_singleton(name)` | `unregister_singleton(name)` |
+> | 取单例 | `get_singleton_object(name)` | `get_singleton(name)` |
+> | 查询是否存在 | `has_singleton(name)` | `has_singleton(name)` |
+>
+> 引擎侧那三个「对象型」方法（`add_singleton` / `remove_singleton` / `get_singleton_object`）**不在 `extension_api.json` 中**，GDExtension 调不到；反过来，`register_singleton` / `unregister_singleton` / `get_singleton` 只在脚本侧存在，模块编译时也调不到。
 
 GDExtension 侧（独立动态库），通过 `Engine::get_singleton()` 拿到它：
 
@@ -842,7 +907,8 @@ GDExtension 侧（独立动态库），通过 `Engine::get_singleton()` 拿到�
 using namespace godot;
 
 void NetClient::connect_to_server(const String &p_url) {
-    // 模块注册的单例对 GDExtension 可见
+    // 模块注册的单例对 GDExtension 可见：
+    // 扩展侧只能调用脚本可见的 Engine.get_singleton(name)
     Object *server = Engine::get_singleton()->get_singleton("NetCoreServer");
     ERR_FAIL_NULL_MSG(server, "NetCoreServer 单例不存在，请确认使用了定制引擎");
 
@@ -1047,8 +1113,27 @@ ABI 兼容三定律:
 
 ---
 
+## 📋 下一章预告
+
+**附录 A：术语表**
+
+- 全书核心术语的统一定义与索引（`ClassDB` / `ModuleInitializationLevel` / `GDExtension` / `Ref<T>` 等）
+- 查阅本卷出现的关键 API 与概念
+- 后续附录：B：GDScript 快速参考 · C：Godot 与 Unity 对照表 · D：性能优化清单
+
+---
+
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+
+---
+
+**上一篇**: [第 71 篇：引擎 C++ 自定义模块开发](/articles/71-custom-modules-cpp.md)
+**下一篇**: [附录 A：术语表](/articles/appendix-a-glossary.md)
+
+---
+
 *写作时间：2026-08-27*  
-*字数：约 15,000 字*  
+*字数：约 5,200 字（不含代码块）（不含代码块）*  
 *状态：✅ 完成*
 
 ---

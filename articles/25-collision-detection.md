@@ -41,9 +41,9 @@
 │                                                             │
 │  2. 窄相位（Narrow Phase）                                  │
 │     └─▶ 精确检测潜在碰撞对                                  │
-│        - GJK 算法                                           │
-│        - SAT（分离轴定理）                                  │
-│        - EPA（膨胀多面体算法）                              │
+│        - 支撑映射（support mapping）                        │
+│        - 分离轴（SAT 风格）                                 │
+│        - 凸多边形专用算法                                   │
 │                                                             │
 │  3. 碰撞解决（Collision Resolution）                        │
 │     └─▶ 计算碰撞响应                                        │
@@ -63,26 +63,40 @@ func aabb_test(aabb1: AABB, aabb2: AABB) -> bool:
 
 # 使用示例
 func _process(delta):
-    var aabb1 = $Object1.get_global_aabb()
-    var aabb2 = $Object2.get_global_aabb()
+    # ⚠️ Node3D / RigidBody3D 都没有 get_global_aabb()。
+    #    4.x 里提供 AABB 的是 VisualInstance3D.get_aabb()（如 MeshInstance3D），
+    #    且它返回的是【局部空间】的 AABB（相对该节点自身原点）。
+    #    要拿到世界空间包围盒，必须自己再变换一次。
+    var aabb1: AABB = $Object1.get_aabb()
+    var aabb2: AABB = $Object2.get_aabb()
     
-    if aabb1.intersects(aabb2):
+    # 转成世界空间 AABB 再比较
+    var global_aabb1 := $Object1.global_transform * aabb1
+    var global_aabb2 := $Object2.global_transform * aabb2
+    
+    if global_aabb1.intersects(global_aabb2):
         print("Objects are colliding!")
     
     # 合并 AABB
-    var combined = aabb1.merge(aabb2)
+    var combined = global_aabb1.merge(global_aabb2)
     
     # 检查点是否在 AABB 内
     var point = Vector3(0, 0, 0)
-    if aabb1.has_point(point):
+    if global_aabb1.has_point(point):
         print("Point is inside AABB")
 ```
 
 ### 1.3 碰撞检测算法详解（新增）
 
+> **先读这一段**：下面三小节讲的是**通用算法**（教科书内容），不是 Godot 内置 3D 物理引擎的实现。
+>
+> - **Godot 内置物理（Godot Physics 3D）**的窄相位是**支撑映射 + 分离轴风格**：源码见 `servers/physics_3d/godot_shape_3d.cpp`，每个形状实现 `project_range()` / `get_support()` / `get_supports()` 三个虚函数，引擎用它们在候选轴上求投影区间来判定分离。**整个文件里没有 GJK、也没有 EPA。**
+> - **GJK / EPA** 是 **Jolt**（以及 Godot 3.x 时代的 Bullet）使用的窄相位方案。切到 Jolt 后端（第 34 篇）时，描述才成立。
+> - 因此下文的 GJK/EPA 代码是**教学用的简化实现**，用于理解算法本身，**不是引擎实现的复刻**。
+
 #### GJK 算法（Gilbert-Johnson-Keerthi）
 
-GJK 是 Godot 物理引擎使用的核心碰撞检测算法，用于检测两个凸体是否相交。
+GJK 是 **Jolt 物理后端**（以及 3.x 的 Bullet）所用的核心凸体碰撞检测算法，用于检测两个凸体是否相交。**Godot 内置物理引擎不使用它。**
 
 ```
 GJK 算法原理:
@@ -126,7 +140,9 @@ GJK 算法步骤:
 
 ```gdscript
 # GJK 算法简化实现（教学用途）
-# 实际 Godot 使用 C++ 实现，性能更高
+# ⚠️ 这是"Jolt 风格的 GJK/EPA"教学简化实现，不是 Godot 内置物理引擎的实现。
+#    Godot 内置物理（Godot Physics 3D）的窄相位是支撑映射 + 分离轴风格，
+#    见 servers/physics_3d/godot_shape_3d.cpp 的 project_range / get_support / get_supports。
 
 class_name GJKAlgorithm
 
@@ -407,6 +423,8 @@ EPA 算法步骤:
 
 ```gdscript
 # EPA 算法简化实现（教学用途）
+# ⚠️ 同上：Jolt 风格的教学简化实现，非 Godot 内置物理引擎的实现。
+
 class_name EPAAlgorithm
 
 # 碰撞结果
@@ -500,16 +518,26 @@ static func calculate_contact_point(face: Dictionary,
 ```
 碰撞检测算法性能对比:
 ┌─────────────────────────────────────────────────────────────┐
-│ 算法    │ 时间复杂度  │ 适用场景          │ Godot 使用      │
+│ 算法    │ 时间复杂度  │ 适用场景          │ Godot 内置物理  │
 ├─────────────────────────────────────────────────────────────┤
-│ AABB    │ O(1)       │ 快速排除、宽相位  │ ✅ 宽相位       │
-│ GJK     │ O(n)/轮    │ 凸体碰撞检测      │ ✅ 窄相位       │
-│ SAT     │ O(n²)      │ AABB/OBB 碰撞     │ ✅ 特殊形状     │
-│ EPA     │ O(n)/轮    │ 碰撞深度计算      │ ✅ 碰撞解决     │
-│ V-Clip  │ O(n)       │ 连续碰撞检测      │ ❌ 未使用       │
+│ AABB    │ O(1)       │ 快速排除、宽相位  │ ✅ 宽相位         │
+│ 支撑映射 │ O(n)       │ 凸体窄相位        │ ✅ 窄相位主路径  │
+│ 分离轴  │ O(n·m)     │ AABB/OBB 碰撞     │ ✅ 通用形状       │
+│ 凸多边形专用 │ O(n²)  │ 凸包/多边形       │ ✅ 特殊形状      │
+│ GJK     │ O(n)/轮    │ 凸体碰撞检测      │ ❌ 内置物理不用   │
+│ EPA     │ O(n)/轮    │ 碰撞深度计算      │ ❌ 内置物理不用   │
+│ V-Clip  │ O(n)       │ 连续碰撞检测      │ ❌ 未使用         │
 └─────────────────────────────────────────────────────────────┘
 
-实际性能（1000 对碰撞检测）——示意数据，未附测试环境，
+说明:
+- "Godot 内置物理"列指 Godot Physics 3D（servers/physics_3d/）。
+  它用 project_range / get_support / get_supports 做支撑映射 + 分离轴判定，
+  凸多边形另有专用算法。
+- GJK / EPA 两行标 ❌ 是因为它们属于 Jolt 后端（及 3.x 的 Bullet），
+  切换物理引擎后结论才会变（见第 34 篇）。
+- 上面 GJK/EPA 的代码是教学用简化实现，不能直接用于生产。
+
+实际性能（1000 对碰撞检测）——⚠️ 示意数据，未附测试环境，
 务必在目标平台与目标 Godot 版本上实测：
 - AABB 粗测：~0.1ms
 - GJK 精测：~2.5ms
@@ -656,7 +684,10 @@ func _process(delta):
 
 ```gdscript
 # 射线投射（排除特定物体）
-func raycast_exclude(from: Vector3, to: Vector3, exclude: Array = []) -> Dictionary:
+# ⚠️ exclude 的类型是 RID[]，不是 Node[]：
+#    PhysicsRayQueryParameters3D.xml 里 exclude 明确标注为 "RID[]"，
+#    必须对每个 CollisionObject3D 调用 get_rid()。
+func raycast_exclude(from: Vector3, to: Vector3, exclude: Array[RID] = []) -> Dictionary:
     var space_state = get_world_3d().direct_space_state
     var query = PhysicsRayQueryParameters3D.create(from, to)
     query.exclude = exclude
@@ -672,10 +703,13 @@ func raycast_exclude(from: Vector3, to: Vector3, exclude: Array = []) -> Diction
         "collider": result.collider
     }
 
-# 排除自身和子节点
+# 排除自身和子节点：节点 → RID
+# （get_rid() 由 CollisionObject3D 提供，这个脚本要挂在物理体或 Area3D 上）
 func _ready():
-    var exclude = [self]
-    exclude.append_array(get_children())
+    var exclude: Array[RID] = [get_rid()]
+    for child in get_children():
+        if child is CollisionObject3D:
+            exclude.append(child.get_rid())
 ```
 
 ### 3.3 多射线投射
@@ -848,10 +882,9 @@ func _ready():
 func _on_body_entered(other_body):
     print("Body entered: ", other_body.name)
     
-    # 获取碰撞点
-    if $RigidBody3D.get_contact_count() > 0:
-        var contact_pos = $RigidBody3D.get_contact_local_position(0)
-        print("Contact position: ", contact_pos)
+    # RigidBody3D 节点上没有 get_contact_local_position()，
+    # 接触点数据只在 PhysicsDirectBodyState3D 里（见 6.3 节）。
+    print("Contact count: ", $RigidBody3D.get_contact_count())
 
 # 刚体碰撞退出
 func _on_body_exited(other_body):
@@ -898,18 +931,21 @@ func should_collide_with(body: Node) -> bool:
 # 自定义碰撞响应
 func _integrate_forces(state: PhysicsDirectBodyState3D):
     for i in range(state.get_contact_count()):
-        var collider = state.get_contact_collider(i)
-        var local_pos = state.get_contact_local_position(i)
+        # get_contact_collider 返回 RID；要拿节点对象用 get_contact_collider_object
+        var collider_rid := state.get_contact_collider(i)
+        var collider := state.get_contact_collider_object(i) as Node
+        # get_contact_local_position 返回的已经是全局坐标
+        var contact_pos = state.get_contact_local_position(i)
         var local_normal = state.get_contact_local_normal(i)
         var impulse = state.get_contact_impulse(i)
         
         # 根据碰撞冲量做出反应
         if impulse.length() > 10.0:
             # 高速碰撞，播放效果
-            _play_impact_effect(local_pos, local_normal)
+            _play_impact_effect(contact_pos, local_normal)
         
         # 根据碰撞物体类型做出反应
-        if collider.is_in_group("destructible"):
+        if collider is Node and collider.is_in_group("destructible"):
             _damage_object(collider, impulse.length())
 ```
 
@@ -920,14 +956,12 @@ func _integrate_forces(state: PhysicsDirectBodyState3D):
 ### 7.1 CCD 配置
 
 ```gdscript
-# 启用 CCD
+# 启用 CCD：4.x 只有布尔属性 continuous_cd
 func setup_ccd(body: RigidBody3D):
-    body.cd_mode = RigidBody3D.CCD_MODE_CAST_RAY
-    # body.cd_mode = RigidBody3D.CCD_MODE_CAST_SHAPE
-    # body.cd_mode = RigidBody3D.CCD_MODE_DISABLED
+    body.continuous_cd = true
     
-    # 设置 CCD 运动阈值
-    body.ccd_motion_threshold = 0.01
+    # 服务器层等价接口（servers/physics_server_3d.h）
+    PhysicsServer3D.body_set_enable_continuous_collision_detection(body.get_rid(), true)
 
 # 批量启用 CCD
 func enable_ccd_for_projectiles():
@@ -937,17 +971,24 @@ func enable_ccd_for_projectiles():
             setup_ccd(proj)
 ```
 
+> ⚠️ 3.x 的 `cd_mode` / `RigidBody3D.CCD_MODE_CAST_RAY` / `CCD_MODE_CAST_SHAPE` / `ccd_motion_threshold` 在 4.x **全部不存在**。4.x 的 CCD **只有开/关两态**，没有"射线模式/形状模式"之分，也没有运动阈值参数。
+
 ### 7.2 CCD 性能考量
 
 ```
-CCD 性能对比:
+CCD 开销说明（⚠️ 示意数据，未附测试环境；量级随场景与硬件变化）:
 ┌─────────────────────────────────────────────────────────────┐
-│ 模式              │ 性能    │ 精度    │ 适用场景            │
+│ 设置                │ 性能    │ 精度    │ 适用场景          │
 ├─────────────────────────────────────────────────────────────┤
-│ DISABLED          │ 最高    │ 低      │ 慢速物体            │
-│ CAST_RAY          │ 高      │ 中      │ 子弹、投射物        │
-│ CAST_SHAPE        │ 中      │ 高      │ 高速复杂物体        │
+│ continuous_cd=false │ 最高    │ 低      │ 慢速/静态物体     │
+│ continuous_cd=true  │ 有开销  │ 高      │ 子弹、投射物      │
 └─────────────────────────────────────────────────────────────┘
+
+要点:
+- 4.x 没有多档 CCD 模式，只有"开"与"关"
+- 开启后引擎会在物体位移超过自身厚度时做连续扫掠，显著减少高速穿透
+- 代价是窄相位计算量上升：只给真正高速、数量不多的小物体开
+- 另一种省力办法是提高 physics_ticks_per_second（频率翻倍，CPU 也翻倍）
 ```
 
 ---
@@ -1111,6 +1152,15 @@ func _setup_low_precision_collision():
 
 ---
 
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+
+---
+
+**上一篇**: [第 24 篇：刚体物理](/articles/24-rigid-body-physics.md)
+**下一篇**: [第 26 篇：物理材质](/articles/26-physics-material.md)
+
+---
+
 ## 📋 下一章预告
 
 **第 26 篇：物理材质**
@@ -1124,7 +1174,7 @@ func _setup_low_precision_collision():
 ---
 
 *写作时间：2026-03-20*  
-*字数：约 6,500 字*  
+*字数：约 1,000 字（不含代码块）（不含代码块）*  
 *状态：✅ 完成*
 
 ---

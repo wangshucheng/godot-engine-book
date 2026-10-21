@@ -185,12 +185,27 @@ func travel_to(state_name: StringName):
 
 Godot 支持多种过渡方式：
 
-| 过渡属性 | 说明 | 建议值 |
-|----------|------|--------|
-| `Switch Mode` | 切换模式：`Immediate`、`Sync`、`At End` | `At End` 用于循环动画 |
-| `Blend` | 混合时间（秒） | 0.1-0.3 |
-| `Advance Mode` | 推进模式：`Auto`、`Disabled` | `Auto` 自动评估条件 |
-| `Advance Condition` | 条件表达式 | `is_running` |
+`AnimationNodeStateMachineTransition` 的完整属性面（4.3 官方类参考）：
+
+| 属性 | 取值 / 类型 | 说明 |
+|---|---|---|
+| `switch_mode` | `SWITCH_MODE_IMMEDIATE` / `SWITCH_MODE_SYNC` / `SWITCH_MODE_AT_END` | 切换方式；`At End` 等当前状态播完再切 |
+| `xfade_time` | float（秒） | 交叉淡入时长，常用 0.1–0.3 |
+| `xfade_curve` | `Curve` | 淡入缓动曲线，可自定义 |
+| `advance_mode` | `ADVANCE_MODE_DISABLED` / `ADVANCE_MODE_ENABLED` / `ADVANCE_MODE_AUTO` | 推进模式，**三态**（默认值是 `ENABLED`） |
+| `advance_condition` | `StringName` | 布尔条件名；值写在 `parameters/conditions/<名字>` |
+| `advance_expression` | `String` | **4.x 新增**的表达式条件 |
+| `reset` | bool（默认 true） | 切换时目标动画是否从头播放 |
+| `priority` | int（默认 1） | 越小越优先；`travel()` 与 `AUTO` 判定时使用 |
+| `break_loop_at_end` | bool | 即使动画在循环，也在周期末打断以便切换 |
+
+**三种推进模式的区别**（`advance_mode`）：
+
+| 模式 | 行为 | 典型用途 |
+|---|---|---|
+| `ADVANCE_MODE_DISABLED` | 禁用该过渡，`travel()` 与自动推进都不走它 | 受击动画未播完前锁死移动 |
+| `ADVANCE_MODE_ENABLED` | **仅在 `travel()` 主动请求时**使用（默认值，最常用） | 由脚本决定何时切状态 |
+| `ADVANCE_MODE_AUTO` | 条件 / 表达式为真时自动使用（常配 `At End`） | 走 → 跑这类连续量切换 |
 
 ### 3.2 过渡条件示例
 
@@ -211,17 +226,56 @@ func _physics_process(_delta):
 `travel()` 方法可以让状态机沿最短路径前往目标状态：
 
 ```gdscript
-# 从当前状态旅行到目标状态，自动经过中间状态
-animation_tree.travel("run")
-
-# 也可以获取 playback 对象进行更精细控制
+# travel() 属于 AnimationNodeStateMachinePlayback，**不属于 AnimationTree**。
+# animation_tree.travel("run") 会报
+# Invalid call. Nonexistent function 'travel' in base 'AnimationTree'。
 var playback = animation_tree.get("parameters/playback") as AnimationNodeStateMachinePlayback
+
+# 从当前状态旅行到目标状态，自动经过中间状态
+playback.travel("run")
+
 playback.travel("attack")
-playback.start("idle")  # 立即切换到 idle
+playback.start("idle")  # 立即切换到 idle（硬切，不走过渡）
+playback.next()         # 若存在 travel / auto advance 的下一路径，立刻切到下一状态
 playback.stop()         # 停止状态机
 ```
 
-### 3.4 一次性动画
+### 3.4 状态机与 Playback 的完整接口
+
+`AnimationNodeStateMachine`（资源侧，用于**构建**与**编辑**状态图）：
+
+| 方法 | 说明 |
+|---|---|
+| `add_node(name, node, position = Vector2())` | 添加一个状态（状态本身是任意 `AnimationNode`） |
+| `replace_node(name, node)` | 替换某个状态 |
+| `get_node(name)` / `has_node(name)` | 按名取 / 查状态 |
+| `rename_node(name, new_name)` | 重命名状态 |
+| `remove_node(name)` | 删除状态 |
+| `add_transition(from, to, transition)` | 添加过渡 |
+| `get_transition(idx)` | **按整数索引**取过渡 |
+| `get_transition_from(idx)` / `get_transition_to(idx)` | 取过渡的起点 / 终点 |
+| `get_transition_count()` | 过渡总数 |
+| `has_transition(from, to)` | 是否存在某条过渡 |
+| `remove_transition(from, to)` / `remove_transition_by_index(idx)` | 删除过渡 |
+
+`AnimationNodeStateMachinePlayback`（运行时侧，用于**驱动**已配置好的状态机）：
+
+| 方法 | 说明 |
+|---|---|
+| `travel(to_node, reset_on_teleport = true)` | 沿 A\* 最短路径前往目标状态 |
+| `start(node, reset = true)` | 立即开始播放指定状态 |
+| `next()` | 立刻切到 travel / auto advance 的下一状态 |
+| `stop()` / `is_playing()` | 停止 / 查询 |
+| `get_current_node()` | 当前状态名 |
+| `get_current_play_position()` / `get_current_length()` | 当前状态内的播放位置 / 状态长度 |
+| `get_fading_from_node()` | 正在淡出的源状态名 |
+| `get_travel_path()` | A\* 算出的当前旅行路径（`StringName[]`） |
+
+> **注意**：`get_transition()` 只接受**单个 int 索引**，不接受 `("idle", "walk")`
+> 这样的起止节点名。要按节点名定位过渡，请遍历
+> `get_transition_count()` + `get_transition_from(i)` / `get_transition_to(i)`。
+
+### 3.5 一次性动画
 
 攻击、受击等动画播放一次后应自动返回：
 
@@ -260,11 +314,41 @@ func perform_attack():
 └─────────────────────────────────────────────────────────────┘
 ```
 
+**真实做法**：把子状态机作为一个 `AnimationNodeStateMachine` 资源
+`add_node()` 进父状态机，并把它自己的 `state_machine_type` 设为
+`STATE_MACHINE_TYPE_NESTED`（嵌套）或 `STATE_MACHINE_TYPE_GROUPED`（分组）：
+
 ```gdscript
-# 进入子状态机中的特定状态
-var playback = animation_tree.get("parameters/playback") as AnimationNodeStateMachinePlayback
-playback.travel("CombatSubState/attack_light")
+# 构建一个嵌套子状态机
+func build_combat_sub_state_machine() -> AnimationNodeStateMachine:
+    var sub := AnimationNodeStateMachine.new()
+    sub.state_machine_type = AnimationNodeStateMachine.STATE_MACHINE_TYPE_NESTED
+
+    for state_name in [&"idle_combat", &"attack_light", &"attack_heavy", &"block", &"dodge"]:
+        var anim := AnimationNodeAnimation.new()
+        anim.animation = state_name
+        sub.add_node(state_name, anim)
+
+    return sub
+
+# 把子状态机挂进父状态机
+func attach_to_parent(parent: AnimationNodeStateMachine,
+        sub: AnimationNodeStateMachine) -> void:
+    parent.add_node("CombatSubState", sub)
+
+# 进入子状态机中的特定状态：用 "父/子" 路径寻址
+func travel_into_sub_state() -> void:
+    var playback = animation_tree.get("parameters/playback") as AnimationNodeStateMachinePlayback
+    playback.travel("CombatSubState/attack_light")
 ```
+
+`state_machine_type` 的三种取值（`AnimationNodeStateMachine.StateMachineType`）：
+
+| 常量 | 语义 |
+|---|---|
+| `STATE_MACHINE_TYPE_ROOT` | 根状态机：seek 到开头视为从起始状态播放，过渡到结束状态视为退出 |
+| `STATE_MACHINE_TYPE_NESTED` | 嵌套：seek 到开头视为 seek 当前状态的动画，过渡到结束状态视为退出 |
+| `STATE_MACHINE_TYPE_GROUPED` | 分组：不能独立运行，必须有 `ROOT` 或 `NESTED` 的父 / 祖先状态机 |
 
 ### 4.2 混合树与状态机结合
 
@@ -370,11 +454,24 @@ func _setup_state_machine():
     state_machine.add_transition("walk", "idle", AnimationNodeStateMachineTransition.new())
     
     # 设置条件
-    var to_walk = state_machine.get_transition("idle", "walk")
-    to_walk.advance_condition = "is_moving"
-    
+    # get_transition() 只接受**单个 int 索引**（过渡在图中的序号），
+    # 不接受 ("idle", "walk") 这样的起止节点名。
+    # 要按起止节点定位过渡，就遍历 get_transition_count()，
+    # 配合 get_transition_from(i) / get_transition_to(i)。
+    var to_walk := _find_transition(state_machine, &"idle", &"walk")
+    if to_walk:
+        to_walk.advance_condition = "is_moving"
+
     # 应用为 AnimationTree 根节点
     animation_tree.tree_root = state_machine
+
+# 按起止节点名查找过渡
+func _find_transition(state_machine: AnimationNodeStateMachine,
+        from: StringName, to: StringName) -> AnimationNodeStateMachineTransition:
+    for i in state_machine.get_transition_count():
+        if state_machine.get_transition_from(i) == from and state_machine.get_transition_to(i) == to:
+            return state_machine.get_transition(i)
+    return null
 ```
 
 ---
@@ -434,24 +531,41 @@ func _trigger_state(state_name: StringName):
 | 合理设置 Blend 时间 | 过长的混合会增加计算量 |
 | 避免每帧调用 travel() | travel 应在事件触发时调用 |
 | 使用 BlendSpace 替代密集状态 | locomotion 用 BlendSpace2D 更高效 |
-| 禁用不用的 AnimationTree | 远处或不可见角色可设置 `active = false` |
+| 停用不用的 AnimationTree | 远处或不可见角色可设置 `active = false`（注意：这是**冻结**而不是**降级**，详见 7.2） |
 
 ### 7.2 LOD 与动画状态机
 
 ```gdscript
 # 根据距离简化动画更新
-func _process(delta):
+func _process(_delta):
     var distance = global_position.distance_to(camera.global_position)
     
     if distance > 50.0:
-        animation_tree.active = false  # 远距离禁用
+        # 远距离停机。
+        # 注意：active = false 只是"不再推进动画"，
+        # 被动画驱动的属性会**停在最后一次写入的值上**（冻结），而不是回到静止姿势。
+        # 这不是"降级"——真正的降级要换用更简单的混合结构。
+        animation_tree.active = false
     else:
         animation_tree.active = true
         if distance > 20.0:
-            # 减少过渡混合时间
-            animation_tree.set("parameters/locomotion/blend_space_2d/blend_mode", 
-                AnimationNodeBlendSpace2D.BLEND_MODE_INTERP)
+            # 切换混合模式：
+            # blend_mode 是 AnimationNodeBlendSpace2D 的**成员**，不是 AnimationTree 的参数，
+            # 不能用 set("parameters/...") 写。
+            # 真实枚举是 BLEND_MODE_INTERPOLATED / BLEND_MODE_DISCRETE /
+            # BLEND_MODE_DISCRETE_CARRY（没有 BLEND_MODE_INTERP）。
+            var blend_tree := animation_tree.tree_root as AnimationNodeBlendTree
+            if blend_tree:
+                var space := blend_tree.get_node("locomotion") as AnimationNodeBlendSpace2D
+                if space:
+                    space.blend_mode = AnimationNodeBlendSpace2D.BLEND_MODE_DISCRETE
 ```
+
+> **枚举名提醒**：2D 混合空间的混合模式在 4.x 里叫
+> `AnimationNodeBlendSpace2D.BLEND_MODE_INTERPOLATED`（线性插值）、
+> `BLEND_MODE_DISCRETE`（取最近点，适合逐帧 2D 动画）、
+> `BLEND_MODE_DISCRETE_CARRY`（离散且保留上一个动画的播放位置）。
+> `BLEND_MODE_INTERP` **不存在**。
 
 ---
 
@@ -521,7 +635,7 @@ func _process(_delta):
 
 ---
 
-## 参考资料
+## 🔗 延伸阅读
 
 1. [Godot 文档 - AnimationTree](https://docs.godotengine.org/en/stable/tutorials/animation/animation_tree.html)
 2. [Godot 文档 - State Machine](https://docs.godotengine.org/en/stable/tutorials/animation/animation_tree.html#state-machine)
@@ -532,11 +646,14 @@ func _process(_delta):
 **作者**: wangshucheng
 **首发平台**: 微信公众号  
 **写作时间**: 2026 年 3 月  
-**Godot 版本**: 4.x（基线 4.3，2026-09 最新稳定版为 4.7）
+
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
 
 ---
 
-**上一篇**: [第 42 篇：粒子系统](/articles/42-particle-system.md)
+## 📋 上下篇导航
+
+**上一篇**: [第 41 篇：动画曲线](/articles/41-animation-curves.md)
 **下一篇**: [第 44 篇：骨骼动画](/articles/44-skeletal-animation.md)
 
 ---

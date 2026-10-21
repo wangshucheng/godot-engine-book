@@ -155,7 +155,7 @@ var rotated = v1.rotated(PI / 4)
 
 # 插值
 var pos = lerp(start, end, 0.5)
-var angle = lerp_angle(from, to, 0.1)
+var target_angle = lerp_angle(from, to, 0.1)
 
 # 三角函数
 var sin_val = sin(PI / 6)
@@ -278,6 +278,281 @@ print_stack()
 
 ---
 
+## 三类引擎标识符（StringName / Callable / NodePath）
+
+这三类在 4.x 里承担了"引擎内部比较快"的职责，**新手最常见的坑是混用 `String` 与 `StringName`**。
+
+```gdscript
+# StringName：引擎内部驻留字符串，O(1) 比较；方法名/信号名/属性名都用它
+var action_name: StringName = &"move_left"          # & 前缀是 StringName 字面量
+var plain := "move_left"                              # String
+print(action_name == &"move_left")                    # true
+print(plain == "move_left")                           # true
+var n: StringName = StringName("move_left")           # 显式转换
+
+# Callable：可调用引用（对象 + 方法），可 bind 追加参数
+var cb := Callable(self, "_on_button_pressed")
+cb.call()
+cb.bind(42).call()                                   # 追加参数后再调
+var cb2 := func(x: int) -> int: return x * 2
+cb2.call(21)
+cb.is_valid()                                        # 目标是否还存在
+cb.get_object()                                      # 被调用者
+
+# NodePath：指向场景中节点的路径
+var p: NodePath = ^"Player/Camera3D"                  # ^ 前缀是 NodePath 字面量
+get_node(^"Player/Camera3D")
+get_node_or_null(p)                                   # 安全版，找不到返回 null
+```
+
+## 数组与字典常用方法
+
+```gdscript
+var arr: Array[int] = [3, 1, 2]
+arr.append(4)
+arr.push_back(5)                                     # append 的别名
+arr.push_front(0)
+arr.pop_back()
+arr.pop_front()
+arr.insert(1, 9)
+arr.erase(9)
+arr.remove_at(0)
+arr.find(2)                                          # 找不到返回 -1
+arr.has(2)
+arr.count(2)
+arr.sort()
+arr.reverse()
+arr.shuffle()
+arr.slice(0, 2)
+var doubled: Array[int] = arr.map(func(x: int) -> int: return x * 2)
+var evens: Array[int] = arr.filter(func(x: int) -> bool: return x % 2 == 0)
+print(arr.duplicate())                               # 深拷贝（嵌套容器也拷贝）
+
+var d := {"hp": 100, "mp": 50}
+d.get("hp", 0)                                       # 键不存在时返回默认值
+d.get("hp")                                          # 不存在则返回 null
+d.has("hp")
+d.keys()                                             # PackedStringArray
+d.values()
+d.erase("mp")
+d.merge({"atk": 10}, true)                            # true = 覆盖已有键
+for key in d:
+    print(key, " = ", d[key])
+```
+
+## 打包数组
+
+```gdscript
+var bytes := PackedByteArray()
+bytes.append(1)
+bytes.append_array(PackedByteArray([2, 3]))
+bytes.resize(16)
+print(bytes.size())
+
+var floats := PackedFloat32Array([1.0, 2.0, 3.0])
+var ints := PackedInt32Array([1, 2, 3])
+var vecs := PackedVector3Array([Vector3.ONE, Vector3.ZERO])
+# 打包数组是值类型（赋值即拷贝），内存连续，比 Array 快
+```
+
+## 场景树与节点操作
+
+```gdscript
+var tree := get_tree()
+tree.current_scene                                    # 当前场景
+tree.change_scene_to_file("res://levels/level_2.tscn")
+tree.change_scene_to_packed(preload("res://levels/level_2.tscn"))
+tree.paused = true
+tree.create_timer(1.5).timeout                        # 配合 await
+
+get_node("Player")                                   # 找不到会报错
+get_node_or_null("Player")                           # 找不到返回 null
+get_node("%UniqueName")                              # 场景内唯一名（需标记 unique_name_in_owner）
+get_node_or_null(^"Player/Weapon")
+
+is_instance_valid(obj)                                # 对象是否还活着
+queue_free()                                          # 延迟释放，帧末执行
+remove_child(child)
+add_child(child)
+child.reparent(new_parent)                            # 4.x 的重新挂载
+child.get_parent()
+child.get_tree()
+child.call_deferred("set_process", false)             # 延迟到空闲帧调用
+```
+
+## Tween 补间
+
+```gdscript
+var tween := create_tween()
+tween.tween_property(self, "position", Vector3(100, 0, 0), 0.5)
+tween.parallel().tween_property(self, "modulate:a", 0.0, 0.5)
+tween.set_trans(Tween.TRANS_BOUNCE)
+tween.set_ease(Tween.EASE_OUT)
+tween.tween_callback(func(): print("完成"))
+tween.tween_interval(0.2)
+await tween.finished
+```
+
+## 输入
+
+```gdscript
+Input.is_action_pressed("move_left")
+Input.is_action_just_pressed("jump")
+Input.get_action_strength("move_left")                # 0.0~1.0，带模拟量
+Input.get_vector("move_left", "move_right", "move_up", "move_down")
+
+InputMap.add_action("attack", 0.2)                    # 0.2 = 死区
+InputMap.action_set_deadzone("attack", 0.2)
+InputMap.action_add_event("attack", ev)
+InputMap.erase_action("attack")
+InputMap.get_actions()
+var ev := InputEventKey.new()
+ev.keycode = KEY_A
+var mb := InputEventMouseButton.new()
+mb.button_index = MOUSE_BUTTON_LEFT
+Input.get_connected_joypads()
+```
+
+## 引擎与系统 API
+
+```gdscript
+Engine.get_version_info()                             # Dictionary
+Engine.get_frames_per_second()
+Engine.get_process_frames()
+Engine.time_scale = 0.5
+Engine.max_fps = 60
+
+OS.get_unique_id()
+OS.get_static_memory_usage()                          # 引擎静态内存（非系统总内存）
+OS.get_memory_info()                                  # 系统内存字典
+OS.get_user_data_dir()
+OS.get_cache_dir()                              # 可写的缓存/临时目录
+OS.get_environment()
+DisplayServer.window_set_size(Vector2i(1280, 720))
+DisplayServer.screen_get_size()
+Time.get_ticks_msec()
+Time.get_datetime_string_from_system()
+ProjectSettings.get_setting("physics/3d/default_gravity")
+Performance.get_monitor(Performance.TIME_PROCESS)
+Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
+```
+
+## 并发
+
+```gdscript
+var t := Thread.new()
+t.start(func(): print("子线程"))
+t.wait_to_finish()
+
+var m := Mutex.new()
+m.lock()
+# 临界区
+m.unlock()
+
+var sem := Semaphore.new()
+sem.post()
+sem.wait()
+
+WorkerThreadPool.add_task(func(): print("任务"))
+WorkerThreadPool.wait_for_task_completion()
+```
+
+> **注意**：Godot 对象**不是线程安全的**。子线程里不要直接操作场景树节点；用 `call_deferred` 把操作投递回主线程。
+
+## 资源加载与配置
+
+```gdscript
+var tex := load("res://art/hero.png")                 # 走缓存
+var tex2 := preload("res://art/hero.png")             # 编译期加载，运行更快
+ResourceLoader.load_threaded_request("res://big.tscn")
+ResourceLoader.load_threaded_get_status("res://big.tscn", progress)   # progress 是 Array 输出参数
+ResourceLoader.load_threaded_get("res://big.tscn")
+ResourceLoader.load("res://a.tres", "", ResourceLoader.CACHE_MODE_REPLACE)
+ResourceSaver.save(resource, "user://save.tres")
+
+var cfg := ConfigFile.new()
+cfg.set_value("graphics", "quality", 2)
+cfg.save("user://settings.cfg")
+cfg.load("user://settings.cfg")
+print(cfg.get_value("graphics", "quality", 1))
+
+var re := RegEx.new()
+re.compile("(\\d+)")
+for m in re.search_all("a1 b22 c333"):
+    print(m.get_string(1))
+
+JSON.stringify({"a": 1})
+JSON.parse_string('{"a": 1}')
+```
+
+## 脚本级注解
+
+```gdscript
+@tool                                          # 脚本在编辑器内也执行
+@export var speed: float = 100.0
+@export_range(0, 100, 1) var hp: int = 100
+@export_enum("Easy", "Normal", "Hard") var difficulty: int = 1
+@export_group("Movement")
+@export_category("Visuals")
+@export_multiline var notes: String = ""
+@export_file("*.png") var icon: Texture2D
+@export_node_path("Sprite2D") var target: NodePath
+@onready var sprite := $Sprite2D
+@warning_ignore("unused_variable")
+static func make() -> Node: return null
+```
+
+## 类型系统要点
+
+```gdscript
+var a := 1                 # := 推断类型（静态）
+var b = 1                  # = 动态，运行时决定（退化为 Variant）
+var c: int = 1             # 显式静态类型
+var d: float = 1           # int → float 属允许的隐式转换
+# var e: int = 1.5        # float → int 报错，需显式 int(1.5)
+
+var f: String = "x" + "y"  # 静态类型下字符串拼接会报错，需用 "%s" % 或 str_concat
+var g := StringName("x")
+var h := str(g)            # StringName → String
+var i := NodePath("x")
+```
+
+## await 与协程
+
+```gdscript
+func _ready() -> void:
+    await get_tree().process_frame          # 等下一帧
+    await get_tree().create_timer(1.0).timeout
+    await some_signal
+    var result = await do_async()
+    # 协程函数在 await 处返回，调用方也需 await
+
+func do_async() -> int:
+    await get_tree().create_timer(0.5).timeout
+    return 42
+```
+
+> **`yield` 已在 Godot 4 移除**，从 3.x 迁移的代码请全部改为 `await`。
+
+## 3.x → 4.x 迁移对照
+
+| Godot 3.x | Godot 4.x |
+|---|---|
+| `yield(obj, "signal")` | `await obj.signal` |
+| `export(int) var x` | `@export var x: int` |
+| `onready var x = $A` | `@onready var x = $A` |
+| `setget set_x` | `var x: int: set(value): ...` |
+| `var inst = scene.instance()` | `var inst = scene.instantiate()` |
+| `connect("sig", self, "method")` | `sig.connect(self.method)` |
+| `is_connected("sig", self, "method")` | `sig.is_connected(self.method)` |
+| `PoolStringArray` / `PoolIntArray` | `PackedStringArray` / `PackedInt32Array` |
+| `Spatial` / `KinematicBody` | `Node3D` / `CharacterBody3D` |
+| `OS.get_ticks_msec()` 作为帧时间 | `Performance.TIME_PROCESS`（前者是启动以来总毫秒） |
+| `set_shader_param(...)` | `set_shader_parameter(...)` |
+| `KinematicBody2D.move_and_slide(...)` | `CharacterBody2D.move_and_slide()`（参数改为 `velocity`） |
+
+---
+
 ## 🎯 常用模式
 
 ### 单例模式
@@ -309,7 +584,7 @@ func get_object() -> Node:
         return scene.instantiate()
     return pool.pop_back()
 
-func return_object(obj: Node):
+func return_object(obj: CanvasItem):
     obj.visible = false
     pool.append(obj)
 ```
@@ -357,4 +632,11 @@ func _ready():
 ---
 
 **版本**: Godot 4.x  
-**最后更新**: 2026-03-20
+**最后更新**: 2026-10-20
+
+---
+
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+
+**上一篇**: [附录 A：术语表](/articles/appendix-a-glossary.md)
+**下一篇**: [附录 C：Godot 与 Unity 对照表](/articles/appendix-c-unity-migration.md)

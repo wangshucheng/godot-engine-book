@@ -1,26 +1,30 @@
-# 第 56 篇：资源系统
+# 第 56 篇：资源加载与缓存实战
 
-> **本卷定位**: 第七卷 脚本系统（5 篇）  
-> **前置知识**: 第 54 章 脚本系统  
+> **本卷定位**: 第七卷 脚本系统（4 篇）  
+> **前置知识**: 第 54 篇 脚本系统  
 > **难度等级**: ⭐⭐⭐ 中级
 
 ---
 
 ## 📖 本章导读
 
-资源系统是 Godot 引擎的核心架构之一，所有游戏内容（场景、脚本、纹理、音频等）都以资源的形式存在。理解资源系统的工作原理对于高效开发 Godot 游戏至关重要。
+资源系统是 Godot 引擎的核心架构之一，所有游戏内容（场景、脚本、纹理、音频等）都以资源的形式存在。
 
-本章将深入探讨资源系统的基础知识、资源管理、加载优化以及自定义资源创建。
+**本章与 [第 7 篇《Godot 资源系统深度解析》](/articles/07-resource-system.md) 分工明确**：
+- **第 7 篇**讲**引擎侧语义** —— `Resource` 的继承链、`set_path()` 的抢占语义、`CACHE_MODE` 五态、`.tres`/`.res` 格式差异、`local_to_scene`、`changed` 信号与线程安全、自定义 `ResourceFormatLoader`。
+- **本章（56 篇）**讲**脚本侧策略** —— 什么时候同步加载、什么时候线程化加载、缓存怎么组织、引用怎么持有与释放、自定义资源怎么落地、加载与内存怎么优化。
+
+本章将深入探讨资源加载、缓存管理、引用与生命周期、自定义资源创建与加载优化。
 
 ---
 
 ## 🎯 学习目标
 
-- 理解资源系统的基本概念
-- 掌握资源加载和卸载
-- 学会资源缓存管理
-- 熟悉自定义资源创建
-- 掌握资源系统优化
+- 掌握资源加载策略的选择（同步 / 线程化 / 缓存模式）
+- 学会资源缓存的组织与淘汰
+- 理解 Godot 4 的引用计数语义与安全引用方式
+- 熟悉自定义资源创建与导入
+- 掌握资源加载与内存优化
 
 ---
 
@@ -77,11 +81,14 @@
 │  2. 资源加载（运行时加载资源）                             │
 │  3. 资源缓存（缓存已加载资源）                             │
 │  4. 资源实例化（创建资源实例）                             │
-│  5. 资源使用（在游戏 中使用资源）                          │
-│  6. 资源卸载（释放不再使用的资源）                         │
+│  5. 资源使用（在游戏中使用资源）                          │
+│  6. 引用归零 → 由 RefCounted 自动回收                      │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+> **第 6 步没有"卸载 API"**：Godot 4.x **没有** `ResourceLoader.unload()`，也没有 ResourceQueue —— 资源是引用计数的，最后一个引用消失时由 `RefCounted` 自动回收。需要"提前释放"时，正确做法是**断掉引用**（把成员变量置空、`WeakRef` 失效），而不是调用一个不存在的 unload。
+> 资源本身的语义（`set_path` 抢占、`CACHE_MODE` 五态、`.tres`/`.res` 格式、`local_to_scene`、`changed` 信号线程安全、自定义 `ResourceFormatLoader`）见 [第 7 篇：Godot 资源系统深度解析](/articles/07-resource-system.md)；**本章只讲脚本侧的加载、缓存与生命周期策略**。
 
 ---
 
@@ -186,6 +193,8 @@ func clear_cache():
 
 func _evict_oldest():
     # 移除最旧的缓存项
+    # 注意：Dictionary 保持插入序，keys()[0] 是"最早插入"的键，不是"最久未使用"。
+    # 若真需要 LRU，必须自己记录访问时间戳。
     if cache.size() > 0:
         var oldest_key = cache.keys()[0]
         cache.erase(oldest_key)
@@ -199,19 +208,20 @@ func get_cache_stats() -> Dictionary:
     }
 
 func _calculate_memory_usage() -> int:
-    # 计算内存使用（估算）
-    var total = 0
-    for path in cache:
-        # 简单估算，实际应该更复杂
-        total += 1024 * 1024  # 假设每个资源 1MB
-    return total
+    # 统计引擎侧的内存占用（真实值）
+    # 4.x 没有"单个资源占多少字节"的 API，只能取全局指标；
+    # 若要估算单个资源，请用资源自身提供的大小（如 Image.get_size / 纹理显存），
+    # 不要用固定常数冒充。
+    return int(Performance.get_monitor(Performance.MEMORY_STATIC))
 ```
 
 ### 2.3 资源预加载
 
 ```gdscript
 # 资源预加载
-class_name ResourcePreloader
+# ⚠️ 不要把 class_name 取成 `ResourcePreloader` —— 那是引擎自带的类名，
+# 同名会让脚本报 "Class 'ResourcePreloader' hides a global script class" 而加载失败。
+class_name ResourcePreloadHelper
 
 extends Node
 
@@ -322,65 +332,56 @@ func print_stats():
     print("Total usage count: ", get_total_usage())
 ```
 
-### 3.2 资源引用计数
+### 3.2 资源引用与生命周期
+
+> **先纠正一个常见误解**：Godot 4 的 `Resource` **已经继承 `RefCounted`**（`core/io/resource.h`：`class Resource : public RefCounted`）。引用计数由引擎管理，**脚本不需要、也不应该再自己套一层计数**。
+>
+> 自建引用计数表会有两个真实故障：
+> 1. **重复释放** —— 引擎的引用已归零、对象已被释放，你的表里还记着一次引用，再去"释放"就变成访问已析构对象；
+> 2. **永不释放** —— 引擎的引用已归零、对象已被释放，你的表里计数没到 0，于是你一直"持有"一个死对象。
+
+正确的做法是**用引擎提供的三种安全引用**，按需要选：
 
 ```gdscript
-# 资源引用计数
-class_name ResourceRefCount
+# 1) 强引用：直接持有变量即可，引用归零时自动释放
+var texture: Texture2D = load("res://art/hero.png")
 
-extends RefCounted
+# 2) 弱引用：不阻止释放；用前必须检查有效性
+var weak_tex := weakref(texture)
+if weak_tex.get_ref() != null:
+    var tex: Texture2D = weak_tex.get_ref()
+    tex.get_size()
 
-var resource_path: String
-var reference_count: int = 0
-
-func _init(path: String):
-    resource_path = path
-
-func add_ref():
-    reference_count += 1
-
-func remove_ref():
-    reference_count -= 1
-
-func get_ref_count() -> int:
-    return reference_count
-
-func can_unload() -> bool:
-    return reference_count <= 0
-
-# 资源引用管理器
-class_name ResourceReferenceManager
-
-extends Node
-
-var references: Dictionary = {}
-
-func acquire(path: String):
-    # 获取资源引用
-    if not references.has(path):
-        var ref = ResourceRefCount.new(path)
-        ref.add_ref()
-        references[path] = ref
-        load(path)
-    else:
-        references[path].add_ref()
-
-func release(path: String):
-    # 释放资源引用
-    if references.has(path):
-        var ref = references[path]
-        ref.remove_ref()
-        
-        if ref.can_unload():
-            references.erase(path)
-            # 卸载资源
-            # ResourceLoader._free(path)
-
-func get_ref_count(path: String) -> int:
-    if references.has(path):
-        return references[path].get_ref_count()
-    return 0
+# 3) ObjectID：跨帧安全的对象句柄（对象释放后 ID 失效）
+var obj_id := texture.get_instance_id()
+# ... 之后
+if is_instance_valid(instance_from_id(obj_id)):
+    var tex: Texture2D = instance_from_id(obj_id)
 ```
+
+**"提前释放"怎么做**：没有 unload API，正确姿势是**断掉引用**：
+
+```gdscript
+# 想释放，就让最后一个强引用消失
+texture = null
+# 或者把持有它的容器里的那一项移除
+cache.erase("res://art/hero.png")
+```
+
+**缓存层面的真实旋钮**是 `ResourceLoader` 的缓存模式，而不是自建计数表：
+
+```gdscript
+# CACHE_MODE_REUSE（默认）：已有缓存就直接复用
+var a := load("res://data/hero.tres")
+
+# CACHE_MODE_IGNORE：完全忽略缓存，每次都重新加载（用于热更新后强刷）
+var b := ResourceLoader.load("res://data/hero.tres", "", ResourceLoader.CACHE_MODE_IGNORE)
+
+# CACHE_MODE_REPLACE：用新加载的资源替换缓存中的旧资源（热更新）
+var c := ResourceLoader.load("res://data/hero.tres", "", ResourceLoader.CACHE_MODE_REPLACE)
+```
+
+> 资源本身的引用语义（`set_path` 的抢占行为、`resource_path` 为何不随副本携带、`take_over_path`、`.tres`/`.res` 格式差异、`local_to_scene`、`changed` 信号与线程安全）见 [第 7 篇：Godot 资源系统深度解析](/articles/07-resource-system.md)。
 
 ### 3.3 资源依赖管理
 
@@ -850,9 +851,16 @@ func get_stats() -> Dictionary:
 ---
 
 *写作时间：2026-03-20*  
-*字数：约 12,000 字*  
+*字数：约 1,100 字（不含代码块）（不含代码块）（不含代码块）*  
 *状态：✅ 完成*
 
 ---
 
-*最后更新：2026-03-20 22:00*
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+
+**上一篇**: [第 55 篇：GDScript 进阶](/articles/55-gdscript-advanced.md)
+**下一篇**: [第 60 篇：C# 集成和脚本性能优化](/articles/60-csharp-and-script-optimization.md)
+
+---
+
+*最后更新：2026-10-20*

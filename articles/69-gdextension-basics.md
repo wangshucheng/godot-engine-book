@@ -60,7 +60,7 @@ Godot 官方文档对三者的定位非常明确：游戏的大部分逻辑应�
 
 几个关键结论：
 
-- **迭代成本**：改一行 GDExtension 代码只需重编几兆字节的动态库；改一行模块代码需要重编整个引擎（分钟级起步）。
+- **迭代成本**：改一行 GDExtension 代码只需重编几兆字节的动态库；改一行模块代码需要重编整个引擎（分钟级起步，⚠️ 示意数据，未附测试环境）。
 - **导出成本**：模块会被静态链接进引擎，因此必须**为每个导出平台重新编译导出模板**；GDExtension 只需为各平台提供对应的动态库，官方导出模板原样可用。
 - **能力边界**：GDExtension 只能访问通过 GDExtension 接口暴露的 API（覆盖面已接近模块能用的公共 API）；模块可以调用引擎内部任意代码，包括未公开的实现细节。
 
@@ -114,9 +114,9 @@ GDExtension 桥接架构:
 godot --dump-extension-api
 ```
 
-官方的长期目标是：**针对较早小版本编译的 GDExtension 可以在较晚的小版本上运行，反之则不行**。例如针对 Godot 4.1 编译的扩展应能在 4.2 中运行，而针对 4.2 编译的扩展不保证能在 4.1 中加载。需要注意的是，GDExtension 目前仍标记为 **experimental**，官方保留为修复重大问题而打破兼容的权利——事实上 4.0 与 4.1 之间就发生过一次 ABI 变更。因此实践中应牢记两条规则：
+官方的长期目标是：**针对较早小版本编译的 GDExtension 可以在较晚的小版本上运行，反之则不行**。例如针对 Godot 4.3 编译的扩展应能在 4.4 中运行，而针对 4.4 编译的扩展不保证能在 4.3 中加载。需要注意的是，官方教程页把 GDExtension 标注为**实验性（experimental）**特性（4.3 版原文：*"GDExtension is currently experimental, which means that we may break compatibility in order to fix major bugs or include critical features"*）——这个标注写在文档页上而不是类参考里（以官方文档为准）：官方保留为修复重大问题而打破兼容的权利，事实上 4.0 与 4.1 之间就发生过一次 ABI 变更。因此实践中应牢记两条规则：
 
-1. **godot-cpp 的分支必须与目标引擎版本匹配**（目标 4.2 就用 `4.2` 分支）；
+1. **godot-cpp 的分支必须与目标引擎版本匹配**（目标 4.3 就用 `4.3` 分支）；
 2. 在 `.gdextension` 配置中用 `compatibility_minimum` 声明最低兼容版本（详见第 4 节）。
 
 ### 1.5 动态库加载机制
@@ -487,14 +487,14 @@ scons platform=windows
 entry_symbol = "example_library_init"
 
 ; 最低兼容的 Godot 版本：低于此版本的引擎将拒绝加载本扩展
-compatibility_minimum = "4.1"
+compatibility_minimum = "4.3"
 
 ; 允许编辑器在重新编译后自动热重载本扩展（仅 debug 构建有效）
 reloadable = true
 
 [libraries]
 
-; 键的格式：<platform>.<feature>[.<arch>]
+; 键的格式：<platform>.<target_feature>[.<arch>]
 ; 值是动态库在项目内的路径
 macos.debug = "res://bin/libgdexample.macos.template_debug.framework"
 macos.release = "res://bin/libgdexample.macos.template_release.framework"
@@ -521,16 +521,20 @@ linux.release.x86_64 = "res://bin/libgdexample.linux.template_release.x86_64.so"
 这是配置文件的核心。键的格式为：
 
 ```
-<platform>.<feature>[.<arch>]
+<platform>.<target_feature>[.<arch>]
 ```
 
 - `platform`：`windows` / `linux` / `macos` / `android` / `ios` / `web` 等；
-- `feature`：`debug` 或 `release`，分别对应 `template_debug` / `editor` 构建和 `template_release` 构建；
+- `target_feature`：构建类型标识，取值含 `editor` / `template_debug` / `template_release`；实际项目里最常见的是两个简写 `debug`（对应 `template_debug` / `editor` 构建）与 `release`（对应 `template_release` 构建）；
 - `arch`：可选，`x86_64` / `x86_32` / `arm64` / `rv64` 等。
 
-引擎按「当前平台 + 构建类型 + 架构」选出最精确的匹配项加载。这个设计还有一个重要的导出语义：**导出项目时，只有匹配目标平台的那个动态库会被打入导出包**，不会把 Windows 的 `.dll` 塞进 Linux 包里。
+**机制说明**：引擎并不是拿键去和一张固定枚举表比对，而是把键按 `.` 拆成若干段，**每一段都必须是当前运行环境报告的特性标签**（`OS::has_feature()`），全部满足才算命中；命中多条时取**标签段数最多**的那一条。所以 `windows.release.x86_64` 表示「平台是 windows + release 构建 + x86_64 架构」，`macos.debug` 表示「平台是 macos + debug 构建」（架构段可省）。
 
-macOS 上通常把动态库打包成 `.framework`；iOS 则需要将模拟器与真机的静态库组装成 `.xcframework`（用 `xcodebuild -create-xcframework`），这些属于平台进阶话题，本章不展开。
+按 Godot 4.3 `core/os/os.cpp` 的 `OS::has_feature()` 实现，这些构建类型的判定是：`editor` → 编辑器构建（`TOOLS_ENABLED`）；`template` / `template_debug` / `template_release` → 导出模板构建；`debug` → 带 `DEBUG_ENABLED` 的构建（编辑器构建与调试模板都算）；`release` → 发布模板构建。
+
+这个设计还有一个重要的导出语义：**导出项目时，只有匹配目标平台的那个动态库会被打入导出包**，不会把 Windows 的 `.dll` 塞进 Linux 包里。
+
+macOS 上通常把动态库打包成 `.framework`（godot-cpp 官方示例用的就是这个布局），`.gdextension` 里登记的是**包目录本身**，不是包内的动态库；包内还必须有 `Info.plist` 与 `Resources/`，否则不是合法的 macOS bundle；需要 arm64 + x86_64 双架构时用 `lipo` 合并进同一个文件。iOS 则需要将模拟器与真机的静态库组装成 `.xcframework`（用 `xcodebuild -create-xcframework`），这些属于平台进阶话题，本章不展开。
 
 ### 4.3 [dependencies]
 
@@ -546,7 +550,7 @@ windows.release.x86_64 = {
 }
 ```
 
-键同样是 `<platform>.<feature>[.<arch]]` 格式，值是一个字典：键为依赖库路径，值为可选的存放子目录（空字符串表示与扩展库同目录）。
+键同样是 `<platform>.<target_feature>[.<arch>]` 格式，值是一个字典：键为依赖库路径，值为可选的存放子目录（空字符串表示与扩展库同目录）。
 
 ### 4.4 最终目录结构
 
@@ -950,7 +954,7 @@ motion_sprite.position_changed.connect(_on_motion_sprite_position_changed)
 2. **C API 桥接是架构基石**：引擎与动态库之间只传递 C 函数指针与不透明句柄，规避了 C++ ABI 不稳定的问题，任何能提供 C FFI 的语言都能写绑定。
 3. **版本兼容有方向性**：针对旧小版本编译的扩展可在新小版本运行，反之不行；godot-cpp 分支必须匹配目标引擎版本，并用 `compatibility_minimum` 兜底。
 4. **开发四件套固定不变**：继承引擎类 → `GDCLASS` 宏 → `_bind_methods` 登记 → `register_types.cpp` 入口按初始化等级注册；构建用 SCons，产物按 `platform/target/arch` 命名。
-5. **`.gdextension` 文件掌管加载与导出**：`[libraries]` 的键格式 `<platform>.<feature>[.<arch]]` 决定各平台加载哪个库，同时保证导出时只打包匹配平台的二进制。
+5. **`.gdextension` 文件掌管加载与导出**：`[libraries]` 的键格式 `<platform>.<target_feature>[.<arch>]` 决定各平台加载哪个库，同时保证导出时只打包匹配平台的二进制。
 6. **绑定三件套**：方法用 `ClassDB::bind_method`，属性用「getter/setter + `ADD_PROPERTY`」，信号用「`ADD_SIGNAL` 声明 + `emit_signal` 发射 + `connect`/`Callable` 连接」。
 
 ### 关键术语
@@ -996,8 +1000,17 @@ motion_sprite.position_changed.connect(_on_motion_sprite_position_changed)
 
 ---
 
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+
+---
+
+**上一篇**: [第 68 篇：项目总结](/articles/68-project-summary.md)
+**下一篇**: [第 70 篇：GDExtension 进阶开发](/articles/70-gdextension-advanced.md)
+
+---
+
 *写作时间：2026-08-27*  
-*字数：约 15,000 字*  
+*字数：约 4,800 字（不含代码块）（不含代码块）*  
 *状态：✅ 完成*
 
 ---

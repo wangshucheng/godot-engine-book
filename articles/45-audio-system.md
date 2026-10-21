@@ -55,13 +55,13 @@ Godot 提供了完整的音频系统，包括音频播放器、音频混合器�
 │                                                             │
 │  1. AudioServer：音频服务器                               │
 │  2. AudioStream：音频流资源                               │
-│  3. AudioStreamPlayer：2D 音频播放器                      │
-│  4. AudioStreamPlayer3D：3D 音频播放器                    │
-│  5. AudioBus：音频总线                                    │
-│  6. AudioEffect：音频效果器                               │
-│  7. AudioListener：音频监听器                             │
-│  8. AudioStreamOGGVorbis：OGG 音频流                      │
-│  9. AudioStreamWAV：WAV 音频流                            │
+│  3. AudioStreamPlayer：非定位音频播放器（UI / BGM）         │
+│  4. AudioStreamPlayer2D / 3D：定位音频播放器                │
+│  5. AudioBus：音频总线                                      │
+│  6. AudioEffect：音频效果器                                 │
+│  7. AudioListener2D / 3D：音频听者                          │
+│  8. AudioStreamOggVorbis：OGG 音频流                        │
+│  9. AudioStreamWAV：WAV 音频流                              │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -91,30 +91,32 @@ Godot 提供了完整的音频系统，包括音频播放器、音频混合器�
 ### 2.1 2D 音频播放器
 
 ```gdscript
-# 2D 音频播放器
-class_name AudioStreamPlayer2D
+# 2D 定位音频播放器
+#
+# 注意类名：引擎内置的类叫 AudioStreamPlayer2D（基类是 Node2D），
+# 自定义类不要用同名 class_name，否则会遮蔽内置类。
+class_name My2DAudioPlayer
 
-extends AudioStreamPlayer
+extends AudioStreamPlayer2D
 
-@export var stream_path: String
-@export var volume_db: float = 0.0
-@export var pitch_scale: float = 1.0
-@export var autoplay: bool = false
+# 只声明引擎没有的字段。volume_db / pitch_scale / autoplay / bus /
+# stream_paused 都是 AudioStreamPlayer2D 的原生成员，
+# 在子类里重复 @export 会让 GDScript 4 在**解析期**就报：
+#   Member "volume_db" redefined (original in native class 'AudioStreamPlayer2D')
+@export var stream_path: String = ""
 
 func _ready():
-    # 加载音频流
+    # 加载音频流（stream 是引擎属性，直接赋值）
     if stream_path != "":
-        var stream = load(stream_path)
-        if stream:
-            stream = stream
-    
-    # 设置音量
-    volume_db = volume_db
-    
-    # 设置音调
-    pitch_scale = pitch_scale
-    
-    # 自动播放
+        var loaded := load(stream_path)
+        if loaded is AudioStream:
+            stream = loaded
+
+    # 演示如何修改引擎原生属性
+    volume_db = 0.0
+    pitch_scale = 1.0
+
+    # 自动播放（autoplay 是引擎属性，节点入树时会自动 play）
     if autoplay:
         play()
 
@@ -127,110 +129,105 @@ func stop_audio():
     stop()
 
 func pause_audio():
-    # 暂停音频
-    pause()
+    # 暂停音频：AudioStreamPlayer2D 没有 pause() 方法，
+    # 正确做法是设置 stream_paused 属性（没有 set_stream_paused() 方法）。
+    stream_paused = true
 
 func resume_audio():
-    # 恢复音频
-    if paused:
-        play()
+    # 恢复音频：把 stream_paused 置回 false，会从原位置继续播
+    stream_paused = false
 
 func set_volume(volume: float):
-    # 设置音量
+    # 设置音量（线性 → dB）
     volume_db = linear_to_db(volume)
 
 func set_pitch(pitch: float):
     # 设置音调
     pitch_scale = pitch
 
-func is_playing() -> bool:
-    # 检查是否正在播放
-    return playing
-
-func get_playback_position() -> float:
-    # 获取播放位置
-    return get_playback_position()
-
 func set_playback_position(position: float):
-    # 设置播放位置
+    # 设置播放位置（seek 是引擎原生方法）
     seek(position)
+
+# 播放状态与播放位置直接用引擎原生成员/方法，不要再包一层同名函数：
+#   player.playing                  → 是否正在播放
+#   player.get_playback_position()  → 当前播放位置（秒）
+# 包一层同名函数既会遮蔽原生方法（GDScript 还会警告"引擎不会调用它"），
+# 写成 `func get_playback_position(): return get_playback_position()`
+# 更是无限自递归，调用即栈溢出。
 ```
 
 ### 2.2 3D 音频播放器
 
 ```gdscript
-# 3D 音频播放器
-class_name AudioStreamPlayer3D
+# 3D 定位音频播放器
+#
+# 类名不要叫 AudioStreamPlayer3D（会遮蔽引擎内置类）。
+class_name My3DAudioPlayer
 
 extends AudioStreamPlayer3D
 
-@export var stream_path: String
-@export var volume_db: float = 0.0
-@export var pitch_scale: float = 1.0
-@export var attenuation_filter_db: float = 1.0
-@export var attenuation_distance: float = 10.0
-@export var max_db: float = 0.0
-@export var unit_size: float = 10.0
+# volume_db / pitch_scale / autoplay / unit_size / max_distance /
+# attenuation_model / attenuation_filter_db 等全是原生成员，
+# 在子类里重复 @export 会在解析期报 "Member ... redefined"。
+@export var stream_path: String = ""
 
 func _ready():
-    # 加载音频流
     if stream_path != "":
-        var stream = load(stream_path)
-        if stream:
-            stream = stream
-    
-    # 设置音量
-    volume_db = volume_db
-    
-    # 设置音调
-    pitch_scale = pitch_scale
-    
-    # 设置衰减
-    attenuation_filter_db = attenuation_filter_db
-    attenuation_distance = attenuation_distance
-    max_db = max_db
-    unit_size = unit_size
+        var loaded := load(stream_path)
+        if loaded is AudioStream:
+            stream = loaded
+
+    # Godot 4 的距离衰减完全由引擎算，参数就这三项：
+    #   unit_size         —— 衰减因子，越大听得越远
+    #   max_distance      —— 超过这个距离完全听不见（>0 才生效）
+    #   attenuation_model —— 衰减曲线类型（见 §5.2）
+    unit_size = 10.0
+    max_distance = 50.0
+    attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
+
+    # 远处声音会被低通滤波；把 cutoff 提到 20500（人耳上限）即可关闭
+    attenuation_filter_db = -24.0
+    attenuation_filter_cutoff_hz = 5000.0
+
+    # 多普勒：选择在哪一步计算多普勒频移
+    doppler_tracking = AudioStreamPlayer3D.DOPPLER_TRACKING_PHYSICS_STEP
+
+    # 发声角度：只在正前方锥形内不衰减
+    emission_angle_enabled = false
+    emission_angle_degrees = 45.0
+
+    # 区域混响：哪些 Area3D 层会影响这个播放器
+    area_mask = 1
+
+    # 立体声扩展强度
+    panning_strength = 1.0
 
 func play_audio():
-    # 播放音频
     play()
 
 func stop_audio():
-    # 停止音频
     stop()
 
 func pause_audio():
-    # 暂停音频
-    pause()
+    # 没有 pause() 方法，用 stream_paused 属性
+    stream_paused = true
 
 func resume_audio():
-    # 恢复音频
-    if paused:
-        play()
+    stream_paused = false
 
 func set_volume(volume: float):
-    # 设置音量
     volume_db = linear_to_db(volume)
 
 func set_pitch(pitch: float):
-    # 设置音调
     pitch_scale = pitch
 
-func is_playing() -> bool:
-    # 检查是否正在播放
-    return playing
+func set_attenuation_model(model: int):
+    # 衰减模型是枚举，见 §5.2
+    attenuation_model = model
 
-func get_playback_position() -> float:
-    # 获取播放位置
-    return get_playback_position()
-
-func set_playback_position(position: float):
-    # 设置播放位置
-    seek(position)
-
-func set_attenuation(distance: float):
-    # 设置衰减
-    attenuation_distance = distance
+func set_max_distance(distance: float):
+    max_distance = distance
 ```
 
 ### 2.3 音频播放控制器
@@ -246,11 +243,13 @@ extends Node
 
 func _ready():
     # 设置音频播放器
+    # Godot 4 的信号连接用 Callable：
+    # Object.connect(signal, callable) 已移除 3.x 的 connect(signal, target, method) 三参重载
     if audio_player:
-        audio_player.connect("finished", self, "_on_audio_finished")
+        audio_player.finished.connect(_on_audio_finished)
     
     if audio_player_3d:
-        audio_player_3d.connect("finished", self, "_on_audio_3d_finished")
+        audio_player_3d.finished.connect(_on_audio_3d_finished)
 
 func _on_audio_finished():
     # 音频播放完成
@@ -331,33 +330,20 @@ func initialize_audio_buses():
     # 获取音频服务器
     var audio_server = AudioServer
     
-    # 设置总线数量
-    audio_server.bus_count = 8
+    # ⚠️ 不要用 `audio_server.bus_count = 8` 来"规划"总线。
+    # bus_count 的 setter（set_bus_count）会**重建总线列表**：
+    #   - 数量变小时，超出部分的总线被直接销毁（连同名称与效果器）；
+    #   - 数量变大时，新建的总线用的是占位名 "New Bus" / "New Bus 2"。
+    # 正规做法是在编辑器的「Audio 总线」面板里配好，存成
+    # res://default_bus_layout.tres；运行时只做增量调整。
     
-    # 设置主总线名称
-    audio_server.set_bus_name(0, "Master")
-    
-    # 创建其他总线
-    audio_server.add_bus(1)
-    audio_server.set_bus_name(1, "Music")
-    
-    audio_server.add_bus(2)
-    audio_server.set_bus_name(2, "SFX")
-    
-    audio_server.add_bus(3)
-    audio_server.set_bus_name(3, "Voice")
-    
-    audio_server.add_bus(4)
-    audio_server.set_bus_name(4, "Ambient")
-    
-    audio_server.add_bus(5)
-    audio_server.set_bus_name(5, "UI")
-    
-    audio_server.add_bus(6)
-    audio_server.set_bus_name(6, "Reverb")
-    
-    audio_server.add_bus(7)
-    audio_server.set_bus_name(7, "Effects")
+    # add_bus() 不带参数 = 追加到末尾；add_bus(pos) 会在 pos 处插入
+    var bus_names = ["Music", "SFX", "Voice", "Ambient", "UI", "Reverb", "Effects"]
+    for bus_name in bus_names:
+        if audio_server.get_bus_index(bus_name) == -1:
+            audio_server.add_bus()
+            var idx := audio_server.bus_count - 1
+            audio_server.set_bus_name(idx, bus_name)
 
 func set_bus_volume(bus_name: String, volume: float):
     # 设置总线音量
@@ -415,16 +401,17 @@ func initialize_audio_buses():
     # 获取音频服务器
     var audio_server = AudioServer
     
-    # 设置总线数量
-    audio_server.bus_count = bus_settings.size()
+    # ⚠️ bus_count 的 setter 会重建总线列表并清掉已有总线的名称与效果器，
+    # 这里改用 add_bus() 增量创建（详见 47 篇「总线与支路」）。
     
-    # 创建总线
+    # 创建总线（索引 0 默认就是 Master）
     var idx = 0
     for bus_name in bus_settings:
         if idx == 0:
             audio_server.set_bus_name(idx, bus_name)
         else:
-            audio_server.add_bus(idx)
+            audio_server.add_bus()
+            idx = audio_server.bus_count - 1
             audio_server.set_bus_name(idx, bus_name)
         
         # 设置初始音量
@@ -437,6 +424,7 @@ func initialize_audio_buses():
         
         idx += 1
 
+func update_bus_settings():
 func update_bus_settings():
     # 更新总线设置
     var audio_server = AudioServer
@@ -516,18 +504,23 @@ func initialize_audio_effects():
     var master_bus_idx = audio_server.get_bus_index("Master")
     if master_bus_idx != -1:
         var reverb = AudioEffectReverb.new()
-        reverb.room_size = 0.8
-        reverb.dampening = 0.5
-        reverb.wet = 0.2
-        reverb.dry = 0.8
+        reverb.room_size = 0.8          # 0~1，模拟房间尺寸
+        reverb.damping = 0.5            # 0~1，墙壁反射率（引擎属性是 damping，没有 dampening）
+        reverb.wet = 0.2                # 0~1，湿信号占比
+        reverb.dry = 0.8                # 0~1，干信号占比
+        reverb.predelay_msec = 20.0     # 预延迟，单位毫秒（引擎属性是 predelay_msec）
         audio_server.add_bus_effect(master_bus_idx, reverb)
     
     # 为音乐总线添加均衡器
     var music_bus_idx = audio_server.get_bus_index("Music")
     if music_bus_idx != -1:
-        var eq = AudioEffectEQ2.new()
-        eq bands[0].gain = 2.0  # 低音增强
-        eq bands[6].gain = 1.5  # 高音增强
+        # 4.x 只有 AudioEffectEQ（基类）/ EQ6 / EQ10 / EQ21，没有 AudioEffectEQ2
+        var eq = AudioEffectEQ10.new()
+        # 频点数量用 get_band_count() 拿，增益用 set_band_gain_db()（单位 dB）
+        for i in range(eq.get_band_count()):
+            eq.set_band_gain_db(i, 0.0)
+        eq.set_band_gain_db(0, 6.0)   # 低频提升
+        eq.set_band_gain_db(4, 3.0)   # 中频提升
         audio_server.add_bus_effect(music_bus_idx, eq)
     
     # 为音效总线添加压缩器
@@ -547,9 +540,10 @@ func add_reverb_to_bus(bus_name: String):
     if bus_idx != -1:
         var reverb = AudioEffectReverb.new()
         reverb.room_size = 0.8
-        reverb.dampening = 0.5
+        reverb.damping = 0.5
         reverb.wet = 0.2
         reverb.dry = 0.8
+        reverb.predelay_msec = 20.0
         audio_server.add_bus_effect(bus_idx, reverb)
 
 func add_eq_to_bus(bus_name: String):
@@ -557,9 +551,11 @@ func add_eq_to_bus(bus_name: String):
     var audio_server = AudioServer
     var bus_idx = audio_server.get_bus_index(bus_name)
     if bus_idx != -1:
-        var eq = AudioEffectEQ2.new()
-        eq.bands[0].gain = 2.0  # 低音增强
-        eq.bands[6].gain = 1.5  # 高音增强
+        var eq = AudioEffectEQ10.new()
+        for i in range(eq.get_band_count()):
+            eq.set_band_gain_db(i, 0.0)
+        eq.set_band_gain_db(0, 6.0)  # 低频提升
+        eq.set_band_gain_db(4, 3.0)  # 中频提升
         audio_server.add_bus_effect(bus_idx, eq)
 
 func add_compressor_to_bus(bus_name: String):
@@ -587,40 +583,47 @@ class_name ReverbEffect
 
 extends AudioEffectReverb
 
-@export var room_size: float = 0.8
-@export var dampening: float = 0.5
-@export var wet: float = 0.2
-@export var dry: float = 0.8
+# ⚠️ room_size / damping / wet / dry 都是 AudioEffectReverb 的原生成员，
+# 在子类里用 @export 重新声明会让 GDScript 4 在解析期直接报错：
+#   Member "room_size" redefined (original in native class 'AudioEffectReverb')
+# 这里只写"书特有"的字段，参数一律用引擎属性。
+
+@export var preset_name: String = "default"
 
 func _ready():
-    # 设置混响参数
-    room_size = room_size
-    dampening = dampening
-    wet = wet
-    dry = dry
+    # 演示如何修改引擎原生属性
+    room_size = 0.8
+    damping = 0.5
+    wet = 0.2
+    dry = 0.8
+    predelay_msec = 20.0
 
 func update_parameters():
-    # 更新参数
-    room_size = room_size
-    dampening = dampening
-    wet = wet
-    dry = dry
+    # 更新参数（把引擎属性夹到合法区间）
+    room_size = clamp(room_size, 0.0, 1.0)
+    damping = clamp(damping, 0.0, 1.0)
+    wet = clamp(wet, 0.0, 1.0)
+    dry = clamp(dry, 0.0, 1.0)
 
 func set_room_size(size: float):
-    # 设置房间大小
-    room_size = size
+    # 设置房间大小（0~1）
+    room_size = clamp(size, 0.0, 1.0)
 
-func set_dampening(damp: float):
-    # 设置阻尼
-    dampening = damp
+func set_damping(damp: float):
+    # 设置阻尼（0~1）—— 引擎属性名是 damping，没有 dampening
+    damping = clamp(damp, 0.0, 1.0)
 
 func set_wet_amount(amount: float):
-    # 设置湿信号量
-    wet = amount
+    # 设置湿信号量（0~1）
+    wet = clamp(amount, 0.0, 1.0)
 
 func set_dry_amount(amount: float):
-    # 设置干信号量
-    dry = amount
+    # 设置干信号量（0~1）
+    dry = clamp(amount, 0.0, 1.0)
+
+func set_predelay(msec: float):
+    # 设置预延迟（毫秒）—— 引擎属性名是 predelay_msec
+    predelay_msec = clamp(msec, 0.0, 500.0)
 ```
 
 ### 4.2 均衡器效果器
@@ -629,8 +632,11 @@ func set_dry_amount(amount: float):
 # 均衡器效果器
 class_name EQEffect
 
-extends AudioEffectEQ2
+# 4.x 只有 AudioEffectEQ（基类）/ EQ6 / EQ10 / EQ21，没有 AudioEffectEQ2
+extends AudioEffectEQ10
 
+# low_gain / mid_gain / high_gain 是"书特有"字段，不是引擎成员，可以 @export；
+# 引擎的频点增益一律用 set_band_gain_db() 写（单位 dB）。
 @export var low_gain: float = 1.0
 @export var mid_gain: float = 1.0
 @export var high_gain: float = 1.0
@@ -640,30 +646,44 @@ func _ready():
     update_parameters()
 
 func update_parameters():
-    # 更新参数
-    bands[0].gain = low_gain   # 低频
-    bands[3].gain = mid_gain   # 中频
-    bands[6].gain = high_gain  # 高频
+    # 更新参数：EQ10 的 10 个频点按对数分布，低/中/高各取一段
+    var count := get_band_count()
+    var low_band := int(count * 0.2)
+    var mid_band := int(count * 0.5)
+    for i in range(count):
+        set_band_gain_db(i, 0.0)
+    for i in range(0, low_band):
+        set_band_gain_db(i, linear_to_db(low_gain))
+    for i in range(mid_band, mid_band + 2):
+        set_band_gain_db(i, linear_to_db(mid_gain))
+    for i in range(count - 2, count):
+        set_band_gain_db(i, linear_to_db(high_gain))
 
 func set_low_gain(gain: float):
-    # 设置低频增益
+    # 设置低频增益（线性倍率）
     low_gain = gain
-    bands[0].gain = low_gain
+    var count := get_band_count()
+    for i in range(int(count * 0.2)):
+        set_band_gain_db(i, linear_to_db(low_gain))
 
 func set_mid_gain(gain: float):
     # 设置中频增益
     mid_gain = gain
-    bands[3].gain = mid_gain
+    var mid_band := int(get_band_count() * 0.5)
+    for i in range(mid_band, mid_band + 2):
+        set_band_gain_db(i, linear_to_db(mid_gain))
 
 func set_high_gain(gain: float):
     # 设置高频增益
     high_gain = gain
-    bands[6].gain = high_gain
+    var count := get_band_count()
+    for i in range(count - 2, count):
+        set_band_gain_db(i, linear_to_db(high_gain))
 
-func set_band_gain(band_idx: int, gain: float):
-    # 设置指定频段增益
-    if band_idx < bands.size():
-        bands[band_idx].gain = gain
+func set_band_gain(band_idx: int, gain_db: float):
+    # 设置指定频段增益（引擎方法名是 set_band_gain_db，单位 dB）
+    if band_idx >= 0 and band_idx < get_band_count():
+        set_band_gain_db(band_idx, gain_db)
 ```
 
 ### 4.3 压缩器效果器
@@ -674,37 +694,22 @@ class_name CompressorEffect
 
 extends AudioEffectCompressor
 
-@export var ratio: float = 4.0
-@export var threshold: float = -6.0
-@export var attack_us: float = 100.0
-@export var release_ms: float = 200.0
+# ⚠️ ratio / threshold / attack_us / release_ms 全是原生成员，
+# 重复 @export 会在解析期报 "Member ... redefined"。
+# 这里只保留书特有字段，参数直接用引擎属性。
+
+@export var preset_name: String = "default"
 
 func _ready():
     # 设置压缩器参数
     update_parameters()
 
 func update_parameters():
-    # 更新参数
-    ratio = ratio
-    threshold = threshold
-    attack_us = attack_us
-    release_ms = release_ms
-
-func set_ratio(ratio_val: float):
-    # 设置压缩比
-    ratio = ratio_val
-
-func set_threshold(threshold_val: float):
-    # 设置阈值
-    threshold = threshold_val
-
-func set_attack(attack_val: float):
-    # 设置攻击时间
-    attack_us = attack_val
-
-func set_release(release_val: float):
-    # 设置释放时间
-    release_ms = release_val
+    # 更新参数（把引擎属性夹到合法区间）
+    ratio = clamp(ratio, 1.0, 48.0)
+    threshold = clamp(threshold, -60.0, 0.0)
+    attack_us = clamp(attack_us, 20.0, 2000.0)
+    release_ms = clamp(release_ms, 20.0, 2000.0)
 ```
 
 ---
@@ -748,8 +753,8 @@ func play_audio_once(audio_path: String, volume: float = 1.0):
     player.stream = stream
     player.volume_db = linear_to_db(volume)
     
-    # 连接完成信号以清理资源
-    player.connect("finished", player, "queue_free")
+    # 连接完成信号以清理资源（Godot 4 用 Callable 形式）
+    player.finished.connect(player.queue_free)
     
     # 添加到场景
     add_child(player)
@@ -767,7 +772,17 @@ func play_music(audio_path: String, volume: float = 0.8):
     player.stream = stream
     player.volume_db = linear_to_db(volume)
     player.autoplay = true
-    player.loop = true
+    # ⚠️ AudioStreamPlayer 没有 loop 属性，循环要设在"流"上：
+    #   AudioStreamOggVorbis / AudioStreamMP3 → loop(bool) + loop_offset(float)
+    #   AudioStreamWAV                    → loop_mode + loop_begin + loop_end
+    if stream is AudioStreamOggVorbis:
+        var ogg := stream as AudioStreamOggVorbis
+        ogg.loop = true
+        ogg.loop_offset = 0.0
+    elif stream is AudioStreamWAV:
+        # WAV 的循环区间（单位：采样数）会在导入时自动带过来，这里只切模式
+        var wav := stream as AudioStreamWAV
+        wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
     
     # 添加到场景
     add_child(player)
@@ -811,48 +826,56 @@ class_name AudioDistanceAttenuation
 
 extends Node3D
 
-@export var max_distance: float = 30.0
-@export var min_distance: float = 5.0
-@export var attenuation_curve: Curve
+# ⚠️ AudioStreamPlayer3D **没有**可注入自定义衰减曲线的接口，
+# 也没有 min_distance 属性。距离衰减完全由引擎按
+# unit_size + max_distance + attenuation_model 计算，
+# 所以这里演示的是"选模型"，不是"算曲线"。
+@export var player_path: NodePath = ^"AudioStreamPlayer3D"
 
-func _process(delta):
-    # 更新音频衰减
-    update_attenuation()
+func _ready():
+    var player := get_node(player_path) as AudioStreamPlayer3D
+    if player == null:
+        return
 
-func update_attenuation():
-    # 计算到监听器的距离
-    var listener_pos = get_viewport().get_camera_3d().global_transform.origin
-    var distance = global_transform.origin.distance_to(listener_pos)
-    
-    # 计算衰减值
-    var attenuation = calculate_attenuation(distance)
-    
-    # 应用到音频播放器
-    if $AudioStreamPlayer3D:
-        $AudioStreamPlayer3D.volume_db = linear_to_db(attenuation)
+    # 1) 衰减因子：越大越"穿得远"
+    player.unit_size = 10.0
 
-func calculate_attenuation(distance: float) -> float:
-    # 计算衰减
-    if distance <= min_distance:
-        return 1.0
-    elif distance >= max_distance:
-        return 0.0
-    else:
-        var normalized_distance = (distance - min_distance) / (max_distance - min_distance)
-        if attenuation_curve:
-            return attenuation_curve.sample(1.0 - normalized_distance)
-        else:
-            # 线性衰减
-            return 1.0 - normalized_distance
+    # 2) 最大距离：超过就完全听不见（>0 才生效，且始终是线性截断）
+    player.max_distance = 40.0
+
+    # 3) 衰减模型：引擎内置四种
+    player.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
+
+    # 远处的低通滤波：截止频率 5000Hz，衰减 -24dB；
+    # 把 cutoff 提到 20500（人耳上限）即可关闭该滤波。
+    player.attenuation_filter_cutoff_hz = 5000.0
+    player.attenuation_filter_db = -24.0
+
+func set_attenuation_model(model: int):
+    # 四种模型（枚举 AudioStreamPlayer3D.AttenuationModel）：
+    #   ATTENUATION_INVERSE_DISTANCE        线性反比
+    #   ATTENUATION_INVERSE_SQUARE_DISTANCE  平方反比（最接近物理直觉）
+    #   ATTENUATION_LOGARITHMIC              对数
+    #   ATTENUATION_DISABLED                 不随距离衰减（仍保留声像）
+    var player := get_node(player_path) as AudioStreamPlayer3D
+    if player:
+        player.attenuation_model = model
 
 func set_max_distance(dist: float):
-    max_distance = dist
+    var player := get_node(player_path) as AudioStreamPlayer3D
+    if player:
+        player.max_distance = dist
 
-func set_min_distance(dist: float):
-    min_distance = dist
+func set_unit_size(size: float):
+    var player := get_node(player_path) as AudioStreamPlayer3D
+    if player:
+        player.unit_size = size
 
-func set_attenuation_curve(curve: Curve):
-    attenuation_curve = curve
+func make_listener_current(listener: AudioListener3D):
+    # Godot 4 的听者由 AudioListener3D 决定：
+    # 默认从摄像机位置听到，加入 AudioListener3D 并 make_current() 后改由它决定。
+    # 不要再用 get_viewport().get_camera_3d() 去"猜"听者位置。
+    listener.make_current()
 ```
 
 ### 5.3 音频性能监控
@@ -863,9 +886,10 @@ class_name AudioPerformanceMonitor
 
 extends Node
 
-var active_players = 0
-var total_samples = 0
-var cpu_usage = 0.0
+var active_players = 0         # 实际含义是"总线数量"，引擎没有活跃播放器计数
+var mix_rate = 0.0              # AudioServer.get_mix_rate()
+var output_latency = 0.0       # AudioServer.get_output_latency()，单位秒
+var time_since_last_mix = 0.0  # 距上次混音的相对时间，单位秒
 
 func _ready():
     # 开始监控
@@ -883,23 +907,34 @@ func _update_stats():
     # 更新统计信息
     var audio_server = AudioServer
     active_players = audio_server.bus_count
-    total_samples = audio_server.mix_rate * audio_server.input_latency
-    cpu_usage = audio_server.performance_get("time_usage/max")
+    # 采样率是方法 get_mix_rate()（返回 float）；引擎没有 input_latency，
+    # 只有 get_output_latency()
+    mix_rate = audio_server.get_mix_rate()
+    output_latency = audio_server.get_output_latency()
+    # ⚠️ Godot 4 **没有**暴露混音线程的 CPU 占用百分比：
+    # AudioServer 没有 performance_get()，Performance 里也没有 time_usage/* 监视器
+    #（那是 Godot 3.x 的名字）。只能自己采样 get_time_since_last_mix()
+    #（官方描述："距上次混音的相对时间"，单位秒）做趋势观察。
+    time_since_last_mix = audio_server.get_time_since_last_mix()
 
-func get_active_players() -> int:
+func get_bus_count() -> int:
     return active_players
 
-func get_cpu_usage() -> float:
-    return cpu_usage
+func get_mix_rate() -> float:
+    return mix_rate
 
-func get_total_samples() -> int:
-    return total_samples
+func get_output_latency() -> float:
+    return output_latency
+
+func get_time_since_last_mix() -> float:
+    return time_since_last_mix
 
 func print_stats():
     print("Audio Stats:")
-    print("- Active Players: ", get_active_players())
-    print("- CPU Usage: ", get_cpu_usage())
-    print("- Total Samples: ", get_total_samples())
+    print("- Bus Count: ", get_bus_count())
+    print("- Mix Rate: ", get_mix_rate())
+    print("- Output Latency: ", get_output_latency())
+    print("- Time Since Last Mix: ", get_time_since_last_mix())
 ```
 
 ---
@@ -1025,8 +1060,8 @@ func play_3d_sound(sound_path: String, position: Vector3, volume: float = 1.0):
     player_3d.global_transform.origin = position
     player_3d.volume_db = linear_to_db(volume)
     
-    # 连接完成信号以清理资源
-    player_3d.connect("finished", player_3d, "queue_free")
+    # 连接完成信号以清理资源（Godot 4 用 Callable 形式）
+    player_3d.finished.connect(player_3d.queue_free)
     
     # 添加到场景
     add_child(player_3d)
@@ -1066,7 +1101,8 @@ func toggle_mute():
         bus_manager.mute_all()
 
 func get_performance_stats():
-    return performance_monitor.get_cpu_usage()
+    # Godot 4 没有暴露混音线程的 CPU 占用，只能返回混音时序指标
+    return performance_monitor.get_time_since_last_mix()
 ```
 
 ### 6.3 完整音频系统
@@ -1158,20 +1194,23 @@ func update(dt):
 
 | 术语 | 解释 |
 |------|------|
-| AudioStreamPlayer | 2D 音频播放器 |
-| AudioStreamPlayer3D | 3D 音频播放器 |
+| AudioStreamPlayer | 非定位音频播放器（UI / 背景音乐） |
+| AudioStreamPlayer2D | 2D 定位音频播放器 |
+| AudioStreamPlayer3D | 3D 定位音频播放器 |
+| AudioListener3D | 3D 音频听者，make_current() 后生效 |
 | AudioBus | 音频总线 |
 | AudioEffect | 音频效果器 |
-| AudioServer | 音频服务器 |
-| Attenuation | 距离衰减 |
+| AudioServer | 音频服务器（总线与效果器的管理者） |
+| attenuation_model | 3D 距离衰减模型（4 种枚举） |
 
 ---
 
 ## 🔗 延伸阅读
 
-- **官方文档**: [Godot Audio](https://docs.godotengine.org/en/stable/tutorials/audio/index.html)
-- **源码位置**: `servers/audio/`
-- **技术博客**: [Godot Audio System](https://godotengine.org/article/audio-system/)
+- **官方文档**: [Audio buses](https://docs.godotengine.org/en/stable/tutorials/audio/audio_buses.html)
+- **官方文档**: [Audio streams](https://docs.godotengine.org/en/stable/tutorials/audio/audio_streams.html)
+- **类参考**: [AudioServer](https://docs.godotengine.org/en/stable/classes/class_audioserver.html)
+- **源码位置**: `servers/audio/`、`servers/audio/effects/`
 
 ---
 
@@ -1180,14 +1219,23 @@ func update(dt):
 **第 46 篇：音频播放器**
 
 - 音频播放器基础
-- 2D 音频播放器
-- 3D 音频播放器
+- 2D / 3D 定位音频播放器
+- 音频流类型与程序化音频
 - 音频播放器优化
 
 ---
 
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+
+---
+
+**上一篇**: [第 42 篇：动画性能优化](/articles/42-particle-system.md)
+**下一篇**: [第 46 篇：音频播放器](/articles/46-audio-player.md)
+
+---
+
 *写作时间：2026-03-20*  
-*字数：约 11,000 字*  
+*字数：约 600 字（不含代码块）（不含代码块）*  
 *状态：✅ 完成*
 
 ---

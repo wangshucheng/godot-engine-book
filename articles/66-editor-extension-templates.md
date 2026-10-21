@@ -1,6 +1,6 @@
 # 第 66 篇：编辑器扩展模板
 
-> **本卷定位**: 第八卷 编辑器扩展（7 篇）  
+> **本卷定位**: 第八卷 编辑器扩展（8 篇）  
 > **前置知识**: 第 65 章 编辑器自动化  
 > **难度等级**: ⭐⭐⭐⭐ 高级
 
@@ -8,16 +8,29 @@
 
 ## 📖 本章导读
 
-编辑器扩展模板为开发者提供了快速创建插件和扩展的基础结构。通过模板，开发者可以快速启动项目，避免重复创建基础文件。本章将探讨编辑器扩展模板的架构、创建、分发和维护。
+编辑器扩展模板为开发者提供了快速创建插件和扩展的基础结构。通过模板，开发者可以快速启动项目，避免重复创建基础文件。本章讲**插件脚手架与工程化模板**：目录怎么组织、文件怎么生成、模板本身怎么版本化与测试。
+
+> ⚠️ **本文的「模板」≠ Godot 的 ScriptTemplate / ProjectTemplate**
+>
+> Godot 引擎本身有两套官方的「模板」机制：
+> - **ScriptTemplate**：新建脚本时在「创建脚本」对话框里出现的代码片段模板，
+>   存在编辑器的 `script_templates.cfg` 里；
+> - **ProjectTemplate**：项目管理器里「从模板创建项目」用的项目骨架，
+>   由 `ProjectManager` 从 `res://.godot/exported/...` 之外的模板目录读取。
+>
+> 它们都是**引擎功能**，不是插件体系的一部分。
+> **本文讲的是自建的插件脚手架**：一组用脚本生成的目录与文件，
+> 用来快速产出一个符合规范的 Godot 插件。两者名字相近但没有继承关系，
+> 不要混淆。
 
 ---
 
 ## 🎯 学习目标
 
-- 理解编辑器扩展模板架构
-- 掌握模板创建流程
-- 学会模板分发机制
-- 熟悉模板维护策略
+- 理解插件脚手架的分层结构
+- 掌握用脚本生成插件目录与 `plugin.cfg`
+- 掌握模板的版本管理与自检
+- 清楚模板与 AssetLib 发布流程的分工
 
 ---
 
@@ -44,95 +57,93 @@
 
 ```gdscript
 # 模板组件
+@tool
 class_name TemplateComponents
 
-var core_template = {
+var core_template := {
     "name": "Core Template",
     "description": "Basic plugin structure",
     "files": [
         "plugin.gd",
         "plugin.cfg",
-        "icon.png",
-        "README.md"
+        "icon.svg",
+        "README.md",
     ],
     "features": [
         "plugin initialization",
         "dock setup",
         "menu item",
-        "settings"
-    ]
+        "settings",
+    ],
 }
 
-var tool_template = {
+var tool_template := {
     "name": "Tool Template",
     "description": "Tool plugin structure",
     "files": [
         "tool.gd",
         "plugin.cfg",
-        "icon.png",
+        "icon.svg",
         "README.md",
-        "editor_script.gd"
+        "editor_script.gd",
     ],
     "features": [
         "editor script",
         "custom dock",
         "toolbar button",
-        "hotkey"
-    ]
+        "hotkey",
+    ],
 }
 
-var resource_template = {
+var resource_template := {
     "name": "Resource Template",
     "description": "Resource management plugin structure",
     "files": [
         "resource_plugin.gd",
         "plugin.cfg",
-        "icon.png",
+        "icon.svg",
         "README.md",
-        "editor_inspector_plugin.gd"
+        "editor_inspector_plugin.gd",
     ],
     "features": [
         "inspector plugin",
-        "resource preview",
         "resource tools",
-        "batch operations"
-    ]
+        "batch operations",
+    ],
 }
 
-var workflow_template = {
+var workflow_template := {
     "name": "Workflow Template",
     "description": "Workflow plugin structure",
     "files": [
         "workflow_plugin.gd",
         "plugin.cfg",
-        "icon.png",
+        "icon.svg",
         "README.md",
-        "workflow.gd"
+        "workflow.gd",
     ],
     "features": [
         "workflow state machine",
         "task scheduler",
         "progress tracking",
-        "auto-save"
-    ]
+    ],
 }
 
-var ui_template = {
+var ui_template := {
     "name": "UI Template",
     "description": "UI extension plugin structure",
     "files": [
         "ui_plugin.gd",
         "plugin.cfg",
-        "icon.png",
+        "icon.svg",
         "README.md",
-        "custom_control.tscn"
+        "custom_control.gd",
     ],
     "features": [
         "custom control",
         "theme support",
         "input handling",
-        "animation"
-    ]
+    ],
 }
 
 func get_template(template_name: String) -> Dictionary:
@@ -141,7 +152,7 @@ func get_template(template_name: String) -> Dictionary:
         "tool": tool_template,
         "resource": resource_template,
         "workflow": workflow_template,
-        "ui": ui_template
+        "ui": ui_template,
     }.get(template_name, {})
 ```
 
@@ -149,45 +160,38 @@ func get_template(template_name: String) -> Dictionary:
 
 ```gdscript
 # 模板接口
+@tool
 class_name TemplateInterface
 
 var templates: Dictionary = {}
 
-func initialize():
-    # 初始化模板接口
+func initialize() -> void:
     _load_templates()
 
-func _load_templates():
-    # 加载模板
+func _load_templates() -> void:
+    var components := TemplateComponents.new()
     templates = {
-        "core": core_template,
-        "tool": tool_template,
-        "resource": resource_template,
-        "workflow": workflow_template,
-        "ui": ui_template
+        "core": components.core_template,
+        "tool": components.tool_template,
+        "resource": components.resource_template,
+        "workflow": components.workflow_template,
+        "ui": components.ui_template,
     }
 
 func get_template(template_name: String) -> Dictionary:
-    # 获取模板
     return templates.get(template_name, {})
 
 func get_all_templates() -> Dictionary:
-    # 获取所有模板
     return templates
 
 func get_template_names() -> Array:
-    # 获取模板名称
     return templates.keys()
 
 func get_template_features(template_name: String) -> Array:
-    # 获取模板特性
-    var template = get_template(template_name)
-    return template.get("features", [])
+    return get_template(template_name).get("features", [])
 
 func get_template_files(template_name: String) -> Array:
-    # 获取模板文件
-    var template = get_template(template_name)
-    return template.get("files", [])
+    return get_template(template_name).get("files", [])
 ```
 
 ---
@@ -198,26 +202,31 @@ func get_template_files(template_name: String) -> Array:
 
 ```gdscript
 # 核心模板创建
+@tool
 class_name CoreTemplateCreator
 
 func create_core_template(template_path: String) -> bool:
     # 创建核心模板
-    _create_directory(template_path)
+    if not _create_directory(template_path):
+        return false
     _create_plugin_file(template_path)
     _create_plugin_cfg_file(template_path)
-    _create_icon_file(template_path)
     _create_readme_file(template_path)
-    
     return true
 
-func _create_directory(path: String):
-    # 创建目录
-    var dir = DirAccess.open("res://")
-    dir.make_dir_recursive(path)
+func _create_directory(path: String) -> bool:
+    # 创建目录（4.x 用 DirAccess 的静态方法，路径必须是绝对路径）
+    var err := DirAccess.make_dir_recursive_absolute(path)
+    if err != OK:
+        push_error("无法创建目录 %s（错误码 %d）" % [path, err])
+        return false
+    return true
 
-func _create_plugin_file(path: String):
+func _create_plugin_file(path: String) -> void:
     # 创建插件文件
-    var plugin_code = """
+    # ⚠️ 生成的插件脚本必须以 @tool 开头，否则在编辑器里不会被实例化
+    var plugin_code := """
+@tool
 extends EditorPlugin
 
 func _enter_tree():
@@ -240,15 +249,14 @@ func _make_visible(visible):
     # 设置可见性
     pass
 """
-    var file = FileAccess.open(path + "/plugin.gd", FileAccess.WRITE)
-    if file:
-        file.store_string(plugin_code)
-        file.close()
+    _write_text(path + "/plugin.gd", plugin_code)
 
 func _create_plugin_cfg_file(path: String) -> void:
     # Godot 识别插件的唯一依据是 plugin.cfg（INI 格式）；
     # metadata.json 不是 Godot 的约定，编辑器不会读取它。
     # 缺少 plugin.cfg 时，「项目设置 → 插件」列表里根本不会出现该插件。
+    # ⚠️ 4.3 只解析 [plugin] 段的 script/version/name/description/author，
+    #    没有 [dependencies] 分支——不要写 [dependencies]，它不会有任何效果。
     var cfg := """[plugin]
 
 name="MyPlugin"
@@ -257,19 +265,10 @@ author="Your Name"
 version="1.0.0"
 script="plugin.gd"
 """
-    var file := FileAccess.open(path + "/plugin.cfg", FileAccess.WRITE)
-    if file:
-        file.store_string(cfg)
-        file.close()
+    _write_text(path + "/plugin.cfg", cfg)
 
-func _create_icon_file(path: String):
-    # 创建图标文件
-    # 这里应该是创建图标的逻辑
-    pass
-
-func _create_readme_file(path: String):
-    # 创建README文件
-    var readme = """
+func _create_readme_file(path: String) -> void:
+    var readme := """
 # MyPlugin
 
 A Godot plugin.
@@ -294,184 +293,171 @@ A Godot plugin.
 
 MIT License
 """
-    var file = FileAccess.open(path + "/README.md", FileAccess.WRITE)
-    if file:
-        file.store_string(readme)
-        file.close()
+    _write_text(path + "/README.md", readme)
+
+func _write_text(path: String, content: String) -> void:
+    var file := FileAccess.open(path, FileAccess.WRITE)
+    if file == null:
+        push_error("无法写入：" + path)
+        return
+    file.store_string(content)
+    file.close()
 ```
 
 ### 2.2 工具模板创建
 
 ```gdscript
 # 工具模板创建
+@tool
 class_name ToolTemplateCreator
 
 func create_tool_template(template_path: String) -> bool:
-    # 创建工具模板
     _create_directory(template_path)
     _create_tool_file(template_path)
     _create_plugin_cfg_file(template_path)
-    _create_icon_file(template_path)
     _create_readme_file(template_path)
     _create_editor_script_file(template_path)
-    
     return true
 
-func _create_tool_file(path: String):
-    # 创建工具文件
-    var tool_code = """
+func _create_tool_file(path: String) -> void:
+    var tool_code := """
+@tool
 extends EditorPlugin
 
 var dock: Control
 var button: Button
 
 func _enter_tree():
-    # 初始化插件
     _setup_dock()
     _setup_button()
 
 func _exit_tree():
-    # 清理插件
     _cleanup_dock()
     _cleanup_button()
 
 func _setup_dock():
-    # 设置停靠面板
     dock = Control.new()
     dock.name = "MyToolDock"
     add_control_to_dock(DOCK_SLOT_RIGHT_UL, dock)
 
 func _cleanup_dock():
-    # 清理停靠面板
     if dock:
+        # 先从 Dock 摘掉，再释放；对已在场景树中的节点用 queue_free()
         remove_control_from_docks(dock)
-        dock.free()
+        dock.queue_free()
+        dock = null
 
 func _setup_button():
-    # 设置工具栏按钮
     button = Button.new()
     button.text = "My Tool"
     button.pressed.connect(_on_button_pressed)
     add_control_to_container(CONTAINER_TOOLBAR, button)
 
 func _cleanup_button():
-    # 清理按钮
     if button:
-        remove_control_from_containers(button)
-        button.free()
+        # ⚠️ 没有 remove_control_from_containers()；
+        #    正确 API 是 2 参的 remove_control_from_container(容器枚举, 控件)
+        remove_control_from_container(CONTAINER_TOOLBAR, button)
+        button.queue_free()
+        button = null
 
 func _on_button_pressed():
-    # 按钮按下时
     pass
 
 func _handles(object):
-    # 检查对象
     return false
 
 func _edit(object):
-    # 编辑对象
     pass
 
 func _make_visible(visible):
-    # 设置可见性
     if dock:
         dock.visible = visible
 """
-    var file = FileAccess.open(path + "/tool.gd", FileAccess.WRITE)
-    if file:
-        file.store_string(tool_code)
-        file.close()
+    _write_text(path + "/tool.gd", tool_code)
 
-func _create_editor_script_file(path: String):
-    # 创建编辑器脚本文件
-    var editor_script_code = """
+func _create_editor_script_file(path: String) -> void:
+    # 编辑器脚本同样必须加 @tool
+    var editor_script_code := """
+@tool
 extends EditorScript
 
 func _run():
     # 编辑器脚本
     print("Running editor script")
 """
-    var file = FileAccess.open(path + "/editor_script.gd", FileAccess.WRITE)
-    if file:
-        file.store_string(editor_script_code)
-        file.close()
+    _write_text(path + "/editor_script.gd", editor_script_code)
 ```
 
 ### 2.3 资源模板创建
 
 ```gdscript
 # 资源模板创建
+@tool
 class_name ResourceTemplateCreator
 
 func create_resource_template(template_path: String) -> bool:
-    # 创建资源模板
     _create_directory(template_path)
     _create_resource_plugin_file(template_path)
     _create_plugin_cfg_file(template_path)
-    _create_icon_file(template_path)
     _create_readme_file(template_path)
     _create_inspector_plugin_file(template_path)
-    
     return true
 
-func _create_resource_plugin_file(path: String):
-    # 创建资源插件文件
-    var resource_plugin_code = """
+func _create_resource_plugin_file(path: String) -> void:
+    var resource_plugin_code := """
+@tool
 extends EditorPlugin
 
 var dock: Control
 var inspector_plugin: EditorInspectorPlugin
 
 func _enter_tree():
-    # 初始化插件
     _setup_dock()
     _setup_inspector_plugin()
 
 func _exit_tree():
-    # 清理插件
     _cleanup_dock()
     _cleanup_inspector_plugin()
 
 func _setup_dock():
-    # 设置停靠面板
     dock = Control.new()
     dock.name = "ResourceToolDock"
     add_control_to_dock(DOCK_SLOT_RIGHT_UL, dock)
 
 func _cleanup_dock():
-    # 清理停靠面板
     if dock:
         remove_control_from_docks(dock)
-        dock.free()
+        dock.queue_free()
+        dock = null
 
 func _setup_inspector_plugin():
-    # 设置检查器插件
     inspector_plugin = EditorInspectorPlugin.new()
     add_inspector_plugin(inspector_plugin)
 
 func _cleanup_inspector_plugin():
-    # 清理检查器插件
     if inspector_plugin:
         remove_inspector_plugin(inspector_plugin)
-        inspector_plugin.free()
+        # EditorInspectorPlugin 继承 RefCounted，不需要 queue_free()，
+        # 去掉引用后由引用计数自动回收
+        inspector_plugin = null
 """
-    var file = FileAccess.open(path + "/resource_plugin.gd", FileAccess.WRITE)
-    if file:
-        file.store_string(resource_plugin_code)
-        file.close()
+    _write_text(path + "/resource_plugin.gd", resource_plugin_code)
 
-func _create_inspector_plugin_file(path: String):
-    # 创建检查器插件文件
-    var inspector_plugin_code = """
+func _create_inspector_plugin_file(path: String) -> void:
+    var inspector_plugin_code := """
+@tool
 extends EditorInspectorPlugin
 
 func _can_handle(object):
-    # 检查对象
-    return object is MyResource
+    # 检查对象：这里换成你自己的资源类
+    return object is Resource and object.get_class() == "MyResource"
 
 func _parse_begin(object):
     # 开始解析
-    add_label("My Resource Inspector")
+    var label = Label.new()
+    label.text = "My Resource Inspector"
+    add_custom_control(label)
 
 func _parse_end(object):
     # 结束解析
@@ -479,342 +465,318 @@ func _parse_end(object):
 
 func _parse_category(object, category):
     # 解析类别
-    add_label("Category: " + category)
+    pass
 
 func _parse_property(object, type, name, hint_type, hint_string, usage_flags, wide):
     # 解析属性
     return false
 """
-    var file = FileAccess.open(path + "/editor_inspector_plugin.gd", FileAccess.WRITE)
-    if file:
-        file.store_string(inspector_plugin_code)
-        file.close()
+    _write_text(path + "/editor_inspector_plugin.gd", inspector_plugin_code)
 ```
 
 ### 2.4 工作流模板创建
 
 ```gdscript
 # 工作流模板创建
+@tool
 class_name WorkflowTemplateCreator
 
 func create_workflow_template(template_path: String) -> bool:
-    # 创建工作流模板
     _create_directory(template_path)
     _create_workflow_plugin_file(template_path)
     _create_plugin_cfg_file(template_path)
-    _create_icon_file(template_path)
     _create_readme_file(template_path)
     _create_workflow_file(template_path)
-    
     return true
 
-func _create_workflow_plugin_file(path: String):
-    # 创建工作流插件文件
-    var workflow_plugin_code = """
+func _create_workflow_plugin_file(path: String) -> void:
+    var workflow_plugin_code := """
+@tool
 extends EditorPlugin
 
 var dock: Control
 var workflow: Workflow
 
 func _enter_tree():
-    # 初始化插件
     _setup_dock()
     _setup_workflow()
 
 func _exit_tree():
-    # 清理插件
     _cleanup_dock()
     _cleanup_workflow()
 
 func _setup_dock():
-    # 设置停靠面板
     dock = Control.new()
     dock.name = "WorkflowDock"
     add_control_to_dock(DOCK_SLOT_RIGHT_UL, dock)
 
 func _cleanup_dock():
-    # 清理停靠面板
     if dock:
         remove_control_from_docks(dock)
-        dock.free()
+        dock.queue_free()
+        dock = null
 
 func _setup_workflow():
-    # 设置工作流
     workflow = Workflow.new()
     workflow.setup()
 
 func _cleanup_workflow():
-    # 清理工作流
     if workflow:
         workflow.shutdown()
-        workflow.free()
+        # Workflow 继承 Node，释放要用 queue_free()
+        workflow.queue_free()
+        workflow = null
 """
-    var file = FileAccess.open(path + "/workflow_plugin.gd", FileAccess.WRITE)
-    if file:
-        file.store_string(workflow_plugin_code)
-        file.close()
+    _write_text(path + "/workflow_plugin.gd", workflow_plugin_code)
 
-func _create_workflow_file(path: String):
-    # 创建工作流文件
-    var workflow_code = """
+func _create_workflow_file(path: String) -> void:
+    var workflow_code := """
+@tool
 extends Node
 
 var state_machine: StateMachine
 
 func setup():
-    # 设置工作流
     state_machine = StateMachine.new()
     state_machine.setup()
 
 func shutdown():
-    # 关闭工作流
     if state_machine:
         state_machine.shutdown()
 
-class StateMachine:
-    extends RefCounted
-    
+# ⚠️ GDScript 4.x 的内部类必须把 extends 写在 class 名的同一行：
+#    class StateMachine extends RefCounted:
+#    另起一行写 extends 是 3.x 的旧写法，4.x 解析不了。
+class StateMachine extends RefCounted:
+
     var current_state: String = "idle"
     var states: Dictionary = {}
-    
+
     func setup():
-        # 设置状态机
         pass
-    
+
     func shutdown():
-        # 关闭状态机
         pass
-    
+
     func update():
-        # 更新状态机
         pass
 """
-    var file = FileAccess.open(path + "/workflow.gd", FileAccess.WRITE)
-    if file:
-        file.store_string(workflow_code)
-        file.close()
+    _write_text(path + "/workflow.gd", workflow_code)
 ```
 
 ### 2.5 UI模板创建
 
 ```gdscript
 # UI模板创建
+@tool
 class_name UITemplateCreator
 
 func create_ui_template(template_path: String) -> bool:
-    # 创建UI模板
     _create_directory(template_path)
     _create_ui_plugin_file(template_path)
     _create_plugin_cfg_file(template_path)
-    _create_icon_file(template_path)
     _create_readme_file(template_path)
     _create_custom_control_file(template_path)
-    
     return true
 
-func _create_ui_plugin_file(path: String):
-    # 创建UI插件文件
-    var ui_plugin_code = """
+func _create_ui_plugin_file(path: String) -> void:
+    var ui_plugin_code := """
+@tool
 extends EditorPlugin
 
 var dock: Control
 var custom_control: CustomControl
 
 func _enter_tree():
-    # 初始化插件
     _setup_dock()
     _setup_custom_control()
 
 func _exit_tree():
-    # 清理插件
     _cleanup_dock()
     _cleanup_custom_control()
 
 func _setup_dock():
-    # 设置停靠面板
     dock = Control.new()
     dock.name = "UICustomDock"
     add_control_to_dock(DOCK_SLOT_RIGHT_UL, dock)
 
 func _cleanup_dock():
-    # 清理停靠面板
     if dock:
         remove_control_from_docks(dock)
-        dock.free()
+        dock.queue_free()
+        dock = null
 
 func _setup_custom_control():
-    # 设置自定义控件
     custom_control = CustomControl.new()
     dock.add_child(custom_control)
 
 func _cleanup_custom_control():
-    # 清理自定义控件
     if custom_control:
-        custom_control.free()
+        # 已在场景树中，用 queue_free()
+        custom_control.queue_free()
+        custom_control = null
 """
-    var file = FileAccess.open(path + "/ui_plugin.gd", FileAccess.WRITE)
-    if file:
-        file.store_string(ui_plugin_code)
-        file.close()
+    _write_text(path + "/ui_plugin.gd", ui_plugin_code)
 
-func _create_custom_control_file(path: String):
-    # 创建自定义控件文件
-    var custom_control_code = """
+func _create_custom_control_file(path: String) -> void:
+    var custom_control_code := """
+@tool
 extends Control
 
 func _ready():
-    # 设置UI
     _setup_ui()
 
 func _setup_ui():
-    # 设置UI
     var label = Label.new()
     label.text = "Custom Control"
     add_child(label)
 """
-    var file = FileAccess.open(path + "/custom_control.gd", FileAccess.WRITE)
-    if file:
-        file.store_string(custom_control_code)
-        file.close()
+    _write_text(path + "/custom_control.gd", custom_control_code)
 ```
 
 ---
 
 ## 3. 模板分发
 
+> **卷内边界**：插件**打包成 zip 并发布到 AssetLib** 的硬性规则
+> （zip 根目录必须直接含 `addons/<插件名>/plugin.cfg`、图标与截图规格、
+> 版本号必须与 `plugin.cfg` 一致、审核要点）属于**第 58 篇 §4.4**。
+> 本节只讲「模板自身的分发」：把一份脚手架复制到另一个项目里。
+
 ### 3.1 模板打包
 
 ```gdscript
 # 模板打包
+@tool
 class_name TemplatePackager
 
 func package_template(template_path: String, output_path: String) -> bool:
-    # 打包模板
-    var template_archive = {}
-    template_archive["files"] = _get_template_files(template_path)
-    template_archive["metadata"] = _get_template_metadata(template_path)
-    
-    # 保存模板包
-    var file = FileAccess.open(output_path, FileAccess.WRITE)
-    if file:
-        file.store_string(JSON.stringify(template_archive, "  "))
-        file.close()
-        return true
-    return false
+    # 打包模板：导出成一个 JSON 清单 + 文件内容
+    var template_archive := {
+        "files": _get_template_files(template_path),
+        "metadata": _get_template_metadata(template_path),
+    }
+
+    var file := FileAccess.open(output_path, FileAccess.WRITE)
+    if file == null:
+        push_error("无法写入：" + output_path)
+        return false
+    file.store_string(JSON.stringify(template_archive, "  "))
+    file.close()
+    return true
 
 func _get_template_files(template_path: String) -> Array:
-    # 获取模板文件
-    var files = []
-    var dir = DirAccess.open(template_path)
-    if dir:
-        dir.list_dir_begin()
-        var file_name = dir.get_next()
-        while file_name != "":
-            if not dir.current_is_dir():
-                files.append(file_name)
-            file_name = dir.get_next()
+    var files: Array = []
+    var dir := DirAccess.open(template_path)
+    if dir == null:
+        return files
+    dir.list_dir_begin()
+    var file_name := dir.get_next()
+    while file_name != "":
+        if not dir.current_is_dir():
+            files.append(file_name)
+        file_name = dir.get_next()
+    dir.list_dir_end()
     return files
 
 func _get_template_metadata(template_path: String) -> Dictionary:
     # 获取模板元数据
-    var plugin_cfg_path = template_path + "/plugin.cfg"
-    var file = FileAccess.open(plugin_cfg_path, FileAccess.READ)
-    if file:
-        var json_string = file.get_as_text()
-        file.close()
-        
-        var json = JSON.new()
-        json.parse(json_string)
-        return json.data
-    
-    return {}
+    # ⚠️ plugin.cfg 是 INI 格式，用 JSON.parse() 读它一定失败，必须用 ConfigFile
+    var cfg := ConfigFile.new()
+    if cfg.load(template_path + "/plugin.cfg") != OK:
+        return {}
+    return {
+        "name": cfg.get_value("plugin", "name", ""),
+        "version": cfg.get_value("plugin", "version", "0.0.0"),
+        "description": cfg.get_value("plugin", "description", ""),
+        "author": cfg.get_value("plugin", "author", ""),
+    }
 ```
 
 ### 3.2 模板安装
 
 ```gdscript
 # 模板安装
+@tool
 class_name TemplateInstaller
 
 func install_template(template_path: String, destination_path: String) -> bool:
     # 安装模板
     if not DirAccess.dir_exists_absolute(destination_path):
-        DirAccess.make_dir_absolute(destination_path)
-    
-    # 复制文件
-    var source_dir = DirAccess.open(template_path)
-    if source_dir:
-        source_dir.list_dir_begin()
-        var file_name = source_dir.get_next()
-        while file_name != "":
-            if not source_dir.current_is_dir():
-                var source_file = template_path + "/" + file_name
-                var dest_file = destination_path + "/" + file_name
-                _copy_file(source_file, dest_file)
-            file_name = source_dir.get_next()
-    
-    return true
+        DirAccess.make_dir_recursive_absolute(destination_path)
 
-func _copy_file(source_path: String, dest_path: String):
-    # 复制文件
-    var source_file = FileAccess.open(source_path, FileAccess.READ)
-    if source_file:
-        var content = source_file.get_buffer(source_file.get_length())
-        source_file.close()
-        
-        var dest_file = FileAccess.open(dest_path, FileAccess.WRITE)
-        if dest_file:
-            dest_file.store_buffer(content)
-            dest_file.close()
+    var source_dir := DirAccess.open(template_path)
+    if source_dir == null:
+        push_error("无法读取模板目录：" + template_path)
+        return false
+
+    var ok := true
+    source_dir.list_dir_begin()
+    var file_name := source_dir.get_next()
+    while file_name != "":
+        if not source_dir.current_is_dir():
+            if not _copy_file(template_path + "/" + file_name, destination_path + "/" + file_name):
+                ok = false
+        file_name = source_dir.get_next()
+    source_dir.list_dir_end()
+    return ok
+
+func _copy_file(source_path: String, dest_path: String) -> bool:
+    var source_file := FileAccess.open(source_path, FileAccess.READ)
+    if source_file == null:
+        return false
+    var content := source_file.get_buffer(source_file.get_length())
+    source_file.close()
+
+    var dest_file := FileAccess.open(dest_path, FileAccess.WRITE)
+    if dest_file == null:
+        return false
+    dest_file.store_buffer(content)
+    dest_file.close()
+    return true
 ```
 
-### 3.3 模板更新
+### 3.3 模板版本检查
 
 ```gdscript
-# 模板更新
+# 模板版本检查
+@tool
 class_name TemplateUpdater
 
-func check_for_updates(template_name: String) -> Dictionary:
+func check_for_updates(template_name: String, remote_version: String) -> Dictionary:
     # 检查更新
-    var latest_version = _get_latest_version_from_server(template_name)
-    var installed_version = _get_installed_version(template_name)
-    
-    if latest_version > installed_version:
+    var installed_version := _get_installed_version(template_name)
+    if _compare_versions(remote_version, installed_version) > 0:
         return {
             "available": true,
-            "latest_version": latest_version,
+            "latest_version": remote_version,
             "installed_version": installed_version,
-            "update_url": _get_update_url(template_name, latest_version)
         }
-    else:
-        return {
-            "available": false,
-            "latest_version": latest_version,
-            "installed_version": installed_version
-        }
-
-func _get_latest_version_from_server(template_name: String) -> String:
-    # 从服务器获取最新版本
-    # 这里应该是与服务器的API调用
-    return "1.0.0"
+    return {
+        "available": false,
+        "latest_version": remote_version,
+        "installed_version": installed_version,
+    }
 
 func _get_installed_version(template_name: String) -> String:
-    # 获取已安装版本
-    var plugin_cfg_path = "res://addons/" + template_name + "/plugin.cfg"
-    var file = FileAccess.open(plugin_cfg_path, FileAccess.READ)
-    if file:
-        var json_string = file.get_as_text()
-        file.close()
-        
-        var json = JSON.new()
-        json.parse(json_string)
-        return json.data.get("version", "0.0.0")
-    
-    return "0.0.0"
+    # 获取已安装版本：plugin.cfg 是 INI 格式，用 ConfigFile 读
+    var cfg := ConfigFile.new()
+    if cfg.load("res://addons/%s/plugin.cfg" % template_name) != OK:
+        return "0.0.0"
+    return cfg.get_value("plugin", "version", "0.0.0")
 
-func _get_update_url(template_name: String, version: String) -> String:
-    # 获取更新URL
-    return "https://yourwebsite.com/templates/" + template_name + "/v" + version
+func _compare_versions(a: String, b: String) -> int:
+    # ⚠️ 版本号不能直接用 > 比较（那是字符串比较，"10.0.0" < "9.0.0"）
+    var pa := a.split(".")
+    var pb := b.split(".")
+    for i in range(min(pa.size(), pb.size())):
+        var na := int(pa[i])
+        var nb := int(pb[i])
+        if na > nb:
+            return 1
+        elif na < nb:
+            return -1
+    return 0
 ```
 
 ---
@@ -825,15 +787,17 @@ func _get_update_url(template_name: String, version: String) -> String:
 
 ```gdscript
 # 版本管理
+@tool
 class_name TemplateVersionManagement
 
 func bump_version(current_version: String, type: String) -> String:
-    # 版本号递增
-    var parts = current_version.split(".")
-    var major = int(parts[0])
-    var minor = int(parts[1])
-    var patch = int(parts[2])
-    
+    var parts := current_version.split(".")
+    if parts.size() < 3:
+        return current_version
+    var major := int(parts[0])
+    var minor := int(parts[1])
+    var patch := int(parts[2])
+
     match type:
         "major":
             major += 1
@@ -846,35 +810,29 @@ func bump_version(current_version: String, type: String) -> String:
             patch += 1
         _:
             return current_version
-    
+
     return "%d.%d.%d" % [major, minor, patch]
 
 func validate_version(version: String) -> bool:
-    # 验证版本
-    var parts = version.split(".")
+    var parts := version.split(".")
     if parts.size() != 3:
         return false
-    
     for part in parts:
         if not part.is_valid_int():
             return false
-    
     return true
 
 func compare_versions(version1: String, version2: String) -> int:
-    # 比较版本
-    var parts1 = version1.split(".")
-    var parts2 = version2.split(".")
-    
+    # 比较版本：返回 -1 / 0 / 1
+    var parts1 := version1.split(".")
+    var parts2 := version2.split(".")
     for i in range(min(parts1.size(), parts2.size())):
-        var num1 = int(parts1[i])
-        var num2 = int(parts2[i])
-        
+        var num1 := int(parts1[i])
+        var num2 := int(parts2[i])
         if num1 < num2:
             return -1
         elif num1 > num2:
             return 1
-    
     return 0
 ```
 
@@ -882,11 +840,11 @@ func compare_versions(version1: String, version2: String) -> int:
 
 ```gdscript
 # 模板测试
+@tool
 class_name TemplateTesting
 
 func test_template(template_path: String) -> Dictionary:
-    # 测试模板
-    var test_results = {
+    var test_results := {
         "name": "",
         "version": "",
         "files_exist": true,
@@ -895,85 +853,84 @@ func test_template(template_path: String) -> Dictionary:
         "total_tests": 0,
         "passed_tests": 0,
         "failed_tests": 0,
-        "errors": []
+        "errors": [],
     }
-    
-    # 测试文件存在
+
     test_results["total_tests"] += 1
     if _check_files_exist(template_path):
         test_results["passed_tests"] += 1
     else:
         test_results["failed_tests"] += 1
         test_results["files_exist"] = false
-        test_results["errors"].append(" Required files missing")
-    
-    # 测试文件有效性
+        test_results["errors"].append("缺少必需文件")
+
     test_results["total_tests"] += 1
     if _check_files_valid(template_path):
         test_results["passed_tests"] += 1
     else:
         test_results["failed_tests"] += 1
         test_results["files_valid"] = false
-        test_results["errors"].append(" Invalid file content")
-    
-    # 测试元数据有效性
+        test_results["errors"].append("文件内容不合法")
+
     test_results["total_tests"] += 1
     if _check_metadata_valid(template_path):
         test_results["passed_tests"] += 1
     else:
         test_results["failed_tests"] += 1
         test_results["metadata_valid"] = false
-        test_results["errors"].append(" Invalid metadata")
-    
-    # 获取模板名称和版本
-    var metadata = _get_metadata(template_path)
+        test_results["errors"].append("元数据不合法")
+
+    var metadata := _get_metadata(template_path)
     test_results["name"] = metadata.get("name", "Unknown")
     test_results["version"] = metadata.get("version", "0.0.0")
-    
+
     return test_results
 
 func _check_files_exist(template_path: String) -> bool:
-    # 检查文件是否存在
-    var required_files = ["plugin.cfg", "plugin.gd", "README.md"]
+    var required_files := ["plugin.cfg", "plugin.gd", "README.md"]
     for file in required_files:
         if not FileAccess.file_exists(template_path + "/" + file):
             return false
     return true
 
 func _check_files_valid(template_path: String) -> bool:
-    # 检查文件有效性
-    # 这里应该是更复杂的文件验证逻辑
-    return true
+    # 检查文件有效性：面向编辑器的脚本必须以 @tool 开头
+    var script_path := template_path + "/plugin.gd"
+    if not FileAccess.file_exists(script_path):
+        return false
+    var file := FileAccess.open(script_path, FileAccess.READ)
+    if file == null:
+        return false
+    var content := file.get_as_text()
+    file.close()
+    return content.strip_edges().begins_with("@tool")
 
 func _check_metadata_valid(template_path: String) -> bool:
-    # 检查元数据有效性
-    var metadata = _get_metadata(template_path)
-    return metadata.has("name") and metadata.has("version")
+    var metadata := _get_metadata(template_path)
+    return metadata.has("name") and metadata.has("version") and not metadata["version"].is_empty()
 
 func _get_metadata(template_path: String) -> Dictionary:
-    # 获取元数据
-    var plugin_cfg_path = template_path + "/plugin.cfg"
-    var file = FileAccess.open(plugin_cfg_path, FileAccess.READ)
-    if file:
-        var json_string = file.get_as_text()
-        file.close()
-        
-        var json = JSON.new()
-        json.parse(json_string)
-        return json.data
-    
-    return {}
+    # 获取元数据：plugin.cfg 是 INI 格式，用 ConfigFile 读
+    var cfg := ConfigFile.new()
+    if cfg.load(template_path + "/plugin.cfg") != OK:
+        return {}
+    return {
+        "name": cfg.get_value("plugin", "name", ""),
+        "version": cfg.get_value("plugin", "version", "0.0.0"),
+        "description": cfg.get_value("plugin", "description", ""),
+        "author": cfg.get_value("plugin", "author", ""),
+    }
 ```
 
 ### 4.3 模板文档
 
 ```gdscript
 # 模板文档
+@tool
 class_name TemplateDocumentation
 
 func generate_documentation(template_path: String) -> Dictionary:
-    # 生成文档
-    var documentation = {
+    var documentation := {
         "name": "",
         "version": "",
         "description": "",
@@ -981,80 +938,58 @@ func generate_documentation(template_path: String) -> Dictionary:
         "usage": "",
         "features": [],
         "changelog": "",
-        "license": ""
+        "license": "",
     }
-    
-    # 从元数据获取基本文档
-    var metadata = _get_metadata(template_path)
+
+    var metadata := _get_metadata(template_path)
     documentation["name"] = metadata.get("name", "Unknown")
     documentation["version"] = metadata.get("version", "0.0.0")
     documentation["description"] = metadata.get("description", "")
-    documentation["license"] = metadata.get("license", "Unknown")
-    
-    # 从README获取文档
-    var readme = _get_readme(template_path)
+
+    var readme := _get_readme(template_path)
     documentation["installation"] = _extract_section(readme, "Installation")
     documentation["usage"] = _extract_section(readme, "Usage")
     documentation["changelog"] = _extract_section(readme, "Changelog")
-    
-    # 从代码提取特性
+
     documentation["features"] = _extract_features(template_path)
-    
     return documentation
 
 func _get_metadata(template_path: String) -> Dictionary:
-    # 获取元数据
-    var plugin_cfg_path = template_path + "/plugin.cfg"
-    var file = FileAccess.open(plugin_cfg_path, FileAccess.READ)
-    if file:
-        var json_string = file.get_as_text()
-        file.close()
-        
-        var json = JSON.new()
-        json.parse(json_string)
-        return json.data
-    
-    return {}
+    # 获取元数据：plugin.cfg 是 INI 格式，用 ConfigFile 读
+    var cfg := ConfigFile.new()
+    if cfg.load(template_path + "/plugin.cfg") != OK:
+        return {}
+    return {
+        "name": cfg.get_value("plugin", "name", ""),
+        "version": cfg.get_value("plugin", "version", "0.0.0"),
+        "description": cfg.get_value("plugin", "description", ""),
+        "author": cfg.get_value("plugin", "author", ""),
+    }
 
 func _get_readme(template_path: String) -> String:
-    # 获取README
-    var readme_path = template_path + "/README.md"
-    var file = FileAccess.open(readme_path, FileAccess.READ)
-    if file:
-        return file.get_as_text()
-    return ""
+    var file := FileAccess.open(template_path + "/README.md", FileAccess.READ)
+    if file == null:
+        return ""
+    var content := file.get_as_text()
+    file.close()
+    return content
 
 func _extract_section(text: String, section_name: String) -> String:
-    # 提取章节
-    var start_marker = "## " + section_name
-    var start_pos = text.find(start_marker)
+    var start_marker := "## " + section_name
+    var start_pos := text.find(start_marker)
     if start_pos == -1:
         return ""
-    
-    var end_pos = text.find("\n## ", start_pos + 1)
+    var end_pos := text.find("\n## ", start_pos + 1)
     if end_pos == -1:
         end_pos = text.length()
-    
     return text.substr(start_pos, end_pos - start_pos)
 
 func _extract_features(template_path: String) -> Array:
-    # 提取特性
-    var features = []
-    
-    # 从代码提取特性
-    var plugin_file = template_path + "/plugin.gd"
-    var file = FileAccess.open(plugin_file, FileAccess.READ)
-    if file:
-        var content = file.get_as_text()
-        file.close()
-        
-        if content.find("private") != -1:
-            features.append("Private mode")
-        if content.find("public") != -1:
-            features.append("Public mode")
-        if content.find("debug") != -1:
-            features.append("Debug mode")
-    
+    # 提取特性：读模板清单里的 features 列表
+    var components := TemplateComponents.new()
+    var features: Array = []
+    for key in components.get_template("core").get("features", []):
+        features.append(key)
     return features
 ```
 
@@ -1066,18 +1001,19 @@ func _extract_features(template_path: String) -> Array:
 
 ```gdscript
 # 模板协调器
+@tool
 class_name TemplateCoordinator
 
-var creator: TemplateCreator
+var creator: TemplateInterface
 var packager: TemplatePackager
 var installer: TemplateInstaller
 var updater: TemplateUpdater
 var tester: TemplateTesting
 var documentation: TemplateDocumentation
 
-func initialize():
-    # 初始化模板协调器
-    creator = TemplateCreator.new()
+func initialize() -> void:
+    creator = TemplateInterface.new()
+    creator.initialize()
     packager = TemplatePackager.new()
     installer = TemplateInstaller.new()
     updater = TemplateUpdater.new()
@@ -1086,156 +1022,148 @@ func initialize():
 
 func create_template(template_name: String, template_type: String) -> Dictionary:
     # 创建模板
-    var template_path = "res://addons/" + template_name
-    creator.create_template(template_path, template_type)
-    
+    var template_path := "res://addons/%s" % template_name
+    var ok := false
+
+    match template_type:
+        "core":
+            ok = CoreTemplateCreator.new().create_core_template(template_path)
+        "tool":
+            ok = ToolTemplateCreator.new().create_tool_template(template_path)
+        "resource":
+            ok = ResourceTemplateCreator.new().create_resource_template(template_path)
+        "workflow":
+            ok = WorkflowTemplateCreator.new().create_workflow_template(template_path)
+        "ui":
+            ok = UITemplateCreator.new().create_ui_template(template_path)
+
     return {
-        "status": "success",
-        "path": template_path
+        "status": "success" if ok else "failure",
+        "path": template_path,
     }
 
 func package_template(template_name: String) -> Dictionary:
-    # 打包模板
-    var template_path = "res://addons/" + template_name
-    var output_path = "res://export/" + template_name + ".template"
-    
-    var success = packager.package_template(template_path, output_path)
-    
+    var template_path := "res://addons/%s" % template_name
+    var output_path := "user://templates/%s.json" % template_name
+    var success := packager.package_template(template_path, output_path)
     return {
         "status": "success" if success else "failure",
-        "output_path": output_path
+        "output_path": output_path,
     }
 
 func install_template(template_name: String, destination_name: String) -> Dictionary:
-    # 安装模板
-    var template_path = "res://addons/" + template_name
-    var destination_path = "res://addons/" + destination_name
-    
-    var success = installer.install_template(template_path, destination_path)
-    
+    var template_path := "res://addons/%s" % template_name
+    var destination_path := "res://addons/%s" % destination_name
+    var success := installer.install_template(template_path, destination_path)
     return {
         "status": "success" if success else "failure",
-        "destination_path": destination_path
+        "destination_path": destination_path,
     }
 
-func check_updates(template_name: String) -> Dictionary:
-    # 检查更新
-    return updater.check_for_updates(template_name)
+func check_updates(template_name: String, remote_version: String) -> Dictionary:
+    return updater.check_for_updates(template_name, remote_version)
 
 func test_template(template_name: String) -> Dictionary:
-    # 测试模板
-    var template_path = "res://addons/" + template_name
-    return tester.test_template(template_path)
+    return tester.test_template("res://addons/%s" % template_name)
 
 func generate_documentation(template_name: String) -> Dictionary:
-    # 生成文档
-    var template_path = "res://addons/" + template_name
-    return documentation.generate_documentation(template_path)
+    return documentation.generate_documentation("res://addons/%s" % template_name)
 ```
 
 ### 5.2 模板浏览器
 
 ```gdscript
 # 模板浏览器
+@tool
 class_name TemplateBrowser
-
 extends Control
 
 var coordinator: TemplateCoordinator
 var template_list: Tree
 
-func _ready():
-    # 初始化模板浏览器
+func _ready() -> void:
     coordinator = TemplateCoordinator.new()
     coordinator.initialize()
-    
     _setup_ui()
 
-func _setup_ui():
-    # 设置UI
-    var vbox = VBoxContainer.new()
+func _setup_ui() -> void:
+    var vbox := VBoxContainer.new()
     add_child(vbox)
-    
-    var title = Label.new()
+
+    var title := Label.new()
     title.text = "Template Browser"
     vbox.add_child(title)
-    
+
     template_list = Tree.new()
-    template_list.size_flags_vertical = SIZE_EXPAND_FILL
+    template_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
     vbox.add_child(template_list)
-    
-    var buttons_hbox = HBoxContainer.new()
+
+    var buttons_hbox := HBoxContainer.new()
     vbox.add_child(buttons_hbox)
-    
-    var create_btn = Button.new()
+
+    var create_btn := Button.new()
     create_btn.text = "Create"
     buttons_hbox.add_child(create_btn)
-    
-    var install_btn = Button.new()
+
+    var install_btn := Button.new()
     install_btn.text = "Install"
     buttons_hbox.add_child(install_btn)
-    
-    var test_btn = Button.new()
+
+    var test_btn := Button.new()
     test_btn.text = "Test"
     buttons_hbox.add_child(test_btn)
-    
+
     _populate_template_list()
 
-func _populate_template_list():
-    # 填充模板列表
+func _populate_template_list() -> void:
     template_list.clear()
-    var root = template_list.create_item()
+    var root := template_list.create_item()
     root.set_text(0, "Templates")
-    
-    var templates = ["core", "tool", "resource", "workflow", "ui"]
-    for template in templates:
-        var item = template_list.create_item(root)
+
+    for template in coordinator.creator.get_template_names():
+        var item := template_list.create_item(root)
         item.set_text(0, template)
         item.set_meta("type", "template")
 ```
 
-### 5.3 模板安装器
+### 5.3 模板安装器插件
 
 ```gdscript
-# 模板安装器
+# 模板安装器插件
+@tool
 class_name TemplateInstallerPlugin
-
 extends EditorPlugin
 
 var coordinator: TemplateCoordinator
 var browser: TemplateBrowser
 
-func _enter_tree():
-    # 初始化模板安装器
+func _enter_tree() -> void:
     coordinator = TemplateCoordinator.new()
     coordinator.initialize()
-    
+
     browser = TemplateBrowser.new()
-    add_control_to_dock(DOCK_SLOT_RIGHT_UL, browser)
+    add_control_to_dock(EditorPlugin.DOCK_SLOT_RIGHT_UL, browser)
 
-func _exit_tree():
-    # 清理模板安装器
-    remove_control_from_docks(browser)
-    browser.free()
+func _exit_tree() -> void:
+    if browser:
+        # 先从 Dock 摘掉再释放
+        remove_control_from_docks(browser)
+        browser.queue_free()
+        browser = null
 
-func create_new_template(template_type: String):
-    # 创建新模板
-    var template_name = "My" + template_type.capitalize() + "Template"
-    coordinator.create_template(template_name, template_type)
+func create_new_template(template_type: String) -> void:
+    coordinator.create_template("My" + template_type.capitalize() + "Template", template_type)
 
-func install_existing_template(template_name: String, destination_name: String):
-    # 安装现有模板
+func install_existing_template(template_name: String, destination_name: String) -> void:
     coordinator.install_template(template_name, destination_name)
 
 func generate_template_report(template_name: String) -> Dictionary:
-    # 生成模板报告
-    var test_result = coordinator.test_template(template_name)
-    var doc = coordinator.generate_documentation(template_name)
-    
+    var test_result := coordinator.test_template(template_name)
+    var doc := coordinator.generate_documentation(template_name)
     return {
         "test_result": test_result,
         "documentation": doc,
-        "generated_at": Time.get_unix_time()
+        "generated_at": Time.get_unix_time(),
     }
 ```
 
@@ -1245,39 +1173,46 @@ func generate_template_report(template_name: String) -> Dictionary:
 
 ### 核心要点
 
-1. **编辑器扩展模板架构**，包括核心、工具、资源、工作流和UI模板
-2. **模板创建**，包括创建各种类型的模板文件和结构
-3. **模板分发**，包括打包、安装和更新模板
-4. **模板维护**，包括版本管理、测试和文档
+1. **本文的模板 ≠ 引擎的 ScriptTemplate / ProjectTemplate**，
+   它是自建的插件脚手架目录结构
+2. **生成的插件脚本一律以 `@tool` 开头**，否则在编辑器里不会被实例化
+3. **`plugin.cfg` 是 INI 格式**，读它只能用 `ConfigFile`；
+   4.3 只认 `[plugin]` 段，**没有 `[dependencies]` 分支**
+4. **内部类的 `extends` 必须写在同一行**：`class StateMachine extends RefCounted:`
+5. **对已在场景树中的节点用 `queue_free()`**；
+   工具栏按钮的移除用 2 参的 `remove_control_from_container(容器, 控件)`
+6. **版本号不能用字符串比较**，要用按段比较的数字比较
 
 ### 关键术语
 
 | 术语 | 解释 |
-|------|------|
-| TemplateComponents | 模板组件，定义模板的结构和文件 |
-| TemplateInterface | 模板接口，管理所有模板 |
-| CoreTemplateCreator | 核心模板创建器，创建核心插件模板 |
-| ToolTemplateCreator | 工具模板创建器，创建工具插件模板 |
-| ResourceTemplateCreator | 资源模板创建器，创建资源管理模板 |
-| WorkflowTemplateCreator | 工作流模板创建器，创建工作流插件模板 |
-| UITemplateCreator | UI模板创建器，创建UI扩展模板 |
-| TemplatePackager | 模板打包器，打包模板为单个文件 |
-| TemplateInstaller | 模板安装器，安装模板到项目中 |
-| TemplateUpdater | 模板更新器，检查和更新模板 |
-| TemplateVersionManagement | 模板版本管理，管理模板版本 |
-| TemplateTesting | 模板测试，测试模板功能 |
-| TemplateDocumentation | 模板文档，生成模板文档 |
-| TemplateCoordinator | 模板协调器，管理所有模板操作 |
-| TemplateBrowser | 模板浏览器，浏览模板列表 |
-| TemplateInstaller | 模板安装器，安装模板到项目中 |
+|---|---|
+| TemplateComponents | 模板组件，定义各模板的清单 |
+| TemplateInterface | 模板接口，统一管理模板清单 |
+| CoreTemplateCreator | 核心模板创建器 |
+| ToolTemplateCreator | 工具模板创建器 |
+| ResourceTemplateCreator | 资源模板创建器 |
+| WorkflowTemplateCreator | 工作流模板创建器 |
+| UITemplateCreator | UI 模板创建器 |
+| TemplatePackager | 模板打包器，导出 JSON 清单 |
+| TemplateInstaller | 模板安装器，复制到目标项目 |
+| TemplateUpdater | 模板版本检查器 |
+| TemplateVersionManagement | 模板版本号管理 |
+| TemplateTesting | 模板自检 |
+| TemplateDocumentation | 模板文档生成 |
+| TemplateCoordinator | 模板协调器，串联上述组件 |
+| TemplateBrowser | 模板浏览器面板 |
+| TemplateInstallerPlugin | 把模板浏览器挂到 Dock 的插件 |
 
 ---
 
 ## 🔗 延伸阅读
 
-- **官方文档**: [Godot Editor Extension Templates](https://docs.godotengine.org/en/stable/tutorials/plugins/editor-extension-templates.html)
-- **源码位置**: `editor/templates/`
-- **技术博客**: [Godot Editor Extension Templates Guide](https://godotengine.org/article/editor-extension-templates-guide/)
+- **官方文档 · 创建和使用插件**: <https://docs.godotengine.org/en/stable/tutorials/plugins/editor/index.html>
+- **官方文档 · 脚本模板**: <https://docs.godotengine.org/en/stable/tutorials/editor/script_templates.html>
+- **类参考**: <https://docs.godotengine.org/en/stable/classes/class_configfile.html>
+- **类参考**: <https://docs.godotengine.org/en/stable/classes/class_diraccess.html>
+- **源码位置**: `editor/editor_node.cpp`（解析 `plugin.cfg`）
 
 ---
 
@@ -1285,17 +1220,21 @@ func generate_template_report(template_name: String) -> Dictionary:
 
 **第 67 篇：编辑器扩展最佳实践**
 
-- 最佳实践中？
-- 常见问题
-- 最佳实践案例
-- 最佳实践工具
+- `@tool` 的真实行为与编辑器内脚本生命周期
+- 编辑器内撤销 / 重做
+- 插件设置的正规存储位
+
+---
+
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+
+---
+
+**上一篇**: [第 65 篇：编辑器自动化](/articles/65-editor-automation.md)
+**下一篇**: [第 67 篇：编辑器扩展最佳实践](/articles/67-editor-extension-best-practices.md)
 
 ---
 
 *写作时间：2026-03-20*  
-*字数：约 17,000 字*  
+*字数：约 900 字（不含代码块）（不含代码块）*  
 *状态：✅ 完成*
-
----
-
-*最后更新：2026-03-20 22:00*

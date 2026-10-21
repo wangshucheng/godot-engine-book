@@ -34,38 +34,99 @@
 **源码位置**: `core/variant/variant.h`
 
 ```cpp
-// Godot 源码 - core/variant/variant.h
+// Godot 源码 - core/variant/variant.h（Godot 4.3，节选）
 class Variant {
-    // 类型信息
-    Type type;
-    
-    // 数据（联合体，最大 20 字节）
-    union {
-        bool _bool;
-        int64_t _int;
-        double _float;
-        Vector2 _vec2;
-        Vector3 _vec3;
-        Color _color;
-        // ... 更多类型
-        void *_object;  // 对象指针
-    };
-    
-    // 类型枚举
-    enum Type {
-        NIL,
-        BOOL,
-        INT,
-        FLOAT,
-        STRING,
-        VECTOR2,
-        VECTOR3,
-        COLOR,
-        OBJECT,
-        // ... 共 40+ 种类型
-    };
+public:
+	// If this changes the table in variant_op must be updated
+	enum Type {
+		NIL,
+
+		// atomic types
+		BOOL,
+		INT,
+		FLOAT,
+		STRING,
+
+		// math types
+		VECTOR2,
+		VECTOR2I,
+		RECT2,
+		RECT2I,
+		VECTOR3,
+		VECTOR3I,
+		TRANSFORM2D,
+		VECTOR4,
+		VECTOR4I,
+		PLANE,
+		QUATERNION,
+		AABB,
+		BASIS,
+		TRANSFORM3D,
+		PROJECTION,
+
+		// misc types
+		COLOR,
+		STRING_NAME,
+		NODE_PATH,
+		RID,
+		OBJECT,
+		CALLABLE,
+		SIGNAL,
+		DICTIONARY,
+		ARRAY,
+
+		// typed arrays
+		PACKED_BYTE_ARRAY,
+		PACKED_INT32_ARRAY,
+		PACKED_INT64_ARRAY,
+		PACKED_FLOAT32_ARRAY,
+		PACKED_FLOAT64_ARRAY,
+		PACKED_STRING_ARRAY,
+		PACKED_VECTOR2_ARRAY,
+		PACKED_VECTOR3_ARRAY,
+		PACKED_COLOR_ARRAY,
+		PACKED_VECTOR4_ARRAY,
+
+		VARIANT_MAX
+	};
+
+private:
+	Type type = NIL;
+
+	struct ObjData {
+		ObjectID id;
+		Object *obj = nullptr;
+	};
+
+	union {
+		bool _bool;
+		int64_t _int;
+		double _float;
+		Transform2D *_transform2d;
+		::AABB *_aabb;
+		Basis *_basis;
+		Transform3D *_transform3d;
+		Projection *_projection;
+		PackedArrayRefBase *packed_array;
+		void *_ptr;                                        // 泛型指针
+		uint8_t _mem[sizeof(ObjData) > (sizeof(real_t) * 4)
+				? sizeof(ObjData) : (sizeof(real_t) * 4)]{ 0 };
+	} _data alignas(8);
+	// ...
 };
 ```
+
+共 **39 种类型 + `VARIANT_MAX` 哨兵**。几个容易漏的：
+
+- **`VECTOR4` / `VECTOR4I` / `PLANE` / `PROJECTION`** —— 4.x 新增或补齐的数学类型；
+- **`CALLABLE` / `SIGNAL`** —— 可调用对象与信号本身也是 Variant；
+- **`RID`** —— 渲染服务器等服务器层的资源句柄；
+- **10 种 `PACKED_*_ARRAY`** —— 与 `Array` 语义相同但内存连续的打包数组。
+
+> ⚠️ **Variant 不是"最大 20 字节"**。4.3 源码里的原话是：
+> *"Variant takes 24 bytes when real_t is float, and 40 bytes if double. It only allocates extra memory for AABB/Transform2D (24, 48 if double), Basis/Transform3D (48, 96 if double), Projection (64, 128 if double), and PackedArray/Array/Dictionary (platform-dependent)."*
+>
+> 也就是说：小的类型直接内联在联合体里，大类型（AABB / Transform / Projection）与容器（Array / Dictionary / Packed*Array）则改为**堆上分配 + 联合体里存指针**。
 
 ### 2.2 Variant 支持的类型
 
@@ -79,14 +140,24 @@ var d: String = "hello"
 # 数学类型
 var e: Vector2 = Vector2(1, 2)
 var f: Vector3 = Vector3(1, 2, 3)
-var g: Matrix4 = Transform3D()
+var g: Transform3D = Transform3D()   # 4.x 没有 Matrix4 类型
+var h: Basis = Basis()                # 3.x 的 Matrix3 在 4.x 里对应 Basis
 
 # 引擎类型
-var h: Node = Node.new()
-var i: Texture2D = load("res://texture.png")
-var j: Array = [1, 2, 3]
-var k: Dictionary = {"key": "value"}
+var i: Node = Node.new()
+var j: Texture2D = load("res://texture.png")
+var k: Array = [1, 2, 3]
+var l: Dictionary = {"key": "value"}
 ```
+
+> ⚠️ **4.x 没有 `Matrix4` / `Matrix3` 这两个类型**。写 `var g: Matrix4 = Transform3D()` 会直接报 `Could not find type "Matrix4"`——4.3 的 `Variant::Type` 枚举里只有 `BASIS` 和 `TRANSFORM3D`，没有 `MATRIX3` / `MATRIX4`。3.x → 4.x 的对应关系是：
+>
+> | 3.x | 4.x |
+> |-----|-----|
+> | `Matrix3` | `Basis` |
+> | `Matrix4` | `Transform3D` |
+> | `Quat` | `Quaternion` |
+> | `PoolVector3` 等 | `PackedVector3Array` 等 |
 
 ### 2.3 Variant 类型转换
 
@@ -150,21 +221,52 @@ extends Resource
 
 ### 3.2 属性序列化
 
-**源码位置**: `core/object/property_info.h`
+**源码位置**: `core/object/object.h`
 
 ```cpp
-// Godot 源码 - core/object/property_info.h
+// Godot 源码 - core/object/object.h（Godot 4.3）
 struct PropertyInfo {
-    Variant::Type type;      // 类型
-    StringName name;         // 名称
-    String hint_string;      // 提示字符串
-    PropertyUsageFlags usage; // 使用标志
-    
-    // 序列化时保存的信息
-    void serialize(Variant &r_value);
-    void deserialize(const Variant &p_value);
+	Variant::Type type = Variant::NIL;
+	String name;
+	StringName class_name;      // For classes
+	PropertyHint hint = PROPERTY_HINT_NONE;
+	String hint_string;
+	uint32_t usage = PROPERTY_USAGE_DEFAULT;
+
+	// If you are thinking about adding another member to this class, ask the maintainer (Juan) first.
+
+	_FORCE_INLINE_ PropertyInfo added_usage(uint32_t p_fl) const {
+		PropertyInfo pi = *this;
+		pi.usage |= p_fl;
+		return pi;
+	}
+
+	operator Dictionary() const;
+	static PropertyInfo from_dict(const Dictionary &p_dict);
+
+	PropertyInfo() {}
+
+	PropertyInfo(const Variant::Type p_type, const String &p_name,
+			const PropertyHint p_hint = PROPERTY_HINT_NONE,
+			const String &p_hint_string = "",
+			const uint32_t p_usage = PROPERTY_USAGE_DEFAULT,
+			const StringName &p_class_name = StringName()) :
+			type(p_type),
+			name(p_name),
+			hint(p_hint),
+			hint_string(p_hint_string),
+			usage(p_usage) {
+		if (hint == PROPERTY_HINT_RESOURCE_TYPE) {
+			class_name = hint_string;
+		} else {
+			class_name = p_class_name;
+		}
+	}
+	// ...
 };
 ```
+
+> ⚠️ 4.x 里**没有 `core/object/property_info.h` 这个文件**——`PropertyInfo` 就定义在 `core/object/object.h` 里，而且它**没有** `serialize()` / `deserialize()` 方法（序列化由 `ResourceFormatSaver` / `ResourceFormatLoader` 那一层负责）。成员也和对的版本不同：`name` 是 `String` 而不是 `StringName`，`usage` 是 `uint32_t` 位标志而不是 `PropertyUsageFlags` 枚举，另外还有 `class_name` 与 `hint` 两个成员。
 
 ### 3.3 属性访问
 
@@ -193,41 +295,66 @@ func _ready():
 ### 4.1 .tscn 格式（场景）
 
 ```ini
-[gd_scene load_steps=3 format=3 uid="uid://abc123"]
+[gd_scene load_steps=5 format=3 uid="uid://abc123"]
 
-[ext_resource type="Script" path="res://player.gd" id="1"]
-[ext_resource type="Texture2D" path="res://player.png" id="2"]
+[ext_resource type="Script" path="res://player.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://player.png" id="2_tex"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_body"]
+albedo_texture = ExtResource("2_tex")
+
+[sub_resource type="SphereMesh" id="SphereMesh_body"]
+material = SubResource("StandardMaterial3D_body")
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_body"]
+radius = 0.5
 
 [node name="Player" type="CharacterBody3D"]
-script = ExtResource("1")
+script = ExtResource("1_script")
 position = Vector3(0, 1, 0)
 
 [node name="Mesh" type="MeshInstance3D" parent="."]
-mesh = SubResource("SphereMesh")
-material/0 = ExtResource("2")
+mesh = SubResource("SphereMesh_body")
 
-[node name="Collision" type="CollisionShape3D" parent="."]
-shape = SubResource("SphereShape")
+[node name="HitBox" type="Area3D" parent="."]
 
-[connection signal="hit" from="." to="Mesh" method="_on_hit"]
+[node name="Collision" type="CollisionShape3D" parent="HitBox"]
+shape = SubResource("SphereShape3D_body")
+
+[connection signal="body_entered" from="HitBox" to="." method="_on_body_entered"]
 ```
+
+> ⚠️ 这个示例里有三处很容易写错的地方：
+>
+> 1. **`SubResource()` 引用必须先有定义**。`mesh = SubResource("SphereMesh")` 只有在文件里存在 `[sub_resource type="SphereMesh" id="SphereMesh"]` 块时才有效，否则加载会直接失败。
+> 2. **`material/0` 是"属性路径"写法，表示数组的第 0 个元素**，它的类型由属性本身决定——`MeshInstance3D.material` 是 `Material` 数组，**不能**塞进一个 `Texture2D`。把纹理挂到网格上，正确路径是"先建一个 `StandardMaterial3D` 子资源，用它的 `albedo_texture` 引用纹理，再让 `SphereMesh.material` 指向这个材质子资源"。
+> 3. **`load_steps` 是给加载器看的资源计数提示**。4.3 的 `ResourceFormatSaverTextInstance::save()` 里写得很直白：`int load_steps = saved_resources.size() + external_resources.size();`——即**子资源数 + 外部资源数**，并且只有 `load_steps > 1` 时才会写进文件头。上面这个示例是 2 个外部资源 + 3 个子资源 = 5。
 
 ### 4.2 .tres 格式（资源）
 
 ```ini
-[gd_resource type="Resource" format=3]
+[gd_resource type="ItemData" script_class="ItemData" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://items/item_data.gd" id="1_item"]
+
+[sub_resource type="Resource" id="Item_001"]
+resource_name = "铁剑"
+value = 120
+
+[sub_resource type="Resource" id="Item_002"]
+resource_name = "火把"
+value = 30
 
 [resource]
-resource_name = "PlayerData"
-name = "Hero"
+script = ExtResource("1_item")
+resource_name = "Hero"
 health = 100
 mana = 50
 level = 1
-inventory = [
-SubResource("Item_001"),
-SubResource("Item_002")
-]
+inventory = [SubResource("Item_001"), SubResource("Item_002")]
 ```
+
+> ⚠️ **资源没有 `name` 属性**。4.x 的 `Resource` 只暴露三个内置属性：`resource_name`（`set_name()` / `get_name()`）、`resource_path`、`resource_scene_unique_id`；`resource_local_to_scene` 另有其物。写 `name = "Hero"` 会报 `Invalid assignment of property or key 'name' with value of type 'String'`——正确的写法是 `resource_name = "Hero"`。
 
 ### 4.3 .res 格式（二进制）
 
@@ -367,7 +494,6 @@ PlayerData data = JsonUtility.FromJson<PlayerData>(json);
 | **属性注解** | @export | [SerializeField] |
 | **自定义序列化** | _set/_get/_to_string | ISerializationCallbackReceiver |
 | **JSON 支持** | 内置 JSON 类 | JsonUtility |
-| **二进制序列化** | 内置支持 | 需要 BinaryFormatter |
 
 ### 6.3 Godot 序列化优势
 
@@ -422,6 +548,8 @@ func migrate():
 ### 7.3 数据验证
 
 ```gdscript
+const MAX_INVENTORY_SIZE := 50   # 上限必须先定义，否则运行时报 "Identifier not found"
+
 func validate() -> bool:
     if health < 0 or health > 100:
         print("Invalid health value")
@@ -462,10 +590,18 @@ func validate() -> bool:
 
 ---
 
+## 🔗 延伸阅读
+
+- **官方文档**: [保存与加载资源](https://docs.godotengine.org/en/stable/tutorials/io/saving_and_loading_resources.html)、[自定义资源格式](https://docs.godotengine.org/en/stable/tutorials/io/custom_resource_formats.html)
+- **类参考**: [ResourceSaver](https://docs.godotengine.org/en/stable/classes/class_resourcesaver.html)、[ResourceLoader](https://docs.godotengine.org/en/stable/classes/class_resourceloader.html)、[ResourceFormatLoader](https://docs.godotengine.org/en/stable/classes/class_resourceformatloader.html)
+- **源码位置**: `core/io/resource_saver.cpp`、`core/io/resource_loader.cpp`
+
+---
+
 **作者**: wangshucheng
 **首发平台**: 微信公众号  
 **写作时间**: 2026 年 3 月  
-**Godot 版本**: 4.x（基线 4.3，2026-09 最新稳定版为 4.7）
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
 
 ---
 

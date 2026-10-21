@@ -86,6 +86,58 @@ func create_vehicle():
     return chassis
 ```
 
+### 1.4 原生方案 vs 自研方案
+
+> **本章定位**：本章讲的是**自研车辆系统**——用刚体 + 关节 + 脚本自己搭扭矩曲线、变速箱、差速器与轮胎模型。这是一种常见但**成本很高**的做法。
+>
+> Godot **原生就有**一套车辆物理：`VehicleBody3D` + `VehicleWheel3D`。它把悬挂、轮胎摩擦、引擎输出、差速都做进了物理服务器，性能与稳定性远好于脚本拼装。
+
+**先看原生 API 提供了什么**（4.x 真实成员）：
+
+| 类 | 关键成员 | 说明 |
+|----|----------|------|
+| `VehicleBody3D` | `engine_force` / `brake` / `steering` / `mass`（覆盖 `RigidBody3D.mass`，默认 40） | 车辆车身，继承自 `RigidBody3D` |
+| `VehicleWheel3D` | `engine_force` / `brake` / `steering` / `use_as_traction` / `use_as_steering` / `suspension_travel` / `suspension_stiffness` / `suspension_max_force` / `wheel_radius` / `wheel_friction_slip` / `damping_compression` / `damping_relaxation` / `wheel_rest_length` / `wheel_roll_influence` | 单个车轮 |
+| `VehicleWheel3D` 方法 | `get_rpm()` / `get_skidinfo()` / `get_contact_body()` / `is_in_contact()` | 运行时状态查询 |
+
+```gdscript
+# 原生方案：最小可用车辆
+var vehicle := VehicleBody3D.new()
+vehicle.mass = 1500.0
+
+for i in range(4):
+    var wheel := VehicleWheel3D.new()
+    wheel.position = Vector3(-0.9 if i % 2 == 0 else 0.9, -0.3, 1.4 if i < 2 else -1.4)
+    wheel.use_as_traction = true          # 驱动轮
+    wheel.use_as_steering = (i < 2)      # 前轮转向
+    wheel.suspension_travel = 0.2
+    wheel.suspension_stiffness = 5.88
+    wheel.suspension_max_force = 6000.0
+    wheel.wheel_radius = 0.35
+    wheel.wheel_friction_slip = 10.5
+    vehicle.add_child(wheel)
+
+# 驱动：油门 / 刹车 / 转向
+func _physics_process(_delta: float) -> void:
+    var throttle := Input.get_action_strength("accelerate")
+    var brake := Input.get_action_strength("brake")
+    var steer := Input.get_axis("steer_left", "steer_right")
+    vehicle.engine_force = throttle * 800.0
+    vehicle.brake = brake * 100.0
+    vehicle.steering = steer * deg_to_rad(30.0)
+```
+
+**该用哪一套？**
+
+| 需求 | 建议 |
+|------|------|
+| 常规赛车 / 竞速 / 载具玩法 | **原生 `VehicleBody3D`**。悬挂、轮胎、差速都由物理服务器处理，性能与手感都更好 |
+| 需要真实的发动机扭矩曲线、自动变速箱、限滑差速器 | 自研（或在原生方案上叠加一层"传动"逻辑，把 `engine_force` 当作油门输出） |
+| 履带车、坦克、多轮联动、非轮式载具 | 自研（原生只覆盖"轮式"车辆模型） |
+| 追求极致真实性（轮胎滑移率、Pacejka 曲线） | 自研（原生只暴露 `wheel_friction_slip` 这类简化参数） |
+
+**本章接下来的内容全部是自研路线**：`Generic6DOFJoint3D` 做悬挂、脚本算扭矩曲线与变速箱、手写轮胎模型与漂移判定。读的时候请始终带着这层认知——这些不是"Godot 提供的能力"，而是"你在 Godot 上自己搭的东西"。
+
 ---
 
 ## 2. 车轮碰撞与悬挂
@@ -134,27 +186,48 @@ func create_wheels(chassis: RigidBody3D, positions: Array):
 
 ```gdscript
 # 创建悬挂系统
+# ⚠️ 4.x 的 Generic6DOFJoint3D 没有 set_param(axis, PARAM, value)，
+#    必须按轴调用 set_param_x / set_param_y / set_param_z，
+#    而且限位与弹簧都要显式打开对应的 Flag 才会生效。
 func create_suspension(chassis: RigidBody3D, wheel: RigidBody3D):
     var joint = Generic6DOFJoint3D.new()
     joint.node_a = chassis.get_path()
     joint.node_b = wheel.get_path()
     
-    # 设置 Y 轴（上下）允许移动
-    joint.set_param(1, Generic6DOFJoint3D.PARAM_LINEAR_LOWER_LIMIT, -0.2)
-    joint.set_param(1, Generic6DOFJoint3D.PARAM_LINEAR_UPPER_LIMIT, 0.2)
-    joint.set_param(1, Generic6DOFJoint3D.PARAM_LINEAR_SPRING_STIFFNESS, 50.0)
-    joint.set_param(1, Generic6DOFJoint3D.PARAM_LINEAR_SPRING_DAMPING, 5.0)
-    joint.set_param(1, Generic6DOFJoint3D.PARAM_LINEAR_SPRING_EQUILIBRIUM_POINT, 0)
+    # 设置 Y 轴（上下）允许移动 ±0.2
+    joint.set_param_y(Generic6DOFJoint3D.PARAM_LINEAR_LOWER_LIMIT, -0.2)
+    joint.set_param_y(Generic6DOFJoint3D.PARAM_LINEAR_UPPER_LIMIT, 0.2)
+    # 线性弹簧：刚度、阻尼、平衡点
+    joint.set_param_y(Generic6DOFJoint3D.PARAM_LINEAR_SPRING_STIFFNESS, 50.0)
+    joint.set_param_y(Generic6DOFJoint3D.PARAM_LINEAR_SPRING_DAMPING, 5.0)
+    joint.set_param_y(Generic6DOFJoint3D.PARAM_LINEAR_SPRING_EQUILIBRIUM_POINT, 0.0)
+    # ⚠️ 显式打开限位与弹簧开关，否则上面这些参数一个都不生效
+    joint.set_flag_y(Generic6DOFJoint3D.FLAG_ENABLE_LINEAR_LIMIT, true)
+    joint.set_flag_y(Generic6DOFJoint3D.FLAG_ENABLE_LINEAR_SPRING, true)
     
     # 其他轴锁定
-    for axis in [0, 2]:
-        joint.set_param(axis, Generic6DOFJoint3D.PARAM_LINEAR_LOWER_LIMIT, 0)
-        joint.set_param(axis, Generic6DOFJoint3D.PARAM_LINEAR_UPPER_LIMIT, 0)
+    joint.set_param_x(Generic6DOFJoint3D.PARAM_LINEAR_LOWER_LIMIT, 0)
+    joint.set_param_x(Generic6DOFJoint3D.PARAM_LINEAR_UPPER_LIMIT, 0)
+    joint.set_param_z(Generic6DOFJoint3D.PARAM_LINEAR_LOWER_LIMIT, 0)
+    joint.set_param_z(Generic6DOFJoint3D.PARAM_LINEAR_UPPER_LIMIT, 0)
+    joint.set_flag_x(Generic6DOFJoint3D.FLAG_ENABLE_LINEAR_LIMIT, true)
+    joint.set_flag_z(Generic6DOFJoint3D.FLAG_ENABLE_LINEAR_LIMIT, true)
     
     # 所有角轴锁定
-    for axis in range(3):
-        joint.set_param(axis + 3, Generic6DOFJoint3D.PARAM_ANGULAR_LOWER_LIMIT, 0)
-        joint.set_param(axis + 3, Generic6DOFJoint3D.PARAM_ANGULAR_UPPER_LIMIT, 0)
+    for axis in [Vector3.AXIS_X, Vector3.AXIS_Y, Vector3.AXIS_Z]:
+        match axis:
+            Vector3.AXIS_X:
+                joint.set_param_x(Generic6DOFJoint3D.PARAM_ANGULAR_LOWER_LIMIT, 0)
+                joint.set_param_x(Generic6DOFJoint3D.PARAM_ANGULAR_UPPER_LIMIT, 0)
+                joint.set_flag_x(Generic6DOFJoint3D.FLAG_ENABLE_ANGULAR_LIMIT, true)
+            Vector3.AXIS_Y:
+                joint.set_param_y(Generic6DOFJoint3D.PARAM_ANGULAR_LOWER_LIMIT, 0)
+                joint.set_param_y(Generic6DOFJoint3D.PARAM_ANGULAR_UPPER_LIMIT, 0)
+                joint.set_flag_y(Generic6DOFJoint3D.FLAG_ENABLE_ANGULAR_LIMIT, true)
+            Vector3.AXIS_Z:
+                joint.set_param_z(Generic6DOFJoint3D.PARAM_ANGULAR_LOWER_LIMIT, 0)
+                joint.set_param_z(Generic6DOFJoint3D.PARAM_ANGULAR_UPPER_LIMIT, 0)
+                joint.set_flag_z(Generic6DOFJoint3D.FLAG_ENABLE_ANGULAR_LIMIT, true)
     
     return joint
 ```
@@ -185,18 +258,52 @@ func control_wheels(wheels: Array, speeds: Array):
 
 ```gdscript
 # 创建引擎
+# ⚠️ 扭矩曲线要用一维的 Curve，不是 Curve2D：
+#    Curve2D 是二维贝塞尔曲线，采样接口是 sample(idx: int, t: float)——
+#    按控制点【索引】在两点之间插值，拿它当"RPM → 扭矩"曲线用是错的。
+#    Curve（1D）的 sample(offset: float) 才是"给定横坐标取值"的语义。
 class_name VehicleEngine
 
-@export var max_power: float = 200  # 最大功率
-@export var torque_curve: Curve2D  # 扭矩曲线
+@export var max_power: float = 200      # 最大功率
+@export var max_rpm: float = 8000.0     # 最高转速
+@export var torque_curve: Curve         # 扭矩曲线：x = 归一化 RPM，y = 扭矩
+@export var vehicle: RigidBody3D        # 转速来源（车身）
+@export var torque_to_force: float = 0.05  # 扭矩 → 前进推力的换算系数
+
+func _ready() -> void:
+    if torque_curve == null:
+        torque_curve = _default_torque_curve()
+
+# 当前转速
+func get_rpm() -> float:
+    if vehicle == null:
+        return 0.0
+    # 简化：用车身速度换算成转速
+    var speed := vehicle.linear_velocity.length()
+    return clamp(speed / max_rpm * 1000.0, 0.0, max_rpm)
 
 func get_torque(rpm: float) -> float:
     # RPM 转换为 0-1 范围
-    var normalized_rpm = clamp(rpm / 8000, 0, 1)
+    var normalized_rpm = clamp(rpm / max_rpm, 0, 1)
     return torque_curve.sample(normalized_rpm)
 
 func get_power(rpm: float) -> float:
-    return get_torque(rpm) * rpm / 8000  # 功率 = 扭矩 × RPM
+    return get_torque(rpm) * rpm / max_rpm  # 功率 = 扭矩 × RPM
+
+# 把引擎扭矩转成作用于车身的前进推力
+func apply_torque(torque: float) -> void:
+    if vehicle == null:
+        return
+    var forward := -vehicle.global_transform.basis.z
+    vehicle.apply_central_force(forward * torque * torque_to_force)
+
+# 默认扭矩曲线（Curve 的取值写在 add_point 的 Vector2.y 上）
+func _default_torque_curve() -> Curve:
+    var c := Curve.new()
+    c.add_point(Vector2(0.0, 0.0))
+    c.add_point(Vector2(0.5, 100.0))
+    c.add_point(Vector2(1.0, 150.0))
+    return c
 
 # 使用示例
 func _physics_process(delta):
@@ -242,7 +349,7 @@ class_name ThrottleController
 
 func apply_throttle(engine: VehicleEngine, speed: float):
     var rpm = speed * 80  # 速度转 RPM
-    rpm = clamp(rpm, 0, 8000)
+    rpm = clamp(rpm, 0, engine.max_rpm)
     
     # 计算油门百分比
     var throttle = min(speed / max_speed, 1.0)
@@ -265,26 +372,36 @@ class_name VehicleController
 @export var max_steering_angle: float = deg_to_rad(30)
 @export var max_acceleration: float = 20
 
+@export var chassis: RigidBody3D        # 车身
+@export var wheels: Node3D               # 车轮容器
+# 油门控制器由 $Throttle 节点提供（ThrottleController），引擎由 $Engine 提供
+
+# 当前车速（米/秒）——由 _physics_process 更新，供油门/刹车逻辑使用
+var current_speed: float = 0.0
+
 func _physics_process(delta):
     # 获取输入
     var acceleration = Input.get_action_strength("accelerate") - Input.get_action_strength("brake")
     var steering = Input.get_action_strength("steer_left") - Input.get_action_strength("steer_right")
+    
+    # 更新当前车速（RigidBody3D 的速度是 linear_velocity 属性，没有 get_linear_velocity() 方法）
+    current_speed = chassis.linear_velocity.length()
     
     # 应用控制
     apply_acceleration(acceleration)
     apply_steering(steering)
     
     # 更新速度显示
-    var speed = get_linear_velocity().length()
-    print("Speed: ", speed)
+    print("Speed: ", current_speed)
 
 func apply_acceleration(accel: float):
-    if acceleration > 0:
-        $Engine.apply_throttle($Engine, speed)
-    elif acceleration < 0:
-        $Engine.apply_brake()
+    if accel > 0:
+        # 油门控制器负责把油门开度换算成扭矩
+        $Throttle.apply_throttle($Engine, current_speed)
+    elif accel < 0:
+        apply_brake()
     else:
-        $Engine.apply_brake()
+        apply_brake()
 
 func apply_steering(angle: float):
     if abs(angle) > 0.1:
@@ -304,7 +421,7 @@ func apply_brake():
 # 滑胎检测和处理
 func check_slip():
     var slip_threshold = 0.8  # 滑胎阈值
-    var speed = get_linear_velocity().length()
+    var speed = chassis.linear_velocity.length()
     
     # 检查车轮速度是否超过车身速度
     for wheel in $Wheels:
@@ -313,7 +430,7 @@ func check_slip():
             # 应用刹车
             wheel.apply_impulse(Vector3(0, 0, -50), wheel.global_transform.basis * Vector3(1, 0, 0))
             # 减少油门
-            $Engine.apply_throttle($Engine, 0.3)
+            $Throttle.apply_throttle($Engine, 0.3)
 
 # 在 _integrate_forces 中调用
 func _integrate_forces(state: PhysicsDirectBodyState3D):
@@ -387,9 +504,10 @@ func optimize_suspension():
         for i in range(joints.size() - 4):
             joints[i].queue_free()
     
-    # 调整悬挂参数
+    # 调整悬挂参数（按轴设置，且要显式打开弹簧开关）
     for joint in joints:
-        joint.set_param(Generic6DOFJoint3D.PARAM_LINEAR_SPRING_STIFFNESS, 30.0)  # 降低刚度
+        joint.set_param_y(Generic6DOFJoint3D.PARAM_LINEAR_SPRING_STIFFNESS, 30.0)  # 降低刚度
+        joint.set_flag_y(Generic6DOFJoint3D.FLAG_ENABLE_LINEAR_SPRING, true)
 
 # 在游戏开始时调用
 func _ready():
@@ -403,10 +521,12 @@ func _ready():
 func optimize_engine():
     # 调整引擎参数
     $Engine.max_power = 150  # 降低功率
-    $Engine.torque_curve = Curve2D.new()
-    $Engine.torque_curve.add_point(0, 0)
-    $Engine.torque_curve.add_point(0.5, 100)
-    $Engine.torque_curve.add_point(1.0, 150)
+    # ⚠️ Curve.add_point 收一个 Vector2：x 是横坐标（归一化 RPM），y 是值（扭矩）
+    var curve := Curve.new()
+    curve.add_point(Vector2(0.0, 0.0))
+    curve.add_point(Vector2(0.5, 100.0))
+    curve.add_point(Vector2(1.0, 150.0))
+    $Engine.torque_curve = curve
 
 # 在游戏开始时调用
 func _ready():
@@ -570,11 +690,12 @@ func create_truck():
 ```gdscript
 # 空气阻力
 func apply_air_resistance():
-    var speed = get_linear_velocity().length()
+    # RigidBody3D 的速度是属性 linear_velocity，没有 get_linear_velocity() 方法
+    var speed = linear_velocity.length()
     var drag = 0.5 * speed * speed  # 简单的平方阻力
     
     # 应用阻力
-    var force = -get_linear_velocity() * drag
+    var force = -linear_velocity * drag
     apply_central_force(force)
 
 # 在 _integrate_forces 中调用
@@ -587,11 +708,11 @@ func _integrate_forces(state: PhysicsDirectBodyState3D):
 ```gdscript
 # 轮胎摩擦
 func apply_tire_friction():
-    var speed = get_linear_velocity().length()
+    var speed = linear_velocity.length()
     var friction = 0.5 * speed  # 简单的线性摩擦
     
     # 应用摩擦力
-    var force = -get_linear_velocity() * friction
+    var force = -linear_velocity * friction
     apply_central_force(force)
 
 # 在 _integrate_forces 中调用
@@ -604,8 +725,8 @@ func _integrate_forces(state: PhysicsDirectBodyState3D):
 ```gdscript
 # 转向辅助（ABS）
 func apply_steer_assist():
-    var speed = get_linear_velocity().length()
-    var angle = get_angular_velocity().length()
+    var speed = linear_velocity.length()
+    var angle = angular_velocity.length()
     
     # 高速时减少转向角度
     if speed > 50:
@@ -1090,7 +1211,9 @@ extends Node
 @export var spark_particles: PackedScene
 
 var active_smoke: Array = []
-var skid_mark_points: PackedVector3Array = []
+# PackedVector3Array 不能直接赋 [] （Array 字面量不是 Packed 类型），
+# 必须用 PackedVector3Array() 构造。
+var skid_mark_points := PackedVector3Array()
 
 func _ready():
     pass
@@ -1201,18 +1324,51 @@ func get_score_summary() -> Dictionary:
 
 ---
 
+## 10. 求解器与关节：车辆为什么比普通刚体场景贵
+
+自研车辆系统比普通刚体场景贵得多，原因是**关节**（每轮一个 6DOF 悬挂）把约束求解器的压力拉高了。这几个旋钮直接决定车辆的物理帧开销：
+
+```gdscript
+# 1) 关节两端物体默认不再互相碰撞（Joint3D.exclude_nodes_from_collision，默认 true）
+#    车轮与车身本就该贴合，关掉自碰撞能省一轮窄相位。
+var joint := Generic6DOFJoint3D.new()
+joint.exclude_nodes_from_collision = true
+
+# 2) 求解优先级：底盘/悬挂这类"基础"关节先解
+#    Joint3D.solver_priority 默认 1；数值越大越先被求解。
+joint.solver_priority = 10
+
+# 3) 服务器层等价接口（servers/physics_server_3d.h）
+var j_rid := joint.get_rid()
+PhysicsServer3D.joint_disable_collisions_between_bodies(j_rid, true)
+PhysicsServer3D.joint_set_solver_priority(j_rid, 10)
+```
+
+| 旋钮 | 位置 | 车辆场景下的用法 |
+|------|------|------------------|
+| `exclude_nodes_from_collision` | `Joint3D` 节点属性（默认 `true`） | 保持默认 |
+| `solver_priority` | `Joint3D` 节点属性（默认 `1`） | 底盘连接优先于车轮装饰件 |
+| `joint_set_solver_priority()` / `joint_disable_collisions_between_bodies()` | `PhysicsServer3D` | 运行时统一调参 |
+| 车轮碰撞形状 | `CollisionShape3D` | 用球/胶囊，别用高面数凸包 |
+| 悬挂关节数 | 场景结构 | 四轮车就是 4 个 6DOF，不要给每个轮子再加辅助关节 |
+
+**这是自研路线最大的成本项**——而原生 `VehicleBody3D` 把悬挂、轮胎摩擦、差速全部做在物理服务器里，不需要任何关节。这也是第 1.4 节建议"常规赛车直接用原生方案"的原因。
+
+---
+
 ## 📝 本章总结
 
 ### 核心要点
 
-1. **车辆物理由多个组件组成**，包括车身、车轮、悬挂和引擎
-2. **悬挂系统通过关节连接**，控制车轮的上下运动
-3. **引擎通过扭矩控制车轮旋转**，模拟动力
-4. **控制器处理用户输入**，实现驾驶体验
-5. **性能优化**包括减少车轮数量、调整参数等
-6. **引擎扭矩曲线模拟真实动力输出**
-7. **变速箱和差速器完善传动系统**
-8. **抓地力和漂移模型增强驾驶乐趣**
+1. **本章是自研方案**：Godot 原生已有 `VehicleBody3D` / `VehicleWheel3D`，常规赛车优先用原生（见 1.4 节）
+2. **自研车辆物理由多个组件组成**，包括车身、车轮、悬挂和引擎
+3. **悬挂系统通过关节连接**，控制车轮的上下运动（6DOF 需按轴设参并显式开 Flag）
+4. **引擎通过扭矩控制车轮旋转**，模拟动力（扭矩曲线用一维 `Curve`）
+5. **控制器处理用户输入**，实现驾驶体验
+6. **性能优化**包括减少车轮数量、调整参数等；关节求解是主要成本项
+7. **引擎扭矩曲线模拟真实动力输出**
+8. **变速箱和差速器完善传动系统**
+9. **抓地力和漂移模型增强驾驶乐趣**
 
 ### 关键术语
 
@@ -1238,6 +1394,15 @@ func get_score_summary() -> Dictionary:
 - **VehicleBody3D**: <https://docs.godotengine.org/en/stable/classes/class_vehiclebody3d.html>
 - **VehicleWheel3D**: <https://docs.godotengine.org/en/stable/classes/class_vehiclewheel3d.html>
 - **源码位置**: `scene/3d/vehicle_body_3d.cpp`
+
+---
+
+**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+
+---
+
+**上一篇**: [第 27 篇：关节和约束](/articles/27-joints-and-constraints.md)
+**下一篇**: [第 29 篇：流体模拟](/articles/29-fluid-simulation.md)
 
 ---
 

@@ -14,6 +14,7 @@
 * [08. 文件系统与平台](/articles/08-filesystem-platform.md)
 * [09. 序列化系统](/articles/09-serialization-system.md)
 * [10. 跨平台架构](/articles/10-cross-platform-architecture.md)
+* [53. 输入系统](/articles/53-input-system.md)
 
 ## 第二卷：渲染系统
 
@@ -26,7 +27,7 @@
 * [17. GDShader 语言](/articles/17-gdshader-language.md)
 * [18. 2D 渲染](/articles/18-2d-rendering.md)
 * [19. 后处理效果](/articles/19-post-processing-effects.md)
-* [20. 粒子渲染](/articles/20-particle-rendering.md)
+* [20. 粒子系统](/articles/20-particle-rendering.md)
 * [21. 性能优化](/articles/21-performance-optimization.md)
 * [22. 渲染调试工具](/articles/22-rendering-debug-tools.md)
 
@@ -54,9 +55,9 @@
 * [39. 动画混合](/articles/39-animation-blending.md)
 * [40. 角色动画](/articles/40-character-animation.md)
 * [41. 动画曲线](/articles/41-animation-curves.md)
-* [42. 粒子系统](/articles/42-particle-system.md)
 * [43. 动画状态机](/articles/43-animation-state-machine.md)
 * [44. 骨骼动画](/articles/44-skeletal-animation.md)
+* [42. 动画性能优化](/articles/42-particle-system.md)
 
 ## 第五卷：音频系统
 
@@ -71,16 +72,15 @@
 
 * [49. 网络系统](/articles/49-network-system.md)
 * [50. 网络通信协议](/articles/50-network-protocols.md)
+* [57. 权威服务器架构](/articles/57-authoritative-server.md)
 * [51. 网络同步](/articles/51-network-synchronization.md)
 * [52. 网络优化](/articles/52-network-optimization.md)
-* [57. 权威服务器架构](/articles/57-authoritative-server.md)
 
 ## 第七卷：脚本系统
 
-* [53. 输入系统](/articles/53-input-system.md)
 * [54. 脚本系统](/articles/54-script-system.md)
 * [55. GDScript 进阶](/articles/55-gdscript-advanced.md)
-* [56. 资源系统](/articles/56-resource-system.md)
+* [56. 资源加载与缓存实战](/articles/56-resource-system.md)
 * [60. C# 集成和脚本优化](/articles/60-csharp-and-script-optimization.md)
 
 ## 第八卷：编辑器扩展
@@ -92,7 +92,7 @@
 * [65. 编辑器自动化](/articles/65-editor-automation.md)
 * [66. 编辑器扩展模板](/articles/66-editor-extension-templates.md)
 * [67. 编辑器扩展最佳实践](/articles/67-editor-extension-best-practices.md)
-* [68. 项目总结](/articles/68-project-summary.md)
+* [68. 第八卷总结与自查清单](/articles/68-project-summary.md)
 
 ## 引擎扩展开发
 
