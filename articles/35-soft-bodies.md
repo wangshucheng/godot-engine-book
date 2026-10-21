@@ -90,7 +90,7 @@ func _solve(delta: float) -> void:
 | `PhysicalBoneSimulator3D` | **4.3** | 为 `PhysicalBone3D` 节点提供真实的刚体模拟，并把结果写回 `Skeleton3D` | 布娃娃、头发/尾巴的刚体近似 |
 | `SpringBoneSimulator3D` | **4.4** | 用弹簧模型给骨骼链施加惯性摆动，并**尝试回到原始姿势** | 马尾、耳朵、披风、触手 |
 
-> ⚠️ **版本注意**：常被误传成"4.5+ 才有"。实测核对结果——`PhysicalBoneSimulator3D` 在 **4.3 的 `doc/classes/` 中已经存在**；`SpringBoneSimulator3D` 在 **4.3 中不存在**（HTTP 404），**4.4 起才提供**。写"这两个都是 4.5+"是不准确的。
+> ⚠️ **版本注意**：常被误传成"4.5+ 才有"。实测核对结果——`PhysicalBoneSimulator3D` 自 **4.3** 起就存在；`SpringBoneSimulator3D` 在 **4.3 中不存在**（HTTP 404），**4.4 起才提供**（本书基线 4.7.2 已包含）。写"这两个都是 4.5+"是不准确的。
 
 `PhysicalBoneSimulator3D` 的关键方法（4.3 类参考）：
 
@@ -157,7 +157,7 @@ class SoftBody3D : public MeshInstance3D   // 4.3 源码，scene/3d/soft_body_3d
 | `ray_pickable` | `bool` | `true` | 是否响应 `RayCast3D` |
 | `disable_mode` | 枚举 | `DISABLE_MODE_REMOVE` | 进程被禁用时的行为，见 2.3 |
 
-> ⚠️ **4.3 没有 `self_collision` 与 `collision_margin` 属性**——那是 Godot 3.x SoftBody 的属性，网上旧教程常照搬，在 4.x 会报"属性不存在"。软体自碰撞在 4.x 内置节点中不可用，需要自碰撞请走第 30 篇的自研 PBD。
+> ⚠️ **4.x 内置节点没有 `self_collision` 与 `collision_margin` 属性**（4.7.2 实测仍无）——那是 Godot 3.x SoftBody 的属性，网上旧教程常照搬，在 4.x 会报"属性不存在"。软体自碰撞在 4.x 内置节点中不可用，需要自碰撞请走第 30 篇的自研 PBD。
 
 > ⚠️ 官方类参考对 `SoftBody3D` 还有一句很重的提醒（原文）：**"There are many known bugs in SoftBody3D. Therefore, it's not recommended to use them for things that can affect gameplay (such as trampolines)."** —— 也就是说，别把它做成会影响玩法判定的东西（蹦床、可破坏物、关键机关）。
 
@@ -185,7 +185,7 @@ class SoftBody3D : public MeshInstance3D   // 4.3 源码，scene/3d/soft_body_3d
 | **节点变换在运行时被强制接管** | 4.3 的 `SoftBody3D` 在 `NOTIFICATION_TRANSFORM_CHANGED` 里会调用 `set_as_top_level(true)` 并把 `transform` 置为单位矩阵 | **不要试图用移动/旋转 `SoftBody3D` 节点来摆放软体**——运行时你的变换会被引擎覆盖。正确做法是把 `SoftBody3D` 放在原点，用网格本身建模位置；真要整体搬动，请改父节点 |
 | **网格会被复制并改造** | `_become_mesh_owner()` 会用原网格复制一份 `ArrayMesh`，加上 `ARRAY_FLAG_USE_DYNAMIC_UPDATE`、去掉压缩属性 | 你的原始网格资源不会被污染，但内存里会多一份副本；大网格要留意 |
 | **渲染写回发生在渲染帧** | `_draw_soft_mesh()` 挂在 `RenderingServer` 的 `frame_pre_draw` 信号上，每渲染帧写回一次顶点与法线 | 物理步率高于渲染帧率时，中间帧的形变不会显示；顶点数据每帧都要 `mesh_surface_update_vertex_region` |
-| **4.3 无法给软体施加外力** | 4.3 的 `PhysicsServer3D` 软体接口里**没有** `soft_body_apply_*` 系列；节点层也没有 `apply_point_force()` 之类 | 4.3 里软体只能被动响应重力、碰撞与 `Area3D` 的风。4.6 的 `PhysicsServer3DExtension` 已有 `_soft_body_apply_point_force` / `_soft_body_apply_central_force` / `_soft_body_apply_point_impulse` / `_soft_body_apply_central_impulse`，4.4–4.6 之间引入 |
+| **施加外力的接口按版本分层** | 4.3 的 `PhysicsServer3D` 软体接口里**没有** `soft_body_apply_*` 系列，节点层也没有 `apply_*_force()` 之类 | 4.3 里软体只能被动响应重力、碰撞与 `Area3D` 的风。**本书基线 4.7.2 已有完整外力接口**：服务器层有 `soft_body_apply_point_force` / `soft_body_apply_central_force` / `soft_body_apply_point_impulse` / `soft_body_apply_central_impulse`，节点层对应 `apply_force()` / `apply_central_force()` / `apply_impulse()` / `apply_central_impulse()`（唯独没有节点层的"点力"接口） |
 | **与 Jolt 的共存边界** | 4.4–4.6 的 Jolt **不支持** `SoftBody3D` 与 `Area3D` 的交互（连风/重力都没有）；**4.7 起支持**，且额外支持 overlap 信号 | 见第 34 篇 3.1 节第 13 行。用 Jolt + 软体 + 风场时，先确认引擎版本 |
 
 ### 2.5 与 Jolt 的共存
@@ -272,7 +272,7 @@ soft_body.set_point_pinned(0, false)
 | `set_point_position(index, pos)` | **4.x 完全不存在** | 无（4.x 没有暴露"设置顶点位置"的节点 API） |
 | `get_point_position(index)` | **4.x 完全不存在** | `get_point_transform(index)`（返回 `Vector3`） |
 | `get_point_count()` | **4.x 完全不存在** | `mesh.get_surface_count()` / `ArrayMesh` 的顶点数组长度 |
-| `set_shrinking_factor(v)` / `get_shrinking_factor()` | **节点层 4.x 没有** | 服务器层在 4.6 才有（`_soft_body_set_shrinking_factor`） |
+| `set_shrinking_factor(v)` / `get_shrinking_factor()` | **4.3 节点层没有**；4.7.2 起节点层有 `shrinking_factor` 属性 | 服务器层 4.6 起有 `soft_body_set_shrinking_factor` |
 | `set_self_collision_enabled(true)` | **4.x 完全不存在** | 无（自碰撞不可用） |
 | `set_collision_margin(v)` | **4.x 完全不存在** | 无 |
 
@@ -414,7 +414,7 @@ func make_jelly() -> SoftBody3D:
 - **无自碰撞**：4.x 内置节点不支持（见 2.2 与 2.4），围巾自叠等需求用第 30 篇 PBD；
 - **无独立碰撞形状**：碰撞直接用网格顶点，无法把渲染网格与碰撞网格分离（见 2.4）；
 - **节点变换被引擎接管**：运行时不要靠移动 `SoftBody3D` 节点来摆放它（见 2.4）；
-- **4.3 无法施加外力**：`PhysicsServer3D` 软体接口里没有 `soft_body_apply_*`（见 2.4）；
+- **施加外力需要 4.6+ 的服务器接口**：4.3 的 `PhysicsServer3D` 软体接口里没有 `soft_body_apply_*`；本书基线 4.7.2 已有完整外力接口，节点层可用 `apply_force()` / `apply_impulse()` / `apply_central_force()` / `apply_central_impulse()`（见 2.4）；
 - **与 Jolt 的共存边界**：4.4–4.6 的 Jolt 不支持软体与 `Area3D` 的交互，4.7 才支持（见 2.5）。
 
 ---
@@ -453,7 +453,7 @@ func make_jelly() -> SoftBody3D:
 
 ---
 
-**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+**Godot 版本**: 4.x（基线 4.7.2；本文涉及的版本差异已在行内标注）
 
 ---
 

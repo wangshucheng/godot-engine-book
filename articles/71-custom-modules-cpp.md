@@ -276,7 +276,7 @@ scons custom_modules=../modules
 
 我们的 `Summator` 类就是在 `register_module_types()` 阶段被注册的。理解这个顺序很重要：如果你想让模块中的某些类型**早于**引擎内置类型注册（比如要覆盖引擎自身的回调、或满足单例依赖），就需要用到预注册钩子（见 3.4 节）。
 
-> **关于图中的 `preregister_module_types()`**：预注册阶段属于较新的引擎分支才有的扩展点——在本书基线 4.3 与 4.4 上，模块的注册只有 `register_module_types()` 这一个入口（构建脚本也只生成 `initialize_<模块名>_module` / `uninitialize_<模块名>_module` 两类调用）。具体可用性见 3.4 节的版本限定。
+> **关于图中的 `preregister_module_types()`**：本书基线 **4.7.2 没有**这个扩展点——`modules/register_module_types.h` 只声明 `initialize_modules(ModuleInitializationLevel)` / `uninitialize_modules(ModuleInitializationLevel)` 两个入口（master 分支同样如此），各模块自己的 `register_types.h` 也只声明 `initialize_<模块名>_module` / `uninitialize_<模块名>_module` 两类调用。写 `preregister_module_types()` 会链接失败。具体可用性见 3.4 节的版本限定。
 
 ### 3.2 register_types.h / register_types.cpp
 
@@ -956,7 +956,7 @@ scons platform=windows target=editor tests=yes -j8
 
 ---
 
-**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+**Godot 版本**: 4.x（基线 4.7.2；本文涉及的版本差异已在行内标注）
 
 ---
 

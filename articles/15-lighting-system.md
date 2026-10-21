@@ -887,10 +887,10 @@ func _ready() -> void:
 ## 核心要点
 
 1. **实时光源只有三种**（`DirectionalLight3D` / `OmniLight3D` / `SpotLight3D`），全部继承 `Light3D`，公共属性在 `Light3D` 上，专属属性在各子类。
-2. **平行光没有 `shadow_max_distance`**，只有 `directional_shadow_max_distance` 与三个 split；`shadow_orthogonal_size` 在 4.3 不存在。
+2. **平行光没有 `shadow_max_distance`**，只有 `directional_shadow_max_distance` 与三个 split；`shadow_orthogonal_size` 在 4.7.2 仍不存在。
 3. **PSSM 级联**由 `directional_shadow_mode` 选 1 / 2 / 4 段；级联越多越清晰也越贵，远景阴影糊是级联的固有代价而非 bug。
 4. **点光与聚光共用一张 Shadow Atlas**：图集越挤，阴影分辨率越低；`light_size` 决定半影宽度，`light_angular_distance` 决定角度张角。
-5. **Godot 4.3 没有 VSM**，软阴影靠 `shadow_blur`（PCF）与 `light_size` / `light_angular_distance`（PCSS）共同完成。
+5. **Godot 4.7.2 仍没有 VSM**，软阴影靠 `shadow_blur`（PCF）与 `light_size` / `light_angular_distance`（PCSS）共同完成。
 6. **GI 有六条路线**：LightmapGI（烘焙）、VoxelGI（可运行时重烘焙）、LightmapProbe（只取光）、ReflectionProbe（反射）、SDFGI（实时，仅 Forward+）、SSIL（屏幕空间，仅 Forward+）。
 7. **LightmapGI 的烘焙只在编辑器里**，`LightmapGI` 没有 `bake()` 方法、没有 `bake_mode`；质量枚举是 `BAKE_QUALITY_*`，开关在 `Light3D.light_bake_mode`，产物是 `LightmapGIData` 资源。
 8. **`VoxelGI.bake()` 存在而 `LightmapGI.bake()` 不存在**——这是 4.3 里两个烘焙方案最关键的 API 差异。
@@ -921,7 +921,7 @@ func _ready() -> void:
 **作者**: wangshucheng
 **首发平台**: 微信公众号  
 **写作时间**: 2026 年 3 月  
-**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+**Godot 版本**: 4.x（基线 4.7.2；本文涉及的版本差异已在行内标注）
 
 ---
 

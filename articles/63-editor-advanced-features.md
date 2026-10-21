@@ -363,9 +363,10 @@ func get_plugin_version(plugin_dir_name: String) -> String:
 | `EditorInterface.get_editor_main_viewport()` | 不存在。只有 `get_editor_viewport_2d()` / `get_editor_viewport_3d()` / `get_editor_main_screen()`（后者返回 `VBoxContainer`，**不是** Viewport） |
 | `EditorExtension`（所谓「编辑器扩展基类」） | 虚构类，不存在 |
 | `EditorResourceImporter.new()` | 不存在。导入器是 `EditorImportPlugin` |
-| `EditorExportPlatform.export_project()` | 不存在。`EditorExportPlatform` 是抽象基类，不能实例化 |
 | `EditorPlugin.remove_control_from_containers()` | 不存在。只有 2 参的 `remove_control_from_container(container, control)` |
 | `PerformanceProfiler` | 不存在。引擎提供的是 `Performance.get_monitor()` 系列 |
+
+> 📌 **4.7.2 的变化**：表中原先列着的 `EditorExportPlatform.export_project()` 现在**真实存在**了——它是实例方法 `export_project(preset, debug, path, flags, notify)`（4.3 时类参考里没有）。但 `EditorExportPlatform` 本身仍是抽象基类、不能实例化，脚本侧要做导出定制应实现 `EditorExportPlugin` 的回调，或直接用命令行。
 
 ---
 
@@ -433,7 +434,7 @@ func get_plugin_version(plugin_dir_name: String) -> String:
 
 ---
 
-**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+**Godot 版本**: 4.x（基线 4.7.2；本文涉及的版本差异已在行内标注）
 
 ---
 

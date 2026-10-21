@@ -1403,7 +1403,7 @@ func _disable_physics():
 ```
 
 > ⚠️ `set_bone_global_pose_override()` 在 Godot 4.3 起已标记 deprecated。
-> 4.4+ 的物理骨骼建议走 `SkeletonModifier3D`；
+> 物理骨骼建议走 `SkeletonModifier3D`（4.4+ 提供，本书基线 4.7.2 已包含）；
 > 4.3 起可用 `PhysicalBoneSimulator3D`，4.4 起还可直接用 `SpringBoneSimulator3D`。
 
 ```gdscript
@@ -1609,7 +1609,7 @@ func _get_slope_angle() -> float:
 
 ---
 
-**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+**Godot 版本**: 4.x（基线 4.7.2；本文涉及的版本差异已在行内标注）
 
 ---
 

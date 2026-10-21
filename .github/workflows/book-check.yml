@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       godot_check:
-        description: "额外跑 godot --headless --check-only（会下载 Godot 4.3 headless，约 50MB）"
+        description: "额外跑 godot --headless --check-only（会下载 Godot 4.7.2 headless，约 50MB）"
         type: boolean
         default: false
 
@@ -37,7 +37,7 @@ jobs:
 
   godot-syntax:
     name: Godot --check-only（咨询性）
-    # 只在手动触发且显式开启时跑：需要下载 Godot 4.3 headless，
+    # 只在手动触发且显式开启时跑：需要下载 Godot 4.7.2 headless，
     # 且书稿里只有 27/978 个 GDScript 块是「完整脚本」，
     # 其余是教学片段，--check-only 对它们不适用 → 本作业为咨询性，不阻断合并。
     if: github.event_name == 'workflow_dispatch' && inputs.godot_check == true
@@ -50,13 +50,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: 下载 Godot 4.3 headless
+      - name: 下载 Godot 4.7.2 headless
         run: |
           curl -sSL -o godot.zip \
-            https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip
+            https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64.zip
           unzip -q godot.zip
-          chmod +x Godot_v4.3-stable_linux.x86_64
-          echo "GODOT_BIN=$PWD/Godot_v4.3-stable_linux.x86_64" >> "$GITHUB_ENV"
+          chmod +x Godot_v4.7.2-stable_linux.x86_64
+          echo "GODOT_BIN=$PWD/Godot_v4.7.2-stable_linux.x86_64" >> "$GITHUB_ENV"
 
       - name: 用 --check-only 检查完整脚本块
         run: python tools/check_gdscript_syntax.py --verbose

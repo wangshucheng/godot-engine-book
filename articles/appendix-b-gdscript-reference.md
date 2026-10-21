@@ -636,7 +636,7 @@ func _ready():
 
 ---
 
-**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+**Godot 版本**: 4.x（基线 4.7.2；本文涉及的版本差异已在行内标注）
 
 **上一篇**: [附录 A：术语表](/articles/appendix-a-glossary.md)
 **下一篇**: [附录 C：Godot 与 Unity 对照表](/articles/appendix-c-unity-migration.md)

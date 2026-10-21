@@ -31,7 +31,7 @@
 
 ```gdscript
 # 启用渲染 Debug
-# 4.3 没有 debug/settings/visible_collision_shapes 这个项目设置，
+# 4.7.2 仍然没有 debug/settings/visible_collision_shapes 这个项目设置，
 # 也没有 ProjectSettings.set() 方法（只有 set_setting()）。
 # 碰撞体 / 导航网格 / 路径曲线的显示开关在 SceneTree 上：
 get_tree().debug_collisions_hint = true
@@ -487,10 +487,10 @@ godot --gpu-profile
 
 这是本章最重要的一条**事实纠正**：
 
-> ⚠️ **`get_frame_profile()` 在 Godot 4.3 里没有导出为 GDScript 方法**。
+> ⚠️ **`get_frame_profile()` 在 Godot 4.7.2 里依然没有导出为 GDScript 方法**。
 > `doc/classes/RenderingServer.xml` 里搜不到 `get_frame_profile`、`FrameProfileArea`、`set_frame_profiling_enabled` 中的任何一个——
 > 它只在 C++ 层存在（`servers/rendering_server.h`），**编辑器 Visual Profiler 是它的主要消费者**。
-> 想在脚本里拿 GPU 侧数据，4.3 的公开入口是 `get_rendering_info()` / `viewport_get_render_info()` 这类统计接口。
+> 想在脚本里拿 GPU 侧数据，4.7.2 的公开入口是 `get_rendering_info()` / `viewport_get_render_info()` 这类统计接口。
 
 C++ 层的结构（`servers/rendering_server.h`）：
 
@@ -909,7 +909,7 @@ Vulkan Validation Layer:
 2. **`Viewport.DebugDraw` 有 27 项**：从 `DEBUG_DRAW_UNSHADED` 到 `DEBUG_DRAW_CLUSTER_REFLECTION_PROBES`，覆盖几何、阴影、GI、聚簇、运动矢量等；缓冲类可视化基本只在 Forward+ 下有内容。
 3. **`DEBUG_DRAW_DISABLE_LOD` 不是「显示 LOD」**，而是「禁用 LOD、全部按最高精度绘制」。
 4. **统计三个口径**：`Performance` 监视器（全局）、`Viewport.get_render_info()`（按视口按通道）、`RenderingServer.get_frame_setup_time_cpu()`（CPU 帧准备时间）。
-5. **`RenderingServer::get_frame_profile()` 在 4.3 没有导出到脚本**：它只存在于 C++ 层（`servers/rendering_server.h`），`FrameProfileArea` 结构体只有 `name` / `gpu_msec` / `cpu_msec` 三个字段，编辑器的 **Visual Profiler** 是它的主要消费者。
+5. **`RenderingServer::get_frame_profile()` 在 4.7.2 也没有导出到脚本**：它只存在于 C++ 层（`servers/rendering_server.h`），`FrameProfileArea` 结构体只有 `name` / `gpu_msec` / `cpu_msec` 三个字段，编辑器的 **Visual Profiler** 是它的主要消费者。
 6. **工具分工**：RenderDoc 看「画了什么 / 状态对不对」，apitrace 看「API 调用与资源生命周期」，Nsight Systems 看时间线、Nsight Graphics 看着色器；三者都贵，先用引擎自带的量缩小范围。
 7. **排查纪律**：从帧级 → pass 级 → draw call 级 → shader 级 → API 级，**从粗到细**，别一上来就抓帧。
 8. **任何结论都要带测试条件**（引擎版本 / 后端 / GPU / 分辨率 / 场景规模 / 采样方式），否则下一轮无法复现。
@@ -939,7 +939,7 @@ Vulkan Validation Layer:
 **作者**: wangshucheng
 **首发平台**: 微信公众号  
 **写作时间**: 2026 年 3 月  
-**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+**Godot 版本**: 4.x（基线 4.7.2；本文涉及的版本差异已在行内标注）
 
 ---
 

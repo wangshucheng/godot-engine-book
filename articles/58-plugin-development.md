@@ -677,7 +677,7 @@ func _on_download_completed(result: int, response_code: int, _headers: PackedStr
 > `request(method: int enum HTTPClient.Method, url: String, headers: PackedStringArray, body: String = "")`
 > ——**第 1 个参数是枚举而不是字符串**（要写 `HTTPClient.METHOD_POST`），
 > **第 4 个参数是请求体字符串而不是 bool**。
-> 4.3 版还没有 `client_cert` / `client_key` 这两个参数（4.4+ 才加入），
+> `HTTPRequest` 也没有 `client_cert` / `client_key` 这两个参数（截至 4.7.2 仍无），
 > 但无论如何，低层 `HTTPClient` **必须先 `connect_to_host(host, port)`**，
 > 否则请求根本发不出去；`url` 只写主机之后的部分。
 > 更省事、也更不容易写错的做法是直接用 `HTTPRequest` 节点（本文示例即如此）：
@@ -734,15 +734,16 @@ AssetLib 提交流程:
 | 依赖 | AssetLib **不支持**在 `plugin.cfg` 里声明依赖（见下方说明） |
 
 > **机制说明**：Godot 的插件系统**没有内建的依赖声明机制**。
-> 4.3 的 `editor/editor_node.cpp` 解析 `plugin.cfg` 时只取 `[plugin]` 段的
+> 4.7.2 的 `editor/plugins/editor_plugin_settings.cpp` 解析 `plugin.cfg` 时只取 `[plugin]` 段的
 > `script` / `version` / `name` / `description` / `author` 五个键，
-> **写 `[dependencies]` 段不会有任何效果**（也不会报错）。需要依赖时，
+> **写 `[dependencies]` 段不会有任何效果**（也不会报错）——4.3 到 4.7.2 都是这样。
+> （有 `[dependencies]` 段的是 **`.gdextension`** 文件，不是 `plugin.cfg`。）需要依赖时，
 > 请在自己的插件 `_enter_tree()` 里用
 > `EditorInterface.is_plugin_enabled("<依赖插件目录名>")` 自行检测，
 > 未启用就提示用户。
 
 ```gdscript
-# 在自己的插件里检测依赖（4.3 没有 [dependencies] 段的替代品）
+# 在自己的插件里检测依赖（plugin.cfg 没有 [dependencies] 段，只能自己查）
 @tool
 extends EditorPlugin
 
@@ -1030,7 +1031,7 @@ func _add_repository_to_manager(repo: Dictionary):
 
 ---
 
-**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+**Godot 版本**: 4.x（基线 4.7.2；本文涉及的版本差异已在行内标注）
 
 ---
 

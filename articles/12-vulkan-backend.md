@@ -34,7 +34,7 @@ Vulkan 是 Khronos Group 开发的现代图形 API：
 
 ### 2.1 源码结构
 
-**源码位置**：`drivers/vulkan/`（Godot 4.3 实际只有 9 个文件）
+**源码位置**：`drivers/vulkan/`（Godot 4.7.2 共 10 个文件）
 
 ```
 drivers/vulkan/
@@ -235,7 +235,7 @@ Mobile 渲染器针对移动设备优化：
 
 ```gdscript
 # 设置渲染器
-# 注意：ProjectSettings 在 4.3 没有 set() 方法，只有 set_setting()。
+# 注意：ProjectSettings 在 4.7.2 仍没有 set() 方法，只有 set_setting()。
 #       ProjectSettings.set(a, b) 会落到 Object.set(property, value)，
 #       把"设置键"当成属性名，结果什么也不会生效。
 ProjectSettings.set_setting("rendering/renderer/rendering_method", "forward_plus")
@@ -1029,7 +1029,7 @@ func _to_stage_data(spirv: Dictionary) -> Array:
 **作者**: wangshucheng
 **首发平台**: 微信公众号  
 **写作时间**: 2026 年 3 月  
-**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+**Godot 版本**: 4.x（基线 4.7.2；本文涉及的版本差异已在行内标注）
 
 ---
 

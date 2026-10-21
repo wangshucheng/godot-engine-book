@@ -579,10 +579,10 @@ func override_editor_shortcut() -> void:
     var settings := EditorInterface.get_editor_settings()
     settings.set_builtin_action_override("editor/undo", [ev])
 
-# 3. 新增一条自定义快捷键（4.4+ 才有 add_shortcut）
-func register_custom_shortcut_4_4_plus() -> void:
+# 3. 新增一条自定义快捷键（4.4+ 才有 add_shortcut，4.7.2 基线已包含）
+func register_custom_shortcut() -> void:
     # ⚠️ 4.3 的 EditorSettings 没有 add_shortcut()，
-    #    它是 4.4+ 才加上的方法，而且必须通过实例调用：
+    #    它是 4.4 起才加上的方法，而且必须通过实例调用：
     #    EditorInterface.get_editor_settings().add_shortcut("my_plugin/action", shortcut)
     # 另外，EditorSettings 没有暴露 save() 方法给脚本，
     #    编辑器设置是「变更后自动保存」的，不需要手动保存。
@@ -1441,8 +1441,8 @@ func _save_user_data(data: Dictionary) -> void:
 >   「Editor settings are saved automatically when changed.」，
 >   所以 4.x **不需要**（也没有脚本可用的）手动 `save()`。
 >   `EditorSettings.save()` 是引擎内部的 `static` C++ 方法，没有绑定给脚本。
-> - **快捷键**：`EditorSettings.add_shortcut(path, shortcut)` 是 **4.4+** 才有的方法，
->   4.3 没有。4.3 的替代做法是
+> - **快捷键**：`EditorSettings.add_shortcut(path, shortcut)` 是 **4.4 起**才有的方法，
+>   4.3 没有（本书基线 4.7.2 已包含）。4.3 的替代做法是
 >   `set_builtin_action_override(name, events)` 覆盖一个**内建**编辑器动作的按键。
 > - **项目设置**：写 `ProjectSettings` 要显式 `ProjectSettings.save()`
 >   才会写进 `project.godot`；只调 `set_setting()` 不会落盘。
@@ -1503,7 +1503,7 @@ func _save_user_data(data: Dictionary) -> void:
 
 ---
 
-**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+**Godot 版本**: 4.x（基线 4.7.2；本文涉及的版本差异已在行内标注）
 
 ---
 

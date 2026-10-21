@@ -25,11 +25,11 @@ Godot 4.3 一共支持 **5 种** `shader_type`，第 6 种（计算着色器）�
 | `particles` | 粒子模拟与绘制 | `start()` / `process()` | ✅ |
 | `sky` | 天空 / 全景环境 | `sky()` | ✅ |
 | `fog` | 体积雾 / 深度雾 | `fog()` | ✅ |
-| `compute` | 通用计算（GPGPU） | `compute()` | ❌ 4.4+ 引入，4.3 无此项 |
+| `compute` | 通用计算（GPGPU） | — | ❌ 截至 4.7.2 未提供（见 3.6） |
 
 对应的枚举值在 `Shader.Mode` 里（`Shader.MODE_SPATIAL`、`Shader.MODE_CANVAS_ITEM`、`Shader.MODE_PARTICLES`、`Shader.MODE_SKY`、`Shader.MODE_FOG`），可以用 `Shader.get_mode()` 在运行时读回。
 
-> `compute` 着色器是 Godot **4.4** 才引入的特性（配合 `RenderingDevice` 的计算管线）。**4.3 里没有** `shader_type compute;`，写上去会直接报"未知 shader 类型"。本章后面的所有内容都以 4.3 为基线，涉及 4.4+ 的地方会行内标注。
+> ⚠️ `compute` 着色器**截至本书基线 4.7.2 仍未提供**——官方着色器类型注册表里只有六种类型，写 `shader_type compute;` 会直接报"未知 shader 类型"。社区里"Godot 4.4 加了 compute 着色器"的说法不成立，证据与替代方案见 3.6 节。
 
 ### 1.2 Shader 结构
 
@@ -761,19 +761,30 @@ void fog() {
 }
 ```
 
-### 3.6 compute（4.4+ 引入，4.3 无此项）
+### 3.6 compute：截至 4.7.2 仍未提供
 
-Godot **4.4** 才引入通用计算着色器。4.3 的 `Shader.Mode` 枚举里**没有** `MODE_COMPUTE`，`shader_type compute;` 在 4.3 上会直接报"未知 shader 类型"。
+⚠️ **先纠正一个流传很广的说法**：Godot **4.4 并没有**引入通用计算着色器。截至本书基线 **4.7.2**，`shader_type compute;` 依然无法使用。证据有两处，都在官方源码里：
 
-4.4 的计算着色器提供一组工作组的内置量（`local_invocation_id`、`global_invocation_id`、`workgroup_id`、`num_workgroups` 等）与 `compute()` 入口，配套使用 `RenderingDevice.compute_list_dispatch()`。
+- 着色器类型注册表（`servers/rendering/shader_types.cpp` 的 `shader_types_list`）只登记了六种：`spatial` / `canvas_item` / `particles` / `sky` / `fog` / `texture_blit`；
+- C++ 侧的 `ShaderMode` 枚举（`servers/rendering/rendering_server_enums.h`）与之严格同步，**没有** `SHADER_COMPUTE`；脚本侧的 `Shader.Mode` 枚举同样**没有** `MODE_COMPUTE`（4.7.2 里是 `MODE_SPATIAL` / `MODE_CANVAS_ITEM` / `MODE_PARTICLES` / `MODE_SKY` / `MODE_FOG` / `MODE_TEXTURE_BLIT` 六项）。
 
-本章的其余内容都以 4.3 为基线；涉及计算着色器时请以目标引擎版本为准。
+写 `shader_type compute;` 会直接报"未知 shader 类型"——这一点在 4.3 与 4.7.2 上表现一致。
+
+**那 GPGPU 怎么做？** 走 `RenderingDevice` 的底层路线，而不是着色器语言：
+
+1. 自己准备计算着色器源码（GLSL 或 SPIR-V），用 `RenderingDevice.shader_compile_spirv_from_source()` / `shader_create_from_spirv()` 编译；
+2. 用 `compute_pipeline_create()` 建管线，`compute_list_begin()` / `compute_list_dispatch()` 提交工作组；
+3. 描述符集与缓冲绑定自己管（`compute_list_bind_compute_pipeline()` / `compute_list_bind_uniform_set()` / `compute_list_set_push_constant()`）。
+
+代价是彻底脱离引擎的场景图与资源管理：没有 `Node`、没有自动资源生命周期、没有编辑器预览。这条路的定位是"把 GPGPU 塞进引擎内部"，而不是"给美术一个方便的 compute 节点"。
+
+本章的其余内容都以 4.7.2 为基线。
 
 ---
 
 ## 四、render_mode 全表
 
-`render_mode` 控制**渲染管线**的行为，不改变着色器数学。4.3 的注册表（`shader_types.cpp` 里的 `modes.push_back(...)`）一共登记了 **35 条**：`spatial` 22 条、`canvas_item` 5 条、`particles` 4 条、`sky` 4 条。
+`render_mode` 控制**渲染管线**的行为，不改变着色器数学。4.7.2 的注册表（`shader_types.cpp` 里的 `modes.push_back(...)`）一共登记了 **37 条**：`spatial` 23 条、`canvas_item` 5 条、`particles` 4 条、`sky` 4 条、`texture_blit` 1 条。
 
 带选项的写法是 `render_mode <名字>_<选项>`，例如 `cull` 的选项是 `back` / `front` / `disabled`，对应 `cull_back` / `cull_front` / `cull_disabled`。
 
@@ -1066,7 +1077,7 @@ Godot 3.x 的内置变量是小写下划线风格，4.x 改成了大写下划线
 
 ## 核心要点
 
-1. **4.3 只有 5 种 `shader_type`**（spatial / canvas_item / particles / sky / fog），`compute` 是 4.4+ 才有的，4.3 写上去直接编译失败。
+1. **4.7.2 有 6 种 `shader_type`**（spatial / canvas_item / particles / sky / fog / texture_blit），**没有** `compute`——截至 4.7.2 引擎仍未提供通用计算着色器，写上去会直接报"未知 shader类型"（见 3.6）。
 2. **全局作用域只允许** `shader_type` / `render_mode` / `uniform` / `group_uniforms` / `varying` / `const` / `struct` / 函数，裸变量声明是编译错误。
 3. **隐式类型转换只有 `int` → `float`**，其余（`float` → `int`、`vec2` → `vec3`）必须用构造函数显式转换，且可用重载是登记死的。
 4. **内置变量必须按 `shader_type` 对表查**：spatial 的输出是 `ALBEDO` / `ALPHA` / `METALLIC` / `ROUGHNESS` / `NORMAL` / `EMISSION`，`COLOR` 只属于 canvas_item。
@@ -1100,7 +1111,7 @@ Godot 3.x 的内置变量是小写下划线风格，4.x 改成了大写下划线
 **作者**: wangshucheng
 **首发平台**: 微信公众号
 **写作时间**: 2026 年 3 月
-**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+**Godot 版本**: 4.x（基线 4.7.2；本文涉及的版本差异已在行内标注）
 
 ---
 

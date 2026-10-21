@@ -699,8 +699,7 @@ func _exit_tree() -> void:
 > `_export_begin()` / `_export_file()` / `_export_end()`。
 > 在 `_export_file()` 里调 `skip()` 可以把当前文件排除出导出包；
 > `add_file(path, bytes, remap)` 可以往包里追加自定义文件。
-> `EditorExportPlatform` 是**抽象基类**，不能实例化，也没有静态 `export_project()`；
-> 完全脚本化的导出应该走命令行（见第 65 篇 CI 一节）。
+> `EditorExportPlatform` 是**抽象基类**，不能实例化；4.7.2 起它有了**实例方法** `export_project(preset, debug, path, flags, notify)`（要传 `EditorExportPreset`），但那是给导出插件与编辑器内部用的——脚本侧完全自动化的导出仍应走命令行（见第 65 篇 CI 一节）。
 
 ---
 
@@ -974,7 +973,7 @@ func get_dock_icon() -> Texture2D:
 
 ---
 
-**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+**Godot 版本**: 4.x（基线 4.7.2；本文涉及的版本差异已在行内标注）
 
 ---
 

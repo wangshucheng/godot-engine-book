@@ -437,8 +437,8 @@ Godot 在 4.6 引入了一套**原生 IK 框架**，建立在重构后的 `Skele
 | `SplineIK3D` | 样条 IK |
 | `JacobianIK3D` | 雅可比 IK |
 
-> ⚠️ **版本提示**：以上类在 **4.4 与 4.5 中不存在**（`doc/classes` 检索零命中），
-> 只在 master / 4.6+ 可用。写 4.x 项目时请用 `SkeletonModifier3D` 自研，或继续用 `SkeletonIK3D`。
+> ⚠️ **版本提示**：以上类自 **4.6** 起提供（4.4 / 4.5 中不存在，`doc/classes` 检索零命中），
+> 本书基线 **4.7.2 已包含**。需要跨版本兼容（4.5 及更早）时请用 `SkeletonModifier3D` 自研，或继续用 `SkeletonIK3D`。
 
 ---
 
@@ -630,7 +630,7 @@ func _is_keep_bone(bone_name: String) -> bool:
 3. **姿势覆盖**用 `set_bone_global_pose_override()`（4.3 起 deprecated），新代码走 `SkeletonModifier3D`
 4. **`BoneAttachment3D`** 让节点跟随骨骼，避免手算变换
 5. **`SkeletonModifier3D` 是骨骼扩展点**，官方定位就是"自定义 IK / 约束 / 骨骼物理"
-6. **Godot 4.x 没有通用 FABRIK / CCD 节点**，只有两骨的 `SkeletonIK3D`；4.6+ 才有原生 IK 框架
+6. **原生 IK 框架自 4.6 起提供**（`FABRIK3D` / `CCDIK3D` / `ChainIK3D` / `IterateIK3D` 等），本书基线 4.7.2 已包含；4.5 及更早只有两骨的 `SkeletonIK3D`
 7. **GPU 蒙皮由引擎内建**，脚本不参与逐顶点计算；顶点支持 4 或 8 骨骼权重通道
 8. **多通道叠加**靠 `Blend2`（MIX）/ `Add2`（ADD）/ Filter（轨道级）
 
@@ -674,7 +674,7 @@ func _is_keep_bone(bone_name: String) -> bool:
 
 ---
 
-**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+**Godot 版本**: 4.x（基线 4.7.2；本文涉及的版本差异已在行内标注）
 
 ---
 

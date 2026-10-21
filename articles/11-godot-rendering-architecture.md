@@ -455,7 +455,7 @@ RendererViewport::_draw_3d()          renderer_viewport.cpp:248
                    RenderingDevice 录制命令 → 提交 Vulkan
 ```
 
-> ⚠️ **路径更正（3.x → 4.x）**：Godot 3.x 的场景端剔除代码放在 `scene/renderer/` 目录（`scene/renderer/scene_renderer.cpp` 一类文件）。**Godot 4.3 没有这个目录** —— 对 4.3 分支请求 `scene/renderer/scene_renderer.h` 返回 404。4.x 把这一层搬到了 `servers/rendering/renderer_scene_cull.h/.cpp`，类名也从 3.x 的 `SceneRenderer` 变成了 `RendererSceneCull`。
+> ⚠️ **路径更正（3.x → 4.x）**：Godot 3.x 的场景端剔除代码放在 `scene/renderer/` 目录（`scene/renderer/scene_renderer.cpp` 一类文件）。**4.x 没有这个目录**（4.7.2 同样没有）—— 对 4.7.2 分支请求 `scene/renderer/scene_renderer.h` 返回 404。4.x 把这一层搬到了 `servers/rendering/renderer_scene_cull.h/.cpp`，类名也从 3.x 的 `SceneRenderer` 变成了 `RendererSceneCull`。
 
 ### 8.2 `render_scene()` 的参数就是"剔除结果"的完整清单
 
@@ -674,7 +674,7 @@ enum VSyncMode {
 | `RenderingServer::FrameProfileArea` | C++ | 结构体只有三个字段：`String name; double gpu_msec; double cpu_msec;` |
 | `RenderingServer.get_rendering_info()` / `viewport_get_render_info()` | GDScript | 拿 draw call、对象数等**统计量**（不是耗时） |
 
-> ⚠️ **`get_frame_profile()` 在 Godot 4.3 里没有导出为 GDScript 方法**。`doc/classes/RenderingServer.xml` 里搜不到 `get_frame_profile`、`FrameProfileArea`、`set_frame_profiling_enabled` 中的任何一个——它只在 C++ 层存在（`servers/rendering_server.h:1681-1689`），编辑器 Visual Profiler 是它的主要消费者。想在脚本里拿 GPU 侧数据，4.3 的公开入口是 `get_rendering_info()` / `viewport_get_render_info()` 这类统计接口。
+> ⚠️ **`get_frame_profile()` 在 Godot 4.7.2 里依然没有导出为 GDScript 方法**。`doc/classes/RenderingServer.xml` 里搜不到 `get_frame_profile`、`FrameProfileArea`、`set_frame_profiling_enabled` 中的任何一个——它只在 C++ 层存在（`servers/rendering_server.h`），编辑器 Visual Profiler 是它的主要消费者。想在脚本里拿 GPU 侧数据，4.7.2 的公开入口是 `get_rendering_info()` / `viewport_get_render_info()` 这类统计接口。
 
 ### 8.9 相关项目设置速查
 
@@ -790,7 +790,7 @@ struct FrameProfileArea {
 virtual Vector<FrameProfileArea> get_frame_profile() const = 0;
 ```
 
-> ⚠️ **`get_frame_profile()` 在 Godot 4.3 里没有导出为 GDScript 方法**（`doc/classes/RenderingServer.xml` 里搜不到它）。它在 C++ 层存在，**编辑器 Visual Profiler 是它的主要消费者**。想在脚本里拿 GPU 侧数据，4.3 的公开入口只有第 1 层那些计数器。
+> ⚠️ **`get_frame_profile()` 在 Godot 4.7.2 里依然没有导出为 GDScript 方法**（`doc/classes/RenderingServer.xml` 里搜不到它）。它在 C++ 层存在，**编辑器 Visual Profiler 是它的主要消费者**。想在脚本里拿 GPU 侧数据，4.7.2 的公开入口只有第 1 层那些计数器。
 
 **第 3 层：编辑器可视化开关**（`Viewport.debug_draw`）
 
@@ -1088,7 +1088,7 @@ func warn_unsupported_features() -> void:
 *字数：约 3,300 字（不含代码块）（不含代码块）*  
 *状态：✅ 完成*
 
-**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+**Godot 版本**: 4.x（基线 4.7.2；本文涉及的版本差异已在行内标注）
 
 ---
 

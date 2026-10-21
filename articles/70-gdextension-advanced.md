@@ -1233,7 +1233,7 @@ macos.release          = "res://addons/wave/bin/libwave.macos.template_release.f
 
 要点：
 
-- `compatibility_minimum` 防止过旧版本的 Godot 加载你的扩展（版本不兼容会崩溃，不如优雅拒绝）。GDExtension 的兼容承诺是**向后兼容**：针对 4.3 构建的扩展可在 4.4+ 运行，反之不行。本书基线是 4.3，所以这里写 `"4.3"`——用 4.3 分支的 godot-cpp 构建，却声明兼容 4.1，等于对引擎谎报了自己的 ABI 边界。
+- `compatibility_minimum` 防止过旧版本的 Godot 加载你的扩展（版本不兼容会崩溃，不如优雅拒绝）。GDExtension 的兼容承诺是**向后兼容**：针对 4.3 构建的扩展可在 4.4+ 运行，反之不行。本书基线是 4.7.2，所以这里写 `"4.7.2"`——用 4.7.2 分支的 godot-cpp 构建，却声明兼容 4.1，等于对引擎谎报了自己的 ABI 边界。
 - 键的格式为 `<platform>.<target_feature>[.<arch>]`。`target_feature` 是构建类型标识，取值含 `editor` / `template_debug` / `template_release`；实际项目里最常见的是两个简写 `debug`（对应 `template_debug` / `editor` 构建）与 `release`（对应 `template_release` 构建），godot-cpp 官方示例的 `my_test.gdextension` 用的就是 `macos.debug` / `windows.release.x86_64` 这种写法。`arch` 段可选，macOS 因使用 universal 二进制通常不写架构段。
 - 引擎判定键的方式：把键按 `.` 拆成若干段，每一段都必须命中当前环境的特性标签（`OS::has_feature()`），全部命中才选这条；多条命中时取**标签段数最多**的一条。按 Godot 4.3 `core/os/os.cpp` 的实现：`editor` → 编辑器构建，`template` / `template_debug` / `template_release` → 导出模板构建，`debug` → 带 `DEBUG_ENABLED` 的构建，`release` → 发布模板构建。
 - macOS 的值指向的是 **`.framework` 包目录本身**（不是包内的动态库）：包内还必须有与包名同名的动态库、`Info.plist` 与 `Resources/` 目录，缺一就不是合法的 macOS bundle（详见第 72 篇 3.5 节的打包步骤）。
@@ -1423,7 +1423,7 @@ func _exit_tree() -> void:
 
 ---
 
-**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+**Godot 版本**: 4.x（基线 4.7.2；本文涉及的版本差异已在行内标注）
 
 ---
 

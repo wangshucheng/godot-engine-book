@@ -425,7 +425,7 @@ func _make_chunk(gx: int, gz: int) -> Node:
 
 ### 3.2 距离 LOD：`visibility_range_*`
 
-> **Godot 4.3 没有 `LOD3D` 节点**：`doc/classes/LOD3D.xml` 返回 404，`scene/register_scene_types.cpp` 里检索 "LOD" 命中数为 0。LOD 由 **`GeometryInstance3D` 的可见性范围（`visibility_range_*`）+ 网格自带的 LOD 层级（`lod_bias`）** 实现。
+> **Godot 4.7.2 仍没有 `LOD3D` 节点**：`doc/classes/LOD3D.xml` 返回 404。LOD 由 **`GeometryInstance3D` 的可见性范围（`visibility_range_*`）+ 网格自带的 LOD 层级（`lod_bias`）** 实现。
 
 ```gdscript
 # 近处：高模，30 米以外隐藏
@@ -953,7 +953,7 @@ func _write_report() -> void:
 **作者**: wangshucheng
 **首发平台**: 微信公众号  
 **写作时间**: 2026 年 3 月  
-**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+**Godot 版本**: 4.x（基线 4.7.2；本文涉及的版本差异已在行内标注）
 
 ---
 

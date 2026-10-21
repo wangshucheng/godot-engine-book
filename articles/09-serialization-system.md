@@ -155,7 +155,7 @@ var k: Array = [1, 2, 3]
 var l: Dictionary = {"key": "value"}
 ```
 
-> ⚠️ **4.x 没有 `Matrix4` / `Matrix3` 这两个类型**。写 `var g: Matrix4 = Transform3D()` 会直接报 `Could not find type "Matrix4"`——4.3 的 `Variant::Type` 枚举里只有 `BASIS` 和 `TRANSFORM3D`，没有 `MATRIX3` / `MATRIX4`。3.x → 4.x 的对应关系是：
+> ⚠️ **4.x 没有 `Matrix4` / `Matrix3` 这两个类型**（4.7.2 实测仍无）。写 `var g: Matrix4 = Transform3D()` 会直接报 `Could not find type "Matrix4"`——4.7.2 的 `Variant::Type` 枚举里只有 `BASIS` 和 `TRANSFORM3D`，没有 `MATRIX3` / `MATRIX4`。3.x → 4.x 的对应关系是：
 >
 > | 3.x | 4.x |
 > |-----|-----|
@@ -606,7 +606,7 @@ func validate() -> bool:
 **作者**: wangshucheng
 **首发平台**: 微信公众号  
 **写作时间**: 2026 年 3 月  
-**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+**Godot 版本**: 4.x（基线 4.7.2；本文涉及的版本差异已在行内标注）
 
 ---
 

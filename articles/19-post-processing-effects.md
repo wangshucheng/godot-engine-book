@@ -936,9 +936,9 @@ func _process(delta):
 ## 核心要点
 
 1. **4.3 的后处理参数全在 `Environment` 与 `CameraAttributes` 上**，且每个属性名都要按 4.3 的真实拼写写：`ssr_enabled` / `ssao_enabled` / `glow_intensity` / `adjustment_color_correction`。
-2. **4.3 没有运动模糊**：`Environment` 上没有任何 `motion_blur*` 属性，`CameraAttributesPractical` 的成员只有 `dof_blur_*` 与继承自基类的 `auto_exposure_*`。
+2. **4.7.2 仍没有运动模糊**：`Environment` 上没有任何 `motion_blur*` 属性，`CameraAttributesPractical` 的成员只有 `dof_blur_*` 与继承自基类的 `auto_exposure_*`。
 3. **景深与自动曝光属于相机**（`CameraAttributesPractical`），不属于 `Environment`；`Environment` 上只有 `tonemap_exposure`。
-4. **色彩校正是 LUT 贴图**（`adjustment_color_correction`，类型 `Texture`），不是 `Curve`；`use_1d_color_correction` 是 4.4+ 才有的开关。
+4. **色彩校正是 LUT 贴图**（`adjustment_color_correction`，类型 `Texture`），不是 `Curve`；至于「一维 LUT」开关 `use_1d_color_correction`，截至 4.7.2 的 `Environment` 上**并没有**这个属性，写上去会直接报"属性不存在"。
 5. **铺一张 `canvas_item` 贴图不是后处理**——它排在 3D 之后、只覆盖自己的屏幕区域、读不到深度与运动矢量。
 6. **真正的自定义后处理走 `Compositor` + `CompositorEffect`**：`Compositor` 只有 `compositor_effects` 一个成员，效果要继承 `CompositorEffect` 并实现 `_render_callback`。
 7. **5 个回调点**：`PRE_OPAQUE` / `POST_OPAQUE` / `POST_SKY` / `PRE_TRANSPARENT` / `POST_TRANSPARENT`，选点决定你能看到什么、能改什么。
@@ -984,7 +984,7 @@ func _process(delta):
 **作者**: wangshucheng
 **首发平台**: 微信公众号
 **写作时间**: 2026 年 3 月
-**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+**Godot 版本**: 4.x（基线 4.7.2；本文涉及的版本差异已在行内标注）
 
 ---
 

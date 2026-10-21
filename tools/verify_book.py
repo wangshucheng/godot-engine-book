@@ -10,7 +10,7 @@
 
 规则组:
     structure  围栏闭合 / 表格列数 / 内部链接 / 行尾 / 篇末四件套
-    api        代码块与正文里的 Godot API 是否真实存在（比对 4.3 官方类参考）
+    api        代码块与正文里的 Godot API 是否真实存在（比对基线版本的官方类参考）
     stats      README / 封面的统计读数是否与书稿实测一致
     perf       性能数字是否带测试条件或「示意数据」标注
 
@@ -687,7 +687,7 @@ class ApiChecker:
                 if (cls not in local_classes and cls not in self.user_classes
                         and not self.ix.has_class(cls)):
                     self.report("unknown_class", name, line_no,
-                                f"`extends {cls}`：4.3 官方类参考中没有这个类",
+                                f"`extends {cls}`：{self.ix.version} 官方类参考中没有这个类",
                                 f"extends:{cls}")
             # class_name 撞引擎类
             m = re.search(r"\bclass_name\s+([A-Za-z_]\w*)", line)
@@ -710,7 +710,7 @@ class ApiChecker:
                     continue
                 if not self.ix.has_class(recv):
                     self.report("unknown_class", name, line_no,
-                                f"`{recv}`：4.3 官方类参考里没有这个类", recv)
+                                f"`{recv}`：{self.ix.version} 官方类参考里没有这个类", recv)
                     continue
                 if attr in local_funcs or attr == "new":
                     continue
@@ -880,7 +880,7 @@ class ApiChecker:
                 cls = m.group(1)
                 if not self.ix.has_class(cls):
                     self.report("unknown_class", name, line_no,
-                                f"`Godot.{cls}`：4.3 官方类参考里没有这个类", cls)
+                                f"`Godot.{cls}`：{self.ix.version} 官方类参考里没有这个类", cls)
             for m in re.finditer(r"class\s+\w+\s*:\s*([A-Z][A-Za-z0-9]*)", line):
                 base = m.group(1)
                 if base in ("Exception", "Object", "Reference", "RefCounted"):
@@ -889,7 +889,7 @@ class ApiChecker:
                     continue
                 if not self.ix.has_class(base):
                     self.report("unknown_class", name, line_no,
-                                f"C# 基类 `{base}` 不存在于 4.3 类参考", base)
+                                f"C# 基类 `{base}` 不存在于 {self.ix.version} 类参考", base)
 
     def check_cpp(self, name, code, start_line, scope: Scope):
         for offset, raw in enumerate(code.split("\n")):
@@ -899,12 +899,12 @@ class ApiChecker:
                 cls = m.group(1)
                 if not self.ix.has_class(cls):
                     self.report("unknown_class", name, line_no,
-                                f"`godot::{cls}`：4.3 官方类参考里没有这个类", cls)
+                                f"`godot::{cls}`：{self.ix.version} 官方类参考里没有这个类", cls)
             for m in re.finditer(r"\bmemnew\(\s*([A-Z][A-Za-z0-9]*)", line):
                 cls = m.group(1)
                 if not self.ix.has_class(cls):
                     self.report("unknown_class", name, line_no,
-                                f"`memnew({cls})`：4.3 官方类参考里没有这个类", cls)
+                                f"`memnew({cls})`：{self.ix.version} 官方类参考里没有这个类", cls)
 
     # -- 正文里的行内代码 ---------------------------------------------------- #
     def check_prose(self, name, text, scope: Scope):
@@ -940,18 +940,18 @@ class ApiChecker:
             if len(parts) == 1:
                 if not self.ix.has_class(head):
                     self.report("unknown_class", name, line_no,
-                                f"正文提到的 `{head}` 不在 4.3 官方类参考中", head)
+                                f"正文提到的 `{head}` 不在 {self.ix.version} 官方类参考中", head)
             else:
                 attr = parts[1]
                 if attr == "new":
                     continue
                 if not self.ix.has_class(head):
                     self.report("unknown_class", name, line_no,
-                                f"正文提到的 `{head}` 不在 4.3 官方类参考中", head)
+                                f"正文提到的 `{head}` 不在 {self.ix.version} 官方类参考中", head)
                     continue
                 if not self.ix.has_member(head, attr):
                     self.report("unknown_member", name, line_no,
-                                f"正文提到的 `{head}.{attr}` 在 4.3 中不存在",
+                                f"正文提到的 `{head}.{attr}` 在 {self.ix.version} 中不存在",
                                 f"{head}.{attr}")
 
     # -- 入口 --------------------------------------------------------------- #
@@ -1262,7 +1262,7 @@ def rule_perf(book: Book, articles):
 # 自检（阳性对照）：判据必须能抓到已知的历史 P0，且不能对正确写法误报
 # --------------------------------------------------------------------------- #
 SELFTEST_CASES = [
-    ("unknown_class", "extends LOD3D\n", "LOD3D 在 4.3 不存在", True),
+    ("unknown_class", "extends LOD3D\n", "LOD3D 在基线官方类参考中不存在", True),
     ("unknown_member", "var light = DirectionalLight3D.new()\nlight.shadow_max_distance = 100\n",
      "DirectionalLight3D 没有 shadow_max_distance", True),
     ("unknown_member", "var light = DirectionalLight3D.new()\nlight.shadow_orthogonal_size = 10\n",
@@ -1272,7 +1272,7 @@ SELFTEST_CASES = [
     ("type_mismatch", "var gi = LightmapGI.new()\ngi.light_data = \"res://x.gi\"\n",
      "light_data 是 LightmapGIData，不能赋字符串", True),
     ("unknown_class", "var x = EditorResourceImporter.new()\n",
-     "EditorResourceImporter 在 4.3 不存在", True),
+     "EditorResourceImporter 在基线官方类参考中不存在", True),
     ("unknown_member", "print(Performance.RENDER_TOTAL_DRAW_CALLS)\n",
      "Performance 常量名错", True),
     ("unknown_member", "var rs = ResourceSaver.new()\nrs.save_to_buffer(x)\n",

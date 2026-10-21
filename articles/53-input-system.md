@@ -1240,7 +1240,7 @@ func print_input_stats():
 *字数：约 1,100 字（不含代码块）（不含代码块）*  
 *状态：✅ 完成*  
 
-**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+**Godot 版本**: 4.x（基线 4.7.2；本文涉及的版本差异已在行内标注）
 
 
 **上一篇**: [第 10 篇：Godot 跨平台架构详解](/articles/10-cross-platform-architecture.md)

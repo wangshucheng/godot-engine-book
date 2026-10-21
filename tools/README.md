@@ -7,7 +7,7 @@
 |---|---|---|
 | `structure` | 代码围栏不闭合 / 表格列数不一致 / 内部链接断链（含 README、封面、首页）/ 裸 LF 行尾 / 篇末四件套缺失 | §6.3「链接与围栏检查」 |
 | `syntax` | GDScript **解析期**错误：`extends` 位置与条数、重复 `func`、**成员遮蔽父类属性**、括号不配对、tab 与空格混用 | §6.3「GDScript 片段语法检查」 |
-| `api` | 代码块与正文里引用的 Godot 类 / 方法 / 属性 / 常量 / 枚举是否真实存在于 4.3 官方类参考 | §6.3「API 存在性检查」 |
+| `api` | 代码块与正文里引用的 Godot 类 / 方法 / 属性 / 常量 / 枚举是否真实存在于基线版本的官方类参考 | §6.3「API 存在性检查」 |
 | `stats` | README 与封面的统计读数是否与书稿实测一致 | §6.3「统计读数校验」 |
 | `perf` | 性能读数是否带测试条件或「示意数据」标注 | §6.3「性能数字标注检查」 |
 
@@ -28,9 +28,9 @@ python tools/verify_book.py --report out.txt
 | 文件 | 作用 |
 |---|---|
 | `tools/verify_book.py` | 门禁本体 |
-| `tools/godot_api_index.json` | Godot **4.3** 官方类参考索引（由 `doc/classes/*.xml` + `modules/*/doc_classes/*.xml` + `editor/doc_classes/*.xml` 派生） |
+| `tools/godot_api_index.json` | Godot **4.7.2** 官方类参考索引（由 `doc/classes/*.xml` + `modules/*/doc_classes/*.xml` + `platform/*/doc_classes/*.xml` 派生；4.7.2 起 `editor/doc_classes/` 已并入 `doc/classes/`） |
 | `tools/fetch_godot_api.py` | 重新抓取官方类参考并重建索引（换版本 / 升基线时用） |
-| `tools/api_allowlist.txt` | 白名单：书里**有意提及**的、不存在于 4.3 的符号 |
+| `tools/api_allowlist.txt` | 白名单：书里**有意提及**的、不存在于基线版本的符号（按 4.7.2 对账，符号进基线就必须删条目） |
 | `tools/check_gdscript_syntax.py` | 把「自称是完整脚本」的 GDScript 块喂给 `godot --headless --check-only`（咨询性，见下） |
 
 ## `syntax` 规则组抓什么
@@ -79,7 +79,7 @@ GODOT_BIN=/path/to/godot python tools/check_gdscript_syntax.py
 
 `tools/godot_api_index.json` 由 `tools/fetch_godot_api.py` 生成，流程是：
 
-1. GitHub tree API 列出 `godotengine/godot@4.3-stable` 下的全部类参考 XML（962 个）；
+1. 列出 `godotengine/godot@4.7.2-stable` 下的全部类参考 XML（1078 个：`doc/classes/` 810 + `modules/*/doc_classes/` 261 + `platform/*/doc_classes/` 7）；
 2. 并行下载（优先 `cdn.jsdelivr.net`，回落 `github.com/raw`；
    `raw.githubusercontent.com` 在部分网络下不可达，别用它）。
    **实测可达性会变**：曾遇到 `cdn.jsdelivr.net` 也不通、但 `gcore.jsdelivr.net` 正常
@@ -87,35 +87,37 @@ GODOT_BIN=/path/to/godot python tools/check_gdscript_syntax.py
    抓取脚本已内建回落分支，遇到超时先重跑一次通常即可；
 3. 解析成紧凑索引：每个类一行，记方法 / 属性 / 信号 / 常量 / 枚举 / 属性类型。
 
-> **抓完必须抽样本与官方源逐字节比对**再拿去当判据底座——本轮抽 12 个样本比，0 处不一致。
+> **抓完必须与官方源逐字节比对**再拿去当判据底座——本轮用 `git clone --depth 1 --filter=blob:none --sparse`
+> 取到同一 tag 提交（`ed1daf0`）的官方 blob，与 CDN 路径下载的 **120 个重叠文件逐字节全部一致**（0 处不一致）。
 >
 > **GitHub 代码搜索不能当「不存在」的证据**：它对 `group_uniforms` 返回 0 命中，
-> 而该关键字在 4.3 里确实存在。「不存在」的结论要以**本地下载的源码全文检索**为准。
+> 而该关键字在基线版本里确实存在。「不存在」的结论要以**本地下载的源码全文检索**为准。
 
 
-> **坑点提醒**：Godot 4.3 的类 XML **没有 `<enums>` 段**——枚举成员写在 `<constants>` 里，
+> **坑点提醒**：Godot 4.7.2 的类 XML **仍然没有 `<enums>` 段**——枚举成员写在 `<constants>` 里，
 > 用 `enum="枚举名"` 属性标注所属枚举。只解析 `<enums>` 会导致所有枚举**类型名**
 > （如 `DirectionalLight3D.ShadowMode`、`Viewport.DebugDraw`）查不到。
+> 解析器保留了 `<enums>` 分支只是为了向前兼容，但它不是当前格式。
 
 重建索引：
 
 ```bash
-python tools/fetch_godot_api.py                 # 4.3-stable（默认）
-python tools/fetch_godot_api.py --tag 4.4-stable # 换基线
-python tools/fetch_godot_api.py --index-only     # 只重建，不重下
+python tools/fetch_godot_api.py                  # 4.7.2-stable（默认）
+python tools/fetch_godot_api.py --tag 4.6-stable  # 换基线
+python tools/fetch_godot_api.py --index-only      # 只重建，不重下
 ```
 
 ## 判据必须自证有牙
 
 `--selftest` 用一组**已知的历史 P0** 做阳性对照：
 
-- `extends LOD3D`（4.3 无此类）
+- `extends LOD3D`（基线版本无此类）
 - `DirectionalLight3D.shadow_max_distance` / `shadow_orthogonal_size`（不存在）
 - `LightmapGI.bake_mode`（不存在）
 - `LightmapGI.light_data = "res://x.gi"`（类型错，属性是 `LightmapGIData` 资源）
 - `EditorResourceImporter.new()`（不存在）
 - `Performance.RENDER_TOTAL_DRAW_CALLS`（常量名错）
-- `ResourceSaver.save_to_buffer()`（4.3/4.4/4.5/master 全都没有）
+- `ResourceSaver.save_to_buffer()`（4.3 到 4.7.2 全都没有）
 - 以及 3 个**阳性对照**（`directional_shadow_mode`、`Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME`、
   `light_color = Color(...)` 必须**不报**）
 
@@ -128,7 +130,7 @@ python tools/fetch_godot_api.py --index-only     # 只重建，不重下
 | 类别 | 例子 |
 |---|---|
 | C++ 引擎内部类型 | `ObjectID`、`MethodBind`、`RendererSceneCull`、`SCsub` |
-| 4.4+ / 4.6+ 才引入 | `SpringBoneSimulator3D`（4.4+）、`IKModifier3D`（4.6+） |
+| 书里写明「基线里没有」的反例 | `ResourceLoader.unload`、`AudioServer.set_hrtf_enabled`、`use_1d_color_correction` |
 | 3.x 已移除（迁移对照） | `ParticleShape3D`、`KinematicBody`、`WebSocketServer` |
 | Unity 侧 API | `MonoBehaviour`、`ScriptableRenderPipeline` |
 | 书里写「4.x 没有这个 API」的反例 | `ResourceLoader.unload`、`AudioServer.set_hrtf_enabled` |
@@ -136,6 +138,28 @@ python tools/fetch_godot_api.py --index-only     # 只重建，不重下
 
 ⚠️ **把真实缺陷放进白名单等于关掉门禁**。新增条目前请先确认它确实是「有意提及」，
 而不是「写错了」。
+
+## 换基线的实际流程（4.3 → 4.7.2 这一轮踩过的坑）
+
+1. **先看 tag 存不存在**：`https://api.github.com/repos/godotengine/godot/tags` 能一次列全。
+   `4.7.2-stable` 是 tag 名，版本号 `4.7.2` 才是书里写的基线号。
+2. **缓存必须按 tag 隔离**：`.audit-tmp/classxml/<tag>/`。老版本只按「路径」命名缓存时，
+   换基线会把旧 XML 当成 `cached` 直接命中，两个版本的类参考混进同一个索引——判据底座静默失真。
+3. **类参考清单不要只靠 tree API**：它的递归响应有 1MB+，本机链路会在传输中途断流
+   （`http.client.IncompleteRead`）。清单落盘到 `.audit-tmp/classxml/<tag>.paths.json` 并带重试；
+   兜底可用 contents API 逐目录列举（注意 `modules/*/doc_classes/` 有个别模块会漏，
+   最终以 `git ls-tree` 的 1078 条为准）。
+4. **镜像要轮转**：`raw.githubusercontent.com` 常超时，`cdn.jsdelivr.net` 时通时不通；
+   脚本内置 `github.com/.../raw` → `gcore.jsdelivr.net` → `fastly.jsdelivr.net` → `cdn.jsdelivr.net` 逐个回落。
+5. **网络实在拉不动时用 git**：`git clone --depth 1 --filter=blob:none --sparse --branch <tag>`
+   再 `git sparse-checkout set --no-cone '/doc/classes/*' '/modules/*/doc_classes/*' ...`，
+   一次 pack 传输比上千个 HTTP 请求稳；然后**必须与 CDN 版逐字节比对**再当判据底座。
+6. **换完基线先跑 `--selftest`**：阳性对照必须在新基线下**依然成立**，
+   否则说明判据本身失效了（而不是书稿错了）。
+7. **白名单要重新对账**：符号一旦进入基线，对应条目必须删除——
+   否则就等于给「门禁不再检查这个符号」留了后门。
+8. **书稿里每条「某版本没有 X」都要重判**：基线一换，这些断言的真值会变。
+   判据是本地官方 XML + 官方源码，不是记忆。
 
 ## 统计口径
 

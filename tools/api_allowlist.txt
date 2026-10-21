@@ -5,7 +5,9 @@
 #   token = 类名，或 `类.成员`
 #
 # ⚠️ 白名单只应收「书里有意提及」的符号。把真实缺陷放进来等于关掉门禁；
-#    新增条目必须写明依据（C++ 内部 / 4.4+ / 3.x 已移除 / Unity / 反例 / 示例占位）。
+#    新增条目必须写明依据（C++ 内部 / 3.x 已移除 / Unity / 反例 / 示例占位 /
+#    书里写明「基线里没有」的反例）。
+#    ⚠️ 本文件按**基线 4.7.2** 对账：符号一旦进入基线，对应条目必须删除。
 #    判据自检：python tools/verify_book.py --selftest
 
 ## unknown_class —— 类级白名单
@@ -67,10 +69,8 @@ unknown_class|Gray|书稿示例枚举
 unknown_class|Group|3.x 已移除，迁移对照表里作为「旧写法」
 unknown_class|GroupData|3.x 已移除，迁移对照表里作为「旧写法」
 unknown_class|HealthComponent|书稿示例类
-unknown_class|IKModifier3D|4.6+ 引入的原生 IK 框架，正文已标注版本
 unknown_class|ImportOrder|书稿示例枚举
 unknown_class|InputEventJoypadConnection|3.x 已移除，迁移对照表里作为「旧写法」
-unknown_class|JacobianIK3D|4.6+ 引入的原生 IK 框架，正文已标注版本
 unknown_class|KinematicBody|3.x 已移除，迁移对照表里作为「旧写法」
 unknown_class|KinematicBody2D|3.x 已移除，迁移对照表里作为「旧写法」
 unknown_class|LODLevel|书稿自定义枚举（文件内已定义）
@@ -135,6 +135,7 @@ unknown_class|ScriptableRenderPipeline|Unity 渲染管线 API（对比章节）
 unknown_class|SendMessage|Unity 侧 API（对比章节）
 unknown_class|SetFloat|Unity AnimationClip API（对比章节）
 unknown_class|ShaderData|C++ 内部类（scene/resources/material.cpp）
+unknown_class|ShaderMode|C++ 内部枚举（servers/rendering/rendering_server_enums.h 的 ShaderMode，与脚本侧 Shader.Mode 对应）
 unknown_class|ShapeCast|行文简写，真实类是 ShapeCast2D/3D
 unknown_class|SignalName|C# 委托参数名
 unknown_class|SliderJointParam|C++ 枚举名（servers/physics_server_3d.h）
@@ -144,9 +145,6 @@ unknown_class|SortByKey|C++ 内部枚举（可见性排序方式）
 unknown_class|SortByReverseDepthAndPriority|C++ 内部枚举（可见性排序方式）
 unknown_class|Spacious|书稿示例枚举
 unknown_class|Spatial|3.x 已移除，迁移对照表里作为「旧写法」
-unknown_class|SplineIK3D|4.6+ 引入的原生 IK 框架，正文已标注版本
-unknown_class|SpringBoneCollision3D|4.4+ 引入，正文已标注版本
-unknown_class|SpringBoneSimulator3D|4.4+ 引入，正文已标注版本
 unknown_class|Sub2|AnimationNodeSub2 的简写
 unknown_class|SubResource|C++ 内部术语（不是类）
 unknown_class|SubShader|Unity 侧概念（对比章节）
@@ -154,7 +152,6 @@ unknown_class|Summator|书稿示例的 C++ 类
 unknown_class|TargetFramework|C# 项目文件属性
 unknown_class|Tonemap|C++ pass 名称（renderer_scene_render_rd.cpp 里的后处理阶段）
 unknown_class|True|行文简写
-unknown_class|TwoBoneIK3D|4.6+ 引入的原生 IK 框架，正文已标注版本
 unknown_class|TypedArray|godot-cpp 模板，不是引擎类
 unknown_class|URI|HTTP 术语（不是 Godot 类）
 unknown_class|Volume|Unity 侧类型（对比章节）
@@ -172,52 +169,45 @@ unknown_member|AnimationPlayer.get_current_animation_position|4.x 是属性 curr
 unknown_member|AnimationPlayer.length|AnimationPlayer 无 length() 方法
 unknown_member|AnimationPlayer.set_speed_scale|4.x 是属性 speed_scale
 unknown_member|ArrayMesh.surface_set_arrays|真实成员（ArrayMesh.surface_set_arrays）
-unknown_member|AudioServer.set_hrtf_enabled|4.3 不存在，书里明确写「不存在」
-unknown_member|AudioServer.set_hrtf_interpolation_enabled|4.3 不存在，书里明确写「不存在」
-unknown_member|Curve.get_point_count|4.3 的 Curve 点数是属性 point_count
-unknown_member|Curve.remove_point_at_time|4.3 无该方法，书里提到旧写法
-unknown_member|Curve.tangent_mode|4.3 无全局 tangent_mode 属性，书里提到旧写法
-unknown_member|DisplayServer.get_screen_size|4.3 里是 screen_get_size()
-unknown_member|ENetMultiplayerPeer.get_host|4.3 取底层连接用 get_peer()（书里正文已说明）
-unknown_member|EditorExportPlatform.export_project|4.3 不存在，书里的「不存在 API」对照表
-unknown_member|Engine.get_fps|4.3 里是 Engine.get_frames_per_second()
-unknown_member|Engine.get_process_usec|4.3 里是 Time.get_ticks_usec()
-unknown_member|Engine.get_version|4.3 里是 Engine.get_version_info()
-unknown_member|Environment.SSAO_QUALITY_HIGH|4.3 没有 SSAOQuality 枚举，书里作为反例
+unknown_member|AudioServer.set_hrtf_enabled|4.7.2 不存在，书里明确写「不存在」
+unknown_member|AudioServer.set_hrtf_interpolation_enabled|4.7.2 不存在，书里明确写「不存在」
+unknown_member|Curve.get_point_count|4.7.2 的 Curve 点数是属性 point_count
+unknown_member|Curve.remove_point_at_time|4.7.2 无该方法，书里提到旧写法
+unknown_member|Curve.tangent_mode|4.7.2 无全局 tangent_mode 属性，书里提到旧写法
+unknown_member|DisplayServer.get_screen_size|4.7.2 里是 screen_get_size()
+unknown_member|ENetMultiplayerPeer.get_host|4.7.2 取底层连接用 get_peer()（书里正文已说明）
+unknown_member|Engine.get_fps|4.7.2 里是 Engine.get_frames_per_second()
+unknown_member|Engine.get_process_usec|4.7.2 里是 Time.get_ticks_usec()
+unknown_member|Engine.get_version|4.7.2 里是 Engine.get_version_info()
+unknown_member|Environment.SSAO_QUALITY_HIGH|4.7.2 没有 SSAOQuality 枚举，书里作为反例
 unknown_member|Environment.adjustment_*|行文简写，指 adjustment_* 系列属性
-unknown_member|Environment.adjustment_color_correction|4.3 的属性名是 adjustment_color_correction（Texture）
-unknown_member|Environment.adjustment_color_correction_lut|4.3 不存在，书里作为反例
-unknown_member|Environment.adjustment_color_correction_lut_scale|4.3 不存在，书里作为反例
+unknown_member|Environment.adjustment_color_correction_lut|4.7.2 不存在，书里作为反例
+unknown_member|Environment.adjustment_color_correction_lut_scale|4.7.2 不存在，书里作为反例
 unknown_member|Environment.fog_*|行文简写，指 fog_enabled / fog_light_color 等 fog_* 系列
 unknown_member|GPUParticles3D.COLLISION_HIDE_ON_CONTACT|该常量属于 ParticleProcessMaterial，书里作为反例
 unknown_member|GeometryInstance3D.visibility_range_begin/end|两个属性的简写（真实名 visibility_range_begin / _end）
-unknown_member|HTTPRequest.get_response_body_as_string|4.3 无该方法，书里提到旧写法
-unknown_member|InputMap.get_action_list|4.3 里是 action_get_events() / get_actions()
+unknown_member|HTTPRequest.get_response_body_as_string|4.7.2 无该方法，书里提到旧写法
+unknown_member|InputMap.get_action_list|4.7.2 里是 action_get_events() / get_actions()
 unknown_member|LightmapGI.BAKE_MODE_STATIC|LightmapGI 无 bake_mode，书里作为反例
 unknown_member|MeshData.surface_set_arrays|行文简写，指 ArrayMesh.surface_set_arrays()
 unknown_member|MeshInstance3D.visibility_range_*|行文简写，实际定义在 GeometryInstance3D 上
-unknown_member|OS.get_process_cpu_usage|4.3 不存在，书里已更正
-unknown_member|OS.get_temp_dir|4.3 不存在，书里提到替代写法
-unknown_member|OS.get_ticks_usec|4.3 里在 Time 上，不在 OS 上
-unknown_member|OS.get_total_memory|4.3 不存在，书里已更正
+unknown_member|OS.get_process_cpu_usage|4.7.2 不存在，书里已更正
+unknown_member|OS.get_ticks_usec|4.7.2 里在 Time 上，不在 OS 上
+unknown_member|OS.get_total_memory|4.7.2 不存在，书里已更正
 unknown_member|PacketPeer.put_string|PacketPeer 无 put_string，书里提到旧写法
 unknown_member|ParticleProcessMaterial.EMISSION_SHAPE_*|行文简写，指 EMISSION_SHAPE_* 系列枚举值
-unknown_member|ParticleProcessMaterial.EMISSION_SHAPE_BOX|真实枚举值，作为对照书写
-unknown_member|ParticleProcessMaterial.EMISSION_SHAPE_POINT|真实枚举值，作为对照书写
-unknown_member|ParticleProcessMaterial.EMISSION_SHAPE_SPHERE|真实枚举值，作为对照书写
 unknown_member|Performance.RENDER_TOTAL_DRAW_CALLS|不带 _IN_FRAME 的错写，书里作为反例
 unknown_member|ResourceLoader.unload|4.x 没有该方法，书里明确写「没有」
-unknown_member|ResourceSaver.save_to_buffer|4.3/4.4/4.5/master 都没有该方法
-unknown_member|RichTextLabel.append_text|行文简写，指 RichTextLabel.append_text()
+unknown_member|ResourceSaver.save_to_buffer|4.3 到 4.7.2 都没有该方法
 unknown_member|RigidBody3D.CCD_MODE_CAST_RAY|4.x 无 CCD_MODE_* 枚举
-unknown_member|Skeleton3D.set_bone_pose_enabled|4.3 的正确写法是 set_bone_enabled()
+unknown_member|Skeleton3D.set_bone_pose_enabled|4.7.2 的正确写法是 set_bone_enabled()
 unknown_member|TextEdit.append_text|TextEdit 无该方法（书里已更正）
-unknown_member|UDPServer.close|4.3 的 UDPServer 用 stop()
-unknown_member|UDPServer.get_available_packet_count|4.3 的 UDPServer 没有该方法
-unknown_member|UDPServer.get_packet|4.3 的 UDPServer 没有 get_packet()（书里正文已更正）
-unknown_member|UDPServer.get_packet_peer|4.3 的 UDPServer 没有 get_packet_peer()
-unknown_member|UDPServer.put_packet_to_peer|4.3 的 UDPServer 没有该方法
-unknown_member|WebSocketPeer.set_supported_protocols|4.3 是 supported_protocols 属性
+unknown_member|UDPServer.close|4.7.2 的 UDPServer 用 stop()
+unknown_member|UDPServer.get_available_packet_count|4.7.2 的 UDPServer 没有该方法
+unknown_member|UDPServer.get_packet|4.7.2 的 UDPServer 没有 get_packet()（书里正文已更正）
+unknown_member|UDPServer.get_packet_peer|4.7.2 的 UDPServer 没有 get_packet_peer()
+unknown_member|UDPServer.put_packet_to_peer|4.7.2 的 UDPServer 没有该方法
+unknown_member|WebSocketPeer.set_supported_protocols|4.7.2 是 supported_protocols 属性
 
 ## unknown_member —— 书稿示例里的自定义方法/信号
 unknown_member|_create_color_curve|书稿示例片段里的自定义方法/信号（定义不在同一代码块，属教学占位）

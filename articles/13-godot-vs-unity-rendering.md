@@ -318,7 +318,7 @@ GPU
 | **实时阴影** | ✅ | ✅ |
 | **级联阴影** | ✅（PSSM 平行级联） | ✅ |
 | **软阴影** | ✅（PCF / PCSS） | ✅ |
-| **接触阴影** | ❌ 4.3 无此特性 | ✅ |
+| **接触阴影** | ❌ 4.7.2 无此特性 | ✅ |
 
 ### 3.3 后处理
 
@@ -355,8 +355,8 @@ GPU
 | 作用范围 | **只对平行光有效** | **只对平行光有效**（shadow cascades only work with directional lights） |
 | 阴影贴图管理 | Shadow Atlas：多张阴影图打进一张图集 | 按灯 / 按级联分开管理 |
 | 软阴影 | PCF 多重采样 + `light_size` / `light_angular_distance` 控制的 PCSS | 软阴影方案**以官方文档为准** |
-| 方差阴影（VSM） | ❌ 4.3 无 | 以官方文档为准 |
-| 接触阴影 | ❌ 4.3 无此特性 | ✅ |
+| 方差阴影（VSM） | ❌ 4.7.2 无 | 以官方文档为准 |
+| 接触阴影 | ❌ 4.7.2 无此特性 | ✅ |
 
 > 💡 **结论**：两边的平行光阴影思路几乎一样（**级联分割 + 多张贴图**），只是 Godot 叫 PSSM、Unity 叫 CSM。**机制差异**：Godot 把所有阴影图塞进一张 **Shadow Atlas**，Unity 按灯分张。**可执行建议**：Godot 里要注意 Shadow Atlas 的容量 —— 灯多或阴影图太大时可能装不下，具体表现与排查方式以引擎日志为准；Unity 迁过来时如果场景灯很多，先核对 atlas 尺寸。
 
@@ -399,7 +399,7 @@ GPU
 | 阴影贴图管理 | Shadow Atlas | Shadow Atlas | Shadow Atlas |
 | 定向光级联 | `SHADOW_PARALLEL_2_SPLITS` / `SHADOW_PARALLEL_4_SPLITS` | 同左 | 同左 |
 | 软阴影 | PCF + `light_size` 控制的 PCSS | 同左 | 同左 |
-| 环境光遮蔽 | `Environment.ssao_enabled` | 同左 | 4.3 不提供 |
+| 环境光遮蔽 | `Environment.ssao_enabled` | ❌ | ✅ 4.7.2 提供（4.3 时没有） |
 | 屏幕空间间接光 | `Environment.ssil_enabled` | ❌ | ❌ |
 | 屏幕空间反射 | `Environment.ssr_enabled` | ❌ | ❌ |
 | 符号距离场 GI | `Environment.sdfgi_enabled` | ❌ | ❌ |
@@ -475,7 +475,7 @@ GPU
 
 > 💡 **结论**：Godot 的 GI 家族是「**贴图 / 体素 / 探针 / SDFGI / SSIL**」五件套，Unity 是「**烘焙 / Enlighten / 探针组 / 探针体积 / 屏幕空间**」。**机制差异**：Unity 的 Enlighten 是**中间件**（独立产品、需授权），Godot 的 SDFGI 是**引擎内建**（但只有 Forward+ 能用）。**可执行建议**：
 > 1. 重度依赖 Enlighten 的项目迁到 Godot，只能用 `LightmapGI` + `VoxelGI` + `LightmapProbe` 组合替代，**要重新烘焙**；
-> 2. 依赖 Adaptive Probe Volumes 自动布点的项目，必须**重新设计探针分布** —— Godot 4.3 没有"按密度自动摆探针 + 逐像素采样"的等价物；
+> 2. 依赖 Adaptive Probe Volumes 自动布点的项目，必须**重新设计探针分布** —— Godot 4.7.2 仍没有"按密度自动摆探针 + 逐像素采样"的等价物；
 > 3. 目标含 Web 的项目要接受"只有烘焙 GI"（SDFGI / SSIL 在 Compatibility 下都没有）。
 
 ### 3.10 阴影方案全景
@@ -490,8 +490,8 @@ GPU
 | 阴影偏移 | `Light3D.shadow_bias` / `shadow_normal_bias` | 以官方文档为准 |
 | 阴影贴图管理 | Shadow Atlas（所有阴影图打进图集，容量有限） | 按灯 / 按级联分开管理 |
 | 投射开关 | `GeometryInstance3D.cast_shadow` | Renderer 的 Cast Shadows 选项 |
-| 方差阴影（VSM） | ❌ 4.3 无（Godot 3.x 也没有） | 以官方文档为准 |
-| 接触阴影 | ❌ 4.3 无此特性 | ✅ |
+| 方差阴影（VSM） | ❌ 4.7.2 无（Godot 3.x 也没有） | 以官方文档为准 |
+| 接触阴影 | ❌ 4.7.2 无此特性 | ✅ |
 | 调试可视化 | `Viewport.DebugDraw` 的 `DEBUG_DRAW_SHADOW_ATLAS` / `DEBUG_DRAW_PSSM_SPLITS` | 官方 Debug 视图 |
 
 > 💡 **结论**：两边的平行光阴影思路几乎一样（**级联分割 + 多张贴图**），只是 Godot 叫 PSSM、Unity 叫 CSM。**机制差异**：Godot 把所有阴影图塞进一张 **Shadow Atlas**，Unity 按灯分张。**可执行建议**：Godot 里灯一多或阴影图一大就可能装不进图集 —— 表现是部分物体的阴影突然消失；排查时用 `DEBUG_DRAW_SHADOW_ATLAS` 看图集占用。
@@ -879,7 +879,7 @@ GPU
 4. **性能相当**：各有优劣，但两个引擎的帧率数字**不可直接对比**
 5. **差异集中在实现粒度，不在功能有无**：GI、阴影、后处理三块两边的能力清单高度重合；真正拉开差距的是**渲染线程模型**、**材质与管线的绑定关系**、**有没有运行时合批器**这三件事
 6. **GI 的机制完全对不上**：SDFGI / LightmapGI / VoxelGI / LightmapProbe 对应的是 Enlighten / Progressive Lightmapper / 探针体积，迁移必须重新烘焙、重新布探针
-7. **Godot 4.3 没有运行时合批器**：SRP Batcher 的作用在 Godot 侧没有对应物，要用「`MultiMesh` + 共享材质 + `visibility_range`」重做 draw call 预算
+7. **Godot 4.7.2 仍没有运行时合批器**：SRP Batcher 的作用在 Godot 侧没有对应物，要用「`MultiMesh` + 共享材质 + `visibility_range`」重做 draw call 预算
 8. **迁移前按"资源归属"逐项对照**：不要按"特性有没有"列清单，要按"这个特性在我的场景里由哪个资源承担"逐项核对，并排出风险优先级
 
 ---
@@ -911,7 +911,7 @@ GPU
 **作者**: wangshucheng
 **首发平台**: 微信公众号  
 **写作时间**: 2026 年 3 月  
-**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+**Godot 版本**: 4.x（基线 4.7.2；本文涉及的版本差异已在行内标注）
 
 ---
 

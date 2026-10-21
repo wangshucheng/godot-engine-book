@@ -339,7 +339,8 @@ func _export_build() -> void:
     print("Build export completed")
 
 func _export_project(preset: String, output_path: String) -> void:
-    # EditorExportPlatform 是抽象基类：既不能实例化，也没有静态 export_project()。
+    # EditorExportPlatform 是抽象基类：不能实例化（4.7.2 的 export_project() 是实例方法，
+    # 要传 EditorExportPreset，不是静态方法）。
     # 编辑器内想做导出定制，应实现 EditorExportPlugin 的回调；
     # 完全脚本化的导出则通过命令行完成（CI 场景推荐，见第 6 节）。
     var args := PackedStringArray([
@@ -1101,7 +1102,7 @@ godot --headless --path . --script res://addons/my_plugin/tests/test_rules.gd
 
 ---
 
-**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+**Godot 版本**: 4.x（基线 4.7.2；本文涉及的版本差异已在行内标注）
 
 ---
 

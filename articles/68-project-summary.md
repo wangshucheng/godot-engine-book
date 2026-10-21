@@ -960,7 +960,7 @@ func plugin_compatibility():
 
 ---
 
-**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+**Godot 版本**: 4.x（基线 4.7.2；本文涉及的版本差异已在行内标注）
 
 **上一篇**: [第 67 篇：编辑器扩展最佳实践](/articles/67-editor-extension-best-practices.md)
 **下一篇**: [第 69 篇：GDExtension 架构与入门](/articles/69-gdextension-basics.md)

@@ -347,7 +347,7 @@ print("primitives: ", Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVE
 > ⚠️ 上面三个常量名里，带 `_IN_FRAME` 后缀的那个是 4.3 的**正确**写法。少了这个后缀的旧名在 4.3 **不存在**，照抄会报 "Invalid access to property or key"：
 
 ```text
-# 4.3 里不存在的写法（仅作反例）：
+# 4.7.2 里同样不存在的写法（仅作反例）：
 Performance.RENDER_TOTAL_DRAW_CALLS
 ```
 
@@ -506,7 +506,7 @@ Forward+ 的主 pass 顺序（源码锚定，见 5.8 的完整表）里，三个
 
 ### 5.3 透明物体怎么排序：不是 OIT
 
-> **Godot 4.3 没有 OIT（Order-Independent Transparency，加权混合无序透明）。**
+> **Godot 4.7.2 仍没有 OIT（Order-Independent Transparency，加权混合无序透明）。**
 > 在 `servers/rendering/renderer_rd/` 的全部源文件里检索 `weighted_blend` / `oit` / `order_independent` **命中数为 0**。Godot 的透明处理是**经典的按深度排序 + alpha 混合**，不是无序混合。
 
 排序规则是**先优先级、再反向深度**：
@@ -525,7 +525,7 @@ struct SortByReverseDepthAndPriority {   // 透明物体
 
 这解释了两个常见现象：
 
-- **两个半透明物体重叠时会出现排序瑕疵**：因为排序只看"到相机的深度"，不解析几何体的真实遮挡关系 —— 这正是 OIT 要解决的问题，而 Godot 4.3 没有做。
+- **两个半透明物体重叠时会出现排序瑕疵**：因为排序只看"到相机的深度"，不解析几何体的真实遮挡关系 —— 这正是 OIT 要解决的问题，而 Godot 4.7.2 仍没有做。
 - **`render_priority` 能救场**：把该物体排到前面或后面即可。
 
 `Material.render_priority` 的官方描述（`doc/classes/Material.xml`）：
@@ -943,7 +943,7 @@ enum CompositorEffectCallbackType {   // servers/rendering_server.h:1089
 **作者**: wangshucheng
 **首发平台**: 微信公众号  
 **写作时间**: 2026 年 3 月  
-**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+**Godot 版本**: 4.x（基线 4.7.2；本文涉及的版本差异已在行内标注）
 
 ---
 

@@ -856,7 +856,7 @@ func get_stats() -> Dictionary:
 
 ---
 
-**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+**Godot 版本**: 4.x（基线 4.7.2；本文涉及的版本差异已在行内标注）
 
 **上一篇**: [第 55 篇：GDScript 进阶](/articles/55-gdscript-advanced.md)
 **下一篇**: [第 60 篇：C# 集成和脚本性能优化](/articles/60-csharp-and-script-optimization.md)

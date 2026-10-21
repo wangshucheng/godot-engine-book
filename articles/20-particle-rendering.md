@@ -1011,7 +1011,7 @@ func _report() -> void:
 **第 21 篇：渲染性能优化**
 
 - Draw Call 的来源与削减手段（MultiMesh / 共享材质 / 可见性范围）
-- LOD：`visibility_range` 与 `lod_bias`（4.3 没有 `LOD3D` 节点）
+- LOD：`visibility_range` 与 `lod_bias`（4.7.2 仍没有 `LOD3D` 节点）
 - 遮挡剔除：基于 **Embree** 的 `OccluderInstance3D`
 - 统一性能数字口径与测试条件模板
 
@@ -1020,7 +1020,7 @@ func _report() -> void:
 **作者**: wangshucheng
 **首发平台**: 微信公众号  
 **写作时间**: 2026 年 3 月  
-**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+**Godot 版本**: 4.x（基线 4.7.2；本文涉及的版本差异已在行内标注）
 
 ---
 

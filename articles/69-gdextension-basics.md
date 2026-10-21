@@ -1000,7 +1000,7 @@ motion_sprite.position_changed.connect(_on_motion_sprite_position_changed)
 
 ---
 
-**Godot 版本**: 4.x（基线 4.3；本文涉及的 4.4+ 差异已在行内标注）
+**Godot 版本**: 4.x（基线 4.7.2；本文涉及的版本差异已在行内标注）
 
 ---
 
